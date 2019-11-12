@@ -60,10 +60,28 @@ struct CstFormalPoolParameter
 	CstClassType bound;
 };
 
+struct CstField
+{
+	// TODO
+};
+
+struct CstMethod
+{
+	// TODO
+};
+
 struct CstClass
 {
 	Identifier name;
 	std::vector<CstFormalPoolParameter> formal_pool_parameters;
+	std::vector<CstField> fields;
+	std::vector<CstMethod> methods;
+};
+
+struct CstClassBody
+{
+	std::vector<CstField> fields;
+	std::vector<CstMethod> methods;
 };
 
 struct CstRec

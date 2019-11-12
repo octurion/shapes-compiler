@@ -29,6 +29,9 @@ static Location yyltype_to_location(YYLTYPE orig_loc);
 
 	std::vector<CstFormalPoolParameter>* formal_pool_parameters;
 	CstFormalPoolParameter*              formal_pool_parameter;
+	CstClassBody*                        class_body;
+	CstField*                            field_declaration;
+	CstMethod*                           method_declaration;
 
 	CstClassType*                        class_type;
 	std::vector<Identifier>*             pool_parameters;
@@ -54,6 +57,9 @@ static Location yyltype_to_location(YYLTYPE orig_loc);
 %token T_POOL   "pool"
 %token T_LAYOUT "layout"
 %token T_REC    "rec"
+
+%token T_LET    "let"
+%token T_FN     "fn"
 
 %token T_COMMA     ","
 %token T_COLON     ":"
@@ -81,6 +87,11 @@ static Location yyltype_to_location(YYLTYPE orig_loc);
 
 %type<formal_pool_parameters> formal_pool_parameters formal_pool_parameter_list
 %type<formal_pool_parameter>  formal_pool_parameter
+%type<class_body>             class_body class_members
+%type<field_declaration>      field_declaration
+%type<method_declaration>     method_declaration
+
+
 %type<class_type>      pool_bound class_type
 %type<pool_parameters> pool_parameters pool_parameter_list
 
@@ -132,18 +143,14 @@ program_definitions
 	}
 
 class_definition
-	: T_CLASS identifier formal_pool_parameters T_LBRACE T_RBRACE {
+	: T_CLASS identifier formal_pool_parameters class_body {
 		$$ = new CstClass();
 		$$->name                   = std::move(*$2); delete $2;
 		$$->formal_pool_parameters = std::move(*$3); delete $3;
-	}
 
-layout_definition
-	: T_LAYOUT identifier T_COLON identifier T_EQ recs {
-		$$ = new CstLayout;
-		$$->name       = std::move(*$2); delete $2;
-		$$->class_name = std::move(*$4); delete $4;
-		$$->recs       = std::move(*$6); delete $6;
+		$$->fields  = std::move($4->fields);
+		$$->methods = std::move($4->methods);
+		delete $4;
 	}
 
 formal_pool_parameters
@@ -151,6 +158,7 @@ formal_pool_parameters
 	| T_LANGLE T_RANGLE       { $$ = new std::vector<CstFormalPoolParameter>; }
 	| T_LANGLE formal_pool_parameter_list T_RANGLE         { $$ = $2; }
 	| T_LANGLE formal_pool_parameter_list T_COMMA T_RANGLE { $$ = $2; }
+	/* Just make up one for error recovery */
 	| T_LANGLE error T_RANGLE { $$ = new std::vector<CstFormalPoolParameter>; }
 
 formal_pool_parameter_list
@@ -169,14 +177,52 @@ formal_pool_parameter
 		$$->bound = std::move(*$3); delete $3;
 	}
 
+class_body
+	: T_LBRACE T_RBRACE               { $$ = new CstClassBody; }
+	| T_LBRACE class_members T_RBRACE { $$ = $2;               }
+	| T_LBRACE error T_RBRACE         { $$ = new CstClassBody; }
+
+class_members
+	: field_declaration {
+		$$ = new CstClassBody;
+		$$->fields.emplace_back(std::move(*$1)); delete $1;
+	}
+	| method_declaration {
+		$$ = new CstClassBody;
+		$$->methods.emplace_back(std::move(*$1)); delete $1;
+	}
+	| class_members field_declaration {
+		$$ = $1;
+		$$->fields.emplace_back(std::move(*$2)); delete $2;
+	}
+	| class_members method_declaration {
+		$$ = $1;
+		$$->methods.emplace_back(std::move(*$2)); delete $2;
+	}
+
+field_declaration
+	: T_LET T_LPAREN T_RPAREN T_SEMICOLON { $$ = new CstField; /* TODO */ }
+
+method_declaration
+	: T_FN T_LPAREN T_RPAREN T_LBRACE T_RBRACE { $$ = new CstMethod; /* TODO */ }
+
 pool_bound
 	: T_LSQUARE class_type T_RSQUARE { $$ = $2; $$->is_bound = true; }
-	/* Just make up a class type for error recovery */
+	/* Just make up one for error recovery */
 	| T_LSQUARE error T_RSQUARE      { $$ = new CstClassType; }
+
+layout_definition
+	: T_LAYOUT identifier T_COLON identifier T_EQ recs {
+		$$ = new CstLayout;
+		$$->name       = std::move(*$2); delete $2;
+		$$->class_name = std::move(*$4); delete $4;
+		$$->recs       = std::move(*$6); delete $6;
+	}
 
 recs
 	: T_SEMICOLON          { $$ = new std::vector<CstRec>; }
 	| rec_list T_SEMICOLON { $$ = $1;                      }
+	/* Just make up one for error recovery */
 	| error T_SEMICOLON    { $$ = new std::vector<CstRec>; }
 
 rec_list
@@ -193,6 +239,7 @@ rec
 	: T_REC T_LBRACE T_RBRACE                        { $$ = new CstRec; }
 	| T_REC T_LBRACE rec_field_list T_RBRACE         { $$ = $3;         }
 	| T_REC T_LBRACE rec_field_list T_COMMA T_RBRACE { $$ = $3;         }
+	/* Just make up one for error recovery */
 	| T_REC T_LBRACE error T_RBRACE                  { $$ = new CstRec; }
 
 rec_field_list
@@ -217,6 +264,7 @@ pool_parameters
 	| T_LANGLE T_RANGLE        { $$ = new std::vector<Identifier>; }
 	| T_LANGLE pool_parameter_list T_RANGLE         { $$ = $2; }
 	| T_LANGLE pool_parameter_list T_COMMA T_RANGLE { $$ = $2; }
+	/* Just make up one for error recovery */
 	| T_LANGLE error T_RANGLE  { $$ = new std::vector<Identifier>; }
 
 pool_parameter_list
@@ -240,6 +288,8 @@ identifier
 	| T_LAYOUT { $$ = new Identifier("layout", yyltype_to_location(@1)); }
 	| T_REC    { $$ = new Identifier("rec",    yyltype_to_location(@1)); }
 	| T_POOL   { $$ = new Identifier("pool",   yyltype_to_location(@1)); }
+	| T_LET    { $$ = new Identifier("let",    yyltype_to_location(@1)); }
+	| T_FN     { $$ = new Identifier("fn",     yyltype_to_location(@1)); }
 
 %%
 

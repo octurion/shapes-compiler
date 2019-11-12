@@ -24,6 +24,8 @@ ALNUM [0-9a-zA-Z_]
 "layout" { return T_LAYOUT; }
 "pool"   { return T_POOL;   }
 "rec"    { return T_REC;    }
+"let"    { return T_LET;    }
+"fn"     { return T_FN;     }
 
 {ALPHA}{ALNUM}* {
 	// It's Bison that's going to set up the location properly
