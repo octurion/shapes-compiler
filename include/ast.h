@@ -66,7 +66,20 @@ struct CstClass
 	std::vector<CstFormalPoolParameter> formal_pool_parameters;
 };
 
+struct CstRec
+{
+	std::vector<Identifier> fields;
+};
+
+struct CstLayout
+{
+	Identifier name;
+	Identifier class_name;
+	std::vector<CstRec> recs;
+};
+
 struct Cst
 {
 	std::vector<CstClass> classes;
+	std::vector<CstLayout> layouts;
 };

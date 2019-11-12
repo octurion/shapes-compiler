@@ -31,6 +31,10 @@ ALNUM [0-9a-zA-Z_]
 	return T_IDENT;
 }
 
+"=" { return T_EQ; }
+
+"+" { return T_PLUS; }
+
 "," { return T_COMMA;     }
 ":" { return T_COLON;     }
 ";" { return T_SEMICOLON; }
