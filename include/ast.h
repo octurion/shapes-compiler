@@ -10,17 +10,26 @@ struct Location {
 	size_t first_line = 1, first_column = 1, last_line = 1, last_column = 1;
 };
 
+struct FormalPoolParameter
+{
+	std::string name;
+};
+
 struct ClassDecl {
-	const std::string* identifier;
+	std::string identifier;
+	std::vector<FormalPoolParameter> parameters;
+
+	std::vector<void*> fields;
+	std::vector<void*> methods;
+
 	Location loc;
 
-	ClassDecl(const std::string* identifier, Location loc)
+	ClassDecl(std::string&& identifier, Location loc)
 		: identifier(identifier)
 		, loc(loc)
 	{}
 };
 
-struct Ast {
+struct Cst {
 	std::vector<ClassDecl> class_decls;
-	std::unordered_set<std::string> identifiers;
 };

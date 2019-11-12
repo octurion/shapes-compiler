@@ -1,19 +1,19 @@
 %{
-#include "ast.h"
 #include "parser.tab.h"
 
+#if 0
 #define YY_USER_ACTION update_loc(yylloc, yytext, yyleng);
 
 static void init_loc(YYLTYPE* loc);
 static void update_loc(YYLTYPE* loc, const char* text, yy_size_t len);
+#endif
 %}
 
 %option reentrant
 %option warn
-%option bison-bridge bison-locations
+%option bison-bridge
 %option never-interactive
 %option nodefault noyywrap nounput noinput
-%option extra-type="Ast*"
 
 DIGIT [0-9]
 ALPHA [a-zA-Z_]
@@ -22,15 +22,18 @@ ALNUM [0-9a-zA-Z_]
 %%
 
 "class" { return T_CLASS; }
-"of"    { return T_OF; }
 
 {ALPHA}{ALNUM}* {
+#if 0
 	auto it = yyextra->identifiers.emplace(yytext, yyleng).first;
 	yylval->ident = &*it;
+#endif
 	return T_IDENT;
 }
 
-"," { return T_COMMA; }
+"," { return T_COMMA;     }
+":" { return T_COLON;     }
+";" { return T_SEMICOLON; }
 
 "<" { return T_LANGLE; }
 ">" { return T_RANGLE; }
@@ -49,6 +52,7 @@ ALNUM [0-9a-zA-Z_]
 
 %%
 
+#if 0
 static void update_loc(YYLTYPE* loc, const char* text, yy_size_t len)
 {
 	if (len == 1 && text[0] == '\n') {
@@ -66,3 +70,4 @@ static void update_loc(YYLTYPE* loc, const char* text, yy_size_t len)
 	loc->first_column = loc->last_column + 1;
 	loc->last_column = loc->first_column + len - 1;
 }
+#endif

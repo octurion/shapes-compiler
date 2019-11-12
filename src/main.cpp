@@ -13,8 +13,6 @@ int main(int argc, char** argv)
 		return EXIT_FAILURE;
 	}
 
-	Ast ast;
-
 	FILE* in = fopen(argv[1], "r");
 	if (in == NULL) {
 		perror(argv[1]);
@@ -23,15 +21,17 @@ int main(int argc, char** argv)
 	
 	{
 		yyscan_t scanner;
+#if 0
 		int err = yylex_init_extra(&ast, &scanner);
 		if (err != 0) {
 			fclose(in);
 			return EXIT_FAILURE;
 		}
-
+#endif
+		yylex_init(&scanner);
 		yyset_in(in, scanner);
 
-		yyparse(scanner, &ast);
+		yyparse(scanner);
 
 		yylex_destroy(scanner);
 	}
