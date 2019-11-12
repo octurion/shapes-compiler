@@ -1,9 +1,12 @@
 %{
 #include "parser.tab.h"
 #include "lexer.yy.h"
+
+extern void yyerror(YYLTYPE* loc, yyscan_t state, const char* msg);
 %}
 
 %define api.pure full
+%locations
 
 %lex-param {yyscan_t scanner}
 %parse-param {yyscan_t scanner}
@@ -36,8 +39,6 @@
 #define YY_TYPEDEF_YY_SCANNER_T
 typedef void* yyscan_t;
 #endif
-
-void yyerror(yyscan_t state, const char* msg);
 }
 
 %%
@@ -47,13 +48,13 @@ program
 	}
 
 global_declaration_list
-    : global_declaration global_declaration_list
-    | global_declaration
-    ;
+	: global_declaration global_declaration_list
+	| global_declaration
+	;
 
 global_declaration
-    : class_declaration
-    ;
+	: class_declaration
+	;
 
 class_declaration
 	: T_CLASS T_IDENT class_pool_parameters T_LBRACE field_method_decl_list T_RBRACE {
@@ -100,12 +101,15 @@ field_decl
 	}
 
 method_decl
-    : %empty
-    ;
+	: %empty
+	;
 %%
 
-void yyerror(yyscan_t state, const char* msg)
+void yyerror(YYLTYPE* loc, yyscan_t state, const char* msg)
 {
 	(void) state;
-	fprintf(stderr, "Parse error: %s\n", msg);
+	fprintf(stderr, "Parse error (%d,%d - %d,%d): %s\n",
+		loc->first_line, loc->first_column,
+		loc->last_line, loc->last_column,
+		msg);
 }

@@ -1,17 +1,15 @@
 %{
 #include "parser.tab.h"
 
-#if 0
 #define YY_USER_ACTION update_loc(yylloc, yytext, yyleng);
 
 static void init_loc(YYLTYPE* loc);
 static void update_loc(YYLTYPE* loc, const char* text, yy_size_t len);
-#endif
 %}
 
 %option reentrant
 %option warn
-%option bison-bridge
+%option bison-bridge bison-locations
 %option never-interactive
 %option nodefault noyywrap nounput noinput
 
@@ -52,7 +50,6 @@ ALNUM [0-9a-zA-Z_]
 
 %%
 
-#if 0
 static void update_loc(YYLTYPE* loc, const char* text, yy_size_t len)
 {
 	if (len == 1 && text[0] == '\n') {
@@ -70,4 +67,3 @@ static void update_loc(YYLTYPE* loc, const char* text, yy_size_t len)
 	loc->first_column = loc->last_column + 1;
 	loc->last_column = loc->first_column + len - 1;
 }
-#endif
