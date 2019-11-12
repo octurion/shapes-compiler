@@ -1,35 +1,72 @@
 #pragma once
 
 #include <string>
-#include <unordered_set>
 #include <vector>
+#include <utility>
 
 #include <cstddef>
 
 struct Location {
-	size_t first_line = 1, first_column = 1, last_line = 1, last_column = 1;
+	int first_line = 1, first_column = 1, last_line = 1, last_column = 1;
 };
 
-struct FormalPoolParameter
+struct SyntaxError
 {
-	std::string name;
-};
-
-struct ClassDecl {
-	std::string identifier;
-	std::vector<FormalPoolParameter> parameters;
-
-	std::vector<void*> fields;
-	std::vector<void*> methods;
-
+	std::string message;
 	Location loc;
 
-	ClassDecl(std::string&& identifier, Location loc)
-		: identifier(identifier)
+	SyntaxError(std::string message, Location loc)
+		: message(std::move(message))
 		, loc(loc)
-	{}
+	{
+	}
 };
 
-struct Cst {
-	std::vector<ClassDecl> class_decls;
+struct SemanticError
+{
+	// TODO: Fill this up for the sematic analysis section
+};
+
+struct ErrorList {
+	std::vector<SyntaxError> syntax_errors;
+	std::vector<SemanticError> semantic_errors;
+};
+
+struct Identifier
+{
+	std::string ident;
+	Location loc;
+
+	Identifier() = default;
+	Identifier(std::string ident, Location loc)
+		: ident(std::move(ident))
+		, loc(loc)
+	{
+	}
+};
+
+struct CstClassType
+{
+	Identifier name;
+	std::vector<Identifier> pool_parameters;
+	bool is_bound = false;
+
+	CstClassType() = default;
+};
+
+struct CstFormalPoolParameter
+{
+	Identifier ident;
+	CstClassType bound;
+};
+
+struct CstClass
+{
+	Identifier name;
+	std::vector<CstFormalPoolParameter> formal_pool_parameters;
+};
+
+struct Cst
+{
+	std::vector<CstClass> classes;
 };

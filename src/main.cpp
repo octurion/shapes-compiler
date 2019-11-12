@@ -31,9 +31,22 @@ int main(int argc, char** argv)
 		yylex_init(&scanner);
 		yyset_in(in, scanner);
 
-		yyparse(scanner);
+		Cst cst;
+		ErrorList errors;
+
+		yyparse(scanner, &cst, &errors);
 
 		yylex_destroy(scanner);
+
+		if (!errors.syntax_errors.empty()) {
+			for (const auto& e: errors.syntax_errors) {
+				const auto& loc = e.loc;
+				fprintf(stderr, "Parse error (%d,%d - %d,%d): %s\n",
+						loc.first_line, loc.first_column,
+						loc.last_line,  loc.last_column,
+						e.message.c_str());
+			}
+		}
 	}
 
 	fclose(in);

@@ -1,4 +1,5 @@
 %{
+#include "ast.h"
 #include "parser.tab.h"
 
 #define YY_USER_ACTION update_loc(yylloc, yytext, yyleng);
@@ -19,13 +20,14 @@ ALNUM [0-9a-zA-Z_]
 
 %%
 
-"class" { return T_CLASS; }
+"class"  { return T_CLASS;  }
+"layout" { return T_LAYOUT; }
+"pool"   { return T_POOL;   }
+"rec"    { return T_REC;    }
 
 {ALPHA}{ALNUM}* {
-#if 0
-	auto it = yyextra->identifiers.emplace(yytext, yyleng).first;
-	yylval->ident = &*it;
-#endif
+	// It's Bison that's going to set up the location properly
+	yylval->ident = new Identifier(std::string(yytext, yyleng), Location());
 	return T_IDENT;
 }
 
@@ -35,6 +37,9 @@ ALNUM [0-9a-zA-Z_]
 
 "<" { return T_LANGLE; }
 ">" { return T_RANGLE; }
+
+"[" { return T_LSQUARE; }
+"]" { return T_RSQUARE; }
 
 "(" { return T_LPAREN; }
 ")" { return T_RPAREN; }
