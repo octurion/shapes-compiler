@@ -22,24 +22,24 @@ static Location yyltype_to_location(YYLTYPE orig_loc);
 %define parse.error verbose
 
 %union {
-	Cst*                                 cst;
+	Cst*                          cst;
 
-	CstClass*                            class_definition;
-	CstLayout*                           layout_definition;
+	CstClass*                     class_definition;
+	CstLayout*                    layout_definition;
 
-	std::vector<CstFormalPoolParameter>* formal_pool_parameters;
-	CstFormalPoolParameter*              formal_pool_parameter;
-	CstClassBody*                        class_body;
-	CstField*                            field_declaration;
-	CstMethod*                           method_declaration;
+	CstClassBody*                 class_body;
+	CstMethod*                    method_declaration;
 
-	CstClassType*                        class_type;
-	std::vector<Identifier>*             pool_parameters;
+	CstClassType*                 class_type;
 
-    std::vector<CstRec>*                 rec_list;
-	CstRec*                              rec;
+	std::vector<CstVariableDecl>* variable_declarations;
+	CstVariableDecl*              variable_declaration;
 
-	Identifier*                          ident;
+    std::vector<CstCluster>*      clusters;
+	CstCluster*                   cluster;
+
+	std::vector<Identifier>*      identifiers;
+	Identifier*                   ident;
 }
 
 /* This will ensure that in the case of error recovery, the intermediate
@@ -54,6 +54,7 @@ static Location yyltype_to_location(YYLTYPE orig_loc);
 %token<ident> T_IDENT "identifier"
 
 %token T_CLASS  "class"
+%token T_WHERE  "where"
 %token T_POOL   "pool"
 %token T_LAYOUT "layout"
 %token T_REC    "rec"
@@ -85,18 +86,23 @@ static Location yyltype_to_location(YYLTYPE orig_loc);
 %type<class_definition>  class_definition
 %type<layout_definition> layout_definition
 
-%type<formal_pool_parameters> formal_pool_parameters formal_pool_parameter_list
-%type<formal_pool_parameter>  formal_pool_parameter
-%type<class_body>             class_body class_members
-%type<field_declaration>      field_declaration
-%type<method_declaration>     method_declaration
+%type<variable_declarations> variable_declarations
+                             variable_declaration_list
+                             pool_bounds
+                             field_declarations
+                             method_arguments
+%type<variable_declaration>  variable_declaration
+%type<identifiers>           identifiers
+                             identifier_list
+                             pool_parameters
+%type<class_body>            class_body
+                             class_members
+%type<method_declaration>    method_declaration
 
+%type<class_type>      pool_bound class_type type
 
-%type<class_type>      pool_bound class_type
-%type<pool_parameters> pool_parameters pool_parameter_list
-
-%type<rec_list> recs rec_list
-%type<rec> rec rec_field_list
+%type<clusters> clusters cluster_list
+%type<cluster>  cluster
 
 %type<ident> identifier
 
@@ -143,114 +149,46 @@ program_definitions
 	}
 
 class_definition
-	: T_CLASS identifier formal_pool_parameters class_body {
+	: T_CLASS identifier pool_parameters pool_bounds class_body {
 		$$ = new CstClass();
 		$$->name                   = std::move(*$2); delete $2;
-		$$->formal_pool_parameters = std::move(*$3); delete $3;
+		$$->pool_parameters        = std::move(*$3); delete $3;
+		$$->pool_bounds            = std::move(*$4); delete $4;
 
-		$$->fields  = std::move($4->fields);
-		$$->methods = std::move($4->methods);
-		delete $4;
+		$$->fields  = std::move($5->fields);
+		$$->methods = std::move($5->methods);
+		delete $5;
 	}
 
-formal_pool_parameters
-	: %empty                  { $$ = new std::vector<CstFormalPoolParameter>; }
-	| T_LANGLE T_RANGLE       { $$ = new std::vector<CstFormalPoolParameter>; }
-	| T_LANGLE formal_pool_parameter_list T_RANGLE         { $$ = $2; }
-	| T_LANGLE formal_pool_parameter_list T_COMMA T_RANGLE { $$ = $2; }
-	/* Just make up one for error recovery */
-	| T_LANGLE error T_RANGLE { $$ = new std::vector<CstFormalPoolParameter>; }
+pool_bounds
+	: %empty                        { $$ = new std::vector<CstVariableDecl>; }
+	| T_WHERE variable_declarations { $$ = $2; }
 
-formal_pool_parameter_list
-	: formal_pool_parameter {
-		$$ = new std::vector<CstFormalPoolParameter>;
+variable_declarations
+	: %empty { $$ = new std::vector<CstVariableDecl>; }
+	| variable_declaration_list         { $$ = $1; }
+	| variable_declaration_list T_COMMA { $$ = $1; }
+
+variable_declaration_list
+	: variable_declaration {
+		$$ = new std::vector<CstVariableDecl>;
 		$$->emplace_back(std::move(*$1)); delete $1;
 	}
-	| formal_pool_parameter_list T_COMMA formal_pool_parameter {
-		$$ = $1;
-		$$->emplace_back(std::move(*$3)); delete $3;
-	}
-formal_pool_parameter
-	: identifier T_COLON pool_bound {
-		$$ = new CstFormalPoolParameter;
-		$$->ident = std::move(*$1); delete $1;
-		$$->bound = std::move(*$3); delete $3;
-	}
-
-class_body
-	: T_LBRACE T_RBRACE               { $$ = new CstClassBody; }
-	| T_LBRACE class_members T_RBRACE { $$ = $2;               }
-	| T_LBRACE error T_RBRACE         { $$ = new CstClassBody; }
-
-class_members
-	: field_declaration {
-		$$ = new CstClassBody;
-		$$->fields.emplace_back(std::move(*$1)); delete $1;
-	}
-	| method_declaration {
-		$$ = new CstClassBody;
-		$$->methods.emplace_back(std::move(*$1)); delete $1;
-	}
-	| class_members field_declaration {
-		$$ = $1;
-		$$->fields.emplace_back(std::move(*$2)); delete $2;
-	}
-	| class_members method_declaration {
-		$$ = $1;
-		$$->methods.emplace_back(std::move(*$2)); delete $2;
-	}
-
-field_declaration
-	: T_LET T_LPAREN T_RPAREN T_SEMICOLON { $$ = new CstField; /* TODO */ }
-
-method_declaration
-	: T_FN T_LPAREN T_RPAREN T_LBRACE T_RBRACE { $$ = new CstMethod; /* TODO */ }
-
-pool_bound
-	: T_LSQUARE class_type T_RSQUARE { $$ = $2; $$->is_bound = true; }
-	/* Just make up one for error recovery */
-	| T_LSQUARE error T_RSQUARE      { $$ = new CstClassType; }
-
-layout_definition
-	: T_LAYOUT identifier T_COLON identifier T_EQ recs {
-		$$ = new CstLayout;
-		$$->name       = std::move(*$2); delete $2;
-		$$->class_name = std::move(*$4); delete $4;
-		$$->recs       = std::move(*$6); delete $6;
-	}
-
-recs
-	: T_SEMICOLON          { $$ = new std::vector<CstRec>; }
-	| rec_list T_SEMICOLON { $$ = $1;                      }
-	/* Just make up one for error recovery */
-	| error T_SEMICOLON    { $$ = new std::vector<CstRec>; }
-
-rec_list
-	: rec {
-		$$ = new std::vector<CstRec>;
-		$$->emplace_back(std::move(*$1)); delete $1;
-	}
-	| rec_list T_PLUS rec {
+	| variable_declaration_list T_COMMA variable_declaration {
 		$$ = $1;
 		$$->emplace_back(std::move(*$3)); delete $3;
 	}
 
-rec
-	: T_REC T_LBRACE T_RBRACE                        { $$ = new CstRec; }
-	| T_REC T_LBRACE rec_field_list T_RBRACE         { $$ = $3;         }
-	| T_REC T_LBRACE rec_field_list T_COMMA T_RBRACE { $$ = $3;         }
-	/* Just make up one for error recovery */
-	| T_REC T_LBRACE error T_RBRACE                  { $$ = new CstRec; }
+variable_declaration
+	: identifier T_COLON type {
+		$$ = new CstVariableDecl;
+		$$->name = std::move(*$1); delete $1;
+		$$->type = std::move(*$3); delete $3;
+	}
 
-rec_field_list
-	: identifier {
-		$$ = new CstRec;
-		$$->fields.emplace_back(std::move(*$1)); delete $1;
-	}
-	| rec_field_list T_COMMA identifier {
-		$$ = $1;
-		$$->fields.emplace_back(std::move(*$3)); delete $3;
-	}
+type
+	: class_type { $$ = $1; }
+	| pool_bound { $$ = $1; }
 
 class_type
 	: identifier pool_parameters {
@@ -259,20 +197,104 @@ class_type
 		$$->pool_parameters = std::move(*$2); delete $2;
 	}
 
-pool_parameters
-	: %empty                   { $$ = new std::vector<Identifier>; }
-	| T_LANGLE T_RANGLE        { $$ = new std::vector<Identifier>; }
-	| T_LANGLE pool_parameter_list T_RANGLE         { $$ = $2; }
-	| T_LANGLE pool_parameter_list T_COMMA T_RANGLE { $$ = $2; }
+pool_bound
+	: T_LSQUARE class_type T_RSQUARE { $$ = $2; $$->is_bound = true; }
 	/* Just make up one for error recovery */
-	| T_LANGLE error T_RANGLE  { $$ = new std::vector<Identifier>; }
+	| T_LSQUARE error T_RSQUARE      { $$ = new CstClassType; }
 
-pool_parameter_list
+class_body
+	: T_LBRACE T_RBRACE               { $$ = new CstClassBody; }
+	| T_LBRACE class_members T_RBRACE { $$ = $2;               }
+	| T_LBRACE error T_RBRACE         { $$ = new CstClassBody; }
+
+class_members
+	: field_declarations {
+		$$ = new CstClassBody;
+		for (auto& e: *$1) {
+			$$->fields.emplace_back(std::move(e));
+		}
+		delete $1;
+	}
+	| method_declaration {
+		$$ = new CstClassBody;
+		$$->methods.emplace_back(std::move(*$1)); delete $1;
+	}
+	| class_members field_declarations {
+		$$ = $1;
+		for (auto& e: *$2) {
+			$$->fields.emplace_back(std::move(e));
+		}
+		delete $2;
+	}
+	| class_members method_declaration {
+		$$ = $1;
+		$$->methods.emplace_back(std::move(*$2)); delete $2;
+	}
+
+pool_parameters
+	: %empty                        { $$ = new std::vector<Identifier>; }
+	| T_LANGLE identifiers T_RANGLE { $$ = $2; }
+	/* Just make up one for error recovery */
+	| T_LANGLE error T_RANGLE       { $$ = new std::vector<Identifier>; }
+
+field_declarations
+	: variable_declarations T_SEMICOLON { $$ = $1; }
+
+method_declaration
+	: T_FN T_IDENT method_arguments T_LBRACE T_RBRACE {
+		$$ = new CstMethod; /* TODO */
+		$$->name      = std::move(*$2); delete $2;
+		$$->arguments = std::move(*$3); delete $3;
+	}
+
+method_arguments
+	: T_LPAREN variable_declarations T_RPAREN { $$ = $2; }
+	/* Just make up one for error recovery */
+	| T_LPAREN error T_RPAREN { $$ = new std::vector<CstVariableDecl>; }
+
+layout_definition
+	: T_LAYOUT identifier T_COLON identifier T_EQ clusters {
+		$$ = new CstLayout;
+		$$->name       = std::move(*$2); delete $2;
+		$$->class_name = std::move(*$4); delete $4;
+		$$->clusters   = std::move(*$6); delete $6;
+	}
+
+clusters
+	: T_SEMICOLON              { $$ = new std::vector<CstCluster>; }
+	| cluster_list T_SEMICOLON { $$ = $1;                          }
+	/* Just make up one for error recovery */
+	| error T_SEMICOLON        { $$ = new std::vector<CstCluster>; }
+
+cluster_list
+	: cluster {
+		$$ = new std::vector<CstCluster>;
+		$$->emplace_back(std::move(*$1)); delete $1;
+	}
+	| cluster_list T_PLUS cluster {
+		$$ = $1;
+		$$->emplace_back(std::move(*$3)); delete $3;
+	}
+
+cluster
+	: T_REC T_LBRACE identifiers T_RBRACE {
+		$$ = new CstCluster;
+		$$->fields = std::move(*$3); delete $3;
+	}
+	/* Just make up one for error recovery */
+	| T_REC T_LBRACE error T_RBRACE { $$ = new CstCluster; }
+
+identifiers
+	: %empty                  { $$ = new std::vector<Identifier>; }
+	| identifier_list         { $$ = $1;                          }
+	| identifier_list T_COMMA { $$ = $1; }
+
+identifier_list
 	: identifier {
 		$$ = new std::vector<Identifier>;
 		$$->emplace_back(std::move(*$1)); delete $1;
 	}
-	| pool_parameter_list T_COMMA identifier {
+	| identifier_list T_COMMA identifier {
 		$$ = $1;
 		$$->emplace_back(std::move(*$3)); delete $3;
 	}
@@ -285,6 +307,7 @@ identifier
 	}
 	/* These rules allow someone to use keywords as identifiers */
 	| T_CLASS  { $$ = new Identifier("class",  yyltype_to_location(@1)); }
+	| T_WHERE  { $$ = new Identifier("where",  yyltype_to_location(@1)); }
 	| T_LAYOUT { $$ = new Identifier("layout", yyltype_to_location(@1)); }
 	| T_REC    { $$ = new Identifier("rec",    yyltype_to_location(@1)); }
 	| T_POOL   { $$ = new Identifier("pool",   yyltype_to_location(@1)); }

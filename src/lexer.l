@@ -21,6 +21,7 @@ ALNUM [0-9a-zA-Z_]
 %%
 
 "class"  { return T_CLASS;  }
+"where"  { return T_WHERE;  }
 "layout" { return T_LAYOUT; }
 "pool"   { return T_POOL;   }
 "rec"    { return T_REC;    }

@@ -21,7 +21,7 @@ flex_target(lexer src/lexer.l
 bison_target(parser src/parser.y
     ${FLEX_BISON_GENFILES_DIR}/parser.cpp
     DEFINES_FILE ${FLEX_BISON_GENFILES_DIR}/parser.tab.h
-    COMPILE_FLAGS "-Wall -v")
+    COMPILE_FLAGS -Wall)
 add_flex_bison_dependency(lexer parser)
 
 add_library(shapes_parser ${FLEX_lexer_OUTPUTS} ${BISON_parser_OUTPUTS})

@@ -54,37 +54,34 @@ struct CstClassType
 	CstClassType() = default;
 };
 
-struct CstFormalPoolParameter
+struct CstVariableDecl
 {
-	Identifier ident;
-	CstClassType bound;
-};
-
-struct CstField
-{
-	// TODO
+	Identifier name;
+	CstClassType type; // TODO: Handle polymorphism
 };
 
 struct CstMethod
 {
-	// TODO
+	Identifier name;
+	std::vector<CstVariableDecl> arguments;
 };
 
 struct CstClass
 {
 	Identifier name;
-	std::vector<CstFormalPoolParameter> formal_pool_parameters;
-	std::vector<CstField> fields;
+	std::vector<Identifier> pool_parameters;
+	std::vector<CstVariableDecl> pool_bounds;
+	std::vector<CstVariableDecl> fields;
 	std::vector<CstMethod> methods;
 };
 
 struct CstClassBody
 {
-	std::vector<CstField> fields;
+	std::vector<CstVariableDecl> fields;
 	std::vector<CstMethod> methods;
 };
 
-struct CstRec
+struct CstCluster
 {
 	std::vector<Identifier> fields;
 };
@@ -93,7 +90,7 @@ struct CstLayout
 {
 	Identifier name;
 	Identifier class_name;
-	std::vector<CstRec> recs;
+	std::vector<CstCluster> clusters;
 };
 
 struct Cst
