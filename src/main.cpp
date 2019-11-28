@@ -21,13 +21,6 @@ int main(int argc, char** argv)
 	
 	{
 		yyscan_t scanner;
-#if 0
-		int err = yylex_init_extra(&ast, &scanner);
-		if (err != 0) {
-			fclose(in);
-			return EXIT_FAILURE;
-		}
-#endif
 		yylex_init(&scanner);
 		yyset_in(in, scanner);
 

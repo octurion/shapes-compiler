@@ -21,12 +21,46 @@ ALNUM [0-9a-zA-Z_]
 %%
 
 "class"  { return T_CLASS;  }
+"export" { return T_EXPORT; }
 "where"  { return T_WHERE;  }
 "layout" { return T_LAYOUT; }
 "pool"   { return T_POOL;   }
+"pools"  { return T_POOLS;  }
 "rec"    { return T_REC;    }
 "let"    { return T_LET;    }
 "fn"     { return T_FN;     }
+"none"   { return T_NONE;   }
+
+"if"       { return T_IF;       }
+"else"     { return T_ELSE;     }
+"for"      { return T_FOR;      }
+"foreach"  { return T_FOREACH;  }
+"simd"     { return T_SIMD;     }
+"while"    { return T_WHILE;    }
+"break"    { return T_BREAK;    }
+"continue" { return T_CONTINUE; }
+"return"   { return T_RETURN;   }
+
+"new"  { return T_NEW;  }
+"null" { return T_NULL; }
+"this" { return T_THIS; }
+"as"   { return T_AS;   }
+
+"uniform" { return T_UNIFORM; }
+"varying" { return T_VARYING; }
+
+"void" { return T_VOID; }
+"bool" { return T_BOOL; }
+"i8"   { return T_I8;   }
+"u8"   { return T_U8;   }
+"i16"  { return T_I16;  }
+"u16"  { return T_U16;  }
+"i32"  { return T_I32;  }
+"u32"  { return T_U32;  }
+"i64"  { return T_I64;  }
+"u64"  { return T_U64;  }
+"f32"  { return T_F32;  }
+"f64"  { return T_F64;  }
 
 {ALPHA}{ALNUM}* {
 	// It's Bison that's going to set up the location properly
@@ -34,13 +68,52 @@ ALNUM [0-9a-zA-Z_]
 	return T_IDENT;
 }
 
-"=" { return T_EQ; }
+{DIGIT}+ {
+	// It's Bison that's going to set up the location properly
+	yylval->num = new Number(std::string(yytext, yyleng), Location());
+	return T_NUM;
+}
 
-"+" { return T_PLUS; }
+"==" { return T_EQ; }
+"!=" { return T_NE; }
+
+"<=" { return T_GE; }
+">=" { return T_LE; }
+
+"+=" { return T_PLUS_ASSIGN;  }
+"-=" { return T_MINUS_ASSIGN; }
+"*=" { return T_TIMES_ASSIGN; }
+"/=" { return T_DIV_ASSIGN;   }
+
+"&=" { return T_AND_ASSIGN; }
+"|=" { return T_OR_ASSIGN;  }
+"^=" { return T_XOR_ASSIGN; }
+
+"<<=" { return T_SHL_ASSIGN; }
+">>=" { return T_SHR_ASSIGN; }
+
+"+" { return T_PLUS;  }
+"-" { return T_MINUS; }
+"*" { return T_TIMES; }
+"/" { return T_DIV;   }
+
+"&&" { return T_LAND; }
+"||" { return T_LOR;  }
+"!"  { return T_NOT; }
+
+"&" { return T_AND; }
+"|" { return T_OR;  }
+"^" { return T_XOR; }
+
+"<<" { return T_SHL; }
+">>" { return T_SHR; }
+
+".." { return T_DOTDOT; }
 
 "," { return T_COMMA;     }
 ":" { return T_COLON;     }
 ";" { return T_SEMICOLON; }
+"." { return T_DOT; }
 
 "<" { return T_LANGLE; }
 ">" { return T_RANGLE; }
@@ -53,6 +126,8 @@ ALNUM [0-9a-zA-Z_]
 
 "{" { return T_LBRACE; }
 "}" { return T_RBRACE; }
+
+"="  { return T_ASSIGN;   }
 
 [\t\r\n ] ;
 
