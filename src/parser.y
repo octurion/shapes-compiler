@@ -3,10 +3,13 @@
 #include "parser.tab.h"
 #include "lexer.yy.h"
 
+#include <climits>
+#include <cstdlib>
+
 extern void yyerror(
 	YYLTYPE* loc,
 	yyscan_t state,
-	Cst* cst,
+	Ast* ast,
 	ErrorList* errors,
 	const char* msg);
 
@@ -17,12 +20,12 @@ static Location yyltype_to_location(YYLTYPE orig_loc);
 %locations
 
 %lex-param {yyscan_t scanner}
-%parse-param {yyscan_t scanner} {Cst* cst} {ErrorList* errors}
+%parse-param {yyscan_t scanner} {Ast* ast} {ErrorList* errors}
 
 %define parse.error verbose
 
 %union {
-	Cst* cst;
+	Ast* ast;
 
 	Class*  class_definition;
 	Layout* layout_definition;
@@ -87,7 +90,6 @@ static Location yyltype_to_location(YYLTYPE orig_loc);
 %token T_NEW  "new"
 %token T_NULL "null"
 %token T_THIS "this"
-%token T_AS   "as"
 %token T_NONE "none"
 
 %token T_UNIFORM "uniform"
@@ -160,7 +162,7 @@ static Location yyltype_to_location(YYLTYPE orig_loc);
 %token T_UNRECOGNIZED "unrecognized token"
 %token T_END 0        "end of file"
 
-%type<cst> program_definitions
+%type<ast> program_definitions
 
 %type<class_definition>  class_definition
 %type<layout_definition> layout_definition
@@ -231,10 +233,10 @@ typedef void* yyscan_t;
  */
 
 program
-	: program_definitions T_END { *cst = std::move(*$1); delete $1; }
+	: program_definitions T_END { *ast = std::move(*$1); delete $1; }
 
 program_definitions
-	: %empty { $$ = new Cst; }
+	: %empty { $$ = new Ast; }
 	| program_definitions class_definition {
 		$$ = $1;
 		$$->classes.emplace_back(std::move(*$2)); delete $2;
@@ -293,9 +295,6 @@ type
 	| T_LSQUARE error T_RSQUARE {
 		$$ = new InvalidType;
 	}
-	| T_AND type {
-		$$ = new ReferenceType($2);
-	}
 	| T_BOOL { $$ = new PrimitiveType(PrimitiveKind::BOOL); }
 	| T_I8   { $$ = new PrimitiveType(PrimitiveKind::I8);   }
 	| T_U8   { $$ = new PrimitiveType(PrimitiveKind::U8);   }
@@ -335,34 +334,27 @@ expr
 	| expr T_EQ     expr { $$ = new BinaryExpr($1, BinOp::EQ,    $3); }
 	| expr T_NE     expr { $$ = new BinaryExpr($1, BinOp::NE,    $3); }
 
-	| expr T_LSQUARE expr T_RSQUARE { $$ = new IndexExpr($1, $3); }
-	| expr T_LSQUARE error T_RSQUARE {
-		// Just make up one for error recovery
-		$$ = new IndexExpr($1, new IntConst(0));
-	}
 	| expr T_DOT identifier { $$ = new FieldExpr($1, std::move(*$3)); delete $3; }
-/*
-	| expr T_DOT identifier T_LPAREN expr_list T_RPAREN { $$ = $1; }
-	| expr T_DOT identifier T_LPAREN error T_RPAREN { $$ = $1; }
-*/
+
+	/* TODO: none keyword */
 	| identifier { $$ = new IdentifierExpr(std::move(*$1)); delete $1; }
-	| expr T_AS type {
-		$$ = new CastExpr($1, $3);
-	}
 	| T_NEW type {
 		$$ = new NewExpr($2);
 	}
 	| T_NUM {
-		$$ = new IntConst(0); delete $1; // TODO: Handle integers
+		errno = 0;
+		const char* str = $1->num.c_str();
+		char* endptr;
+		unsigned long long value = strtoull(str, &endptr, 10);
+		if (endptr == str || *endptr != '\0' || (errno == ERANGE && value == ULLONG_MAX)) {
+			errors->syntax_errors.emplace_back("Not a valid 64-bit integer", yyltype_to_location(@1));
+			value = 0;
+		}
+
+		$$ = new IntConst(value); delete $1;
 	}
 	| T_THIS { $$ = new ThisExpr; }
 	| T_NULL { $$ = new NullExpr; }
-
-/*
-expr_list
-	: %empty
-	| expr_list T_COMMA expr
-*/
 
 stmt
 	: block_stmt  { $$ = $1; }
@@ -567,12 +559,12 @@ identifier
 void yyerror(
 	YYLTYPE* orig_loc,
 	yyscan_t state,
-	Cst* cst,
+	Ast* ast,
 	ErrorList* errors,
 	const char* msg)
 {
 	(void) state;
-	(void) cst;
+	(void) ast;
 
 	Location loc;
 	loc.first_line   = orig_loc->first_line;

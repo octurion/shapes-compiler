@@ -18,27 +18,37 @@ int main(int argc, char** argv)
 		perror(argv[1]);
 		return EXIT_FAILURE;
 	}
+
+	Ast ast;
+	ErrorList errors;
 	
-	{
-		yyscan_t scanner;
-		yylex_init(&scanner);
-		yyset_in(in, scanner);
+	yyscan_t scanner;
+	yylex_init(&scanner);
+	yyset_in(in, scanner);
 
-		Cst cst;
-		ErrorList errors;
+	yyparse(scanner, &ast, &errors);
 
-		yyparse(scanner, &cst, &errors);
+	yylex_destroy(scanner);
 
-		yylex_destroy(scanner);
+	if (!errors.syntax_errors.empty()) {
+		for (const auto& e: errors.syntax_errors) {
+			const auto& loc = e.loc;
+			fprintf(stderr, "Parse error (%d,%d - %d,%d): %s\n",
+					loc.first_line, loc.first_column,
+					loc.last_line,  loc.last_column,
+					e.message.c_str());
+		}
+	}
 
-		if (!errors.syntax_errors.empty()) {
-			for (const auto& e: errors.syntax_errors) {
-				const auto& loc = e.loc;
-				fprintf(stderr, "Parse error (%d,%d - %d,%d): %s\n",
-						loc.first_line, loc.first_column,
-						loc.last_line,  loc.last_column,
-						e.message.c_str());
-			}
+	run_semantic_analysis(ast, errors);
+
+	if (!errors.semantic_errors.empty()) {
+		for (const auto& e: errors.semantic_errors) {
+			const auto& loc = e.loc;
+			fprintf(stderr, "Semantic error (%d,%d - %d,%d): %s\n",
+					loc.first_line, loc.first_column,
+					loc.last_line,  loc.last_column,
+					e.message.c_str());
 		}
 	}
 

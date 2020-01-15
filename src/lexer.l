@@ -44,7 +44,6 @@ ALNUM [0-9a-zA-Z_]
 "new"  { return T_NEW;  }
 "null" { return T_NULL; }
 "this" { return T_THIS; }
-"as"   { return T_AS;   }
 
 "uniform" { return T_UNIFORM; }
 "varying" { return T_VARYING; }
