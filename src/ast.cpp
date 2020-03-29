@@ -2,6 +2,25 @@
 
 struct SimpleVisitor: public Visitor
 {
+	virtual void visit(Identifier&) override { }
+	virtual void visit(Number&)     override { }
+	virtual void visit(VariableDecl& decl) override
+	{
+		decl.type->accept(*this);
+	};
+
+	virtual void visit(InvalidType&)   override { }
+	virtual void visit(VoidType&)      override { };
+	virtual void visit(PrimitiveType&) override { };
+	virtual void visit(TmpClassType&)  override { };
+	virtual void visit(ClassType&)     override { };
+	virtual void visit(LayoutType&)    override { };
+	virtual void visit(BoundType&)     override { };
+
+	virtual void visit(InvalidExpr&) override { };
+	virtual void visit(ThisExpr&)    override { };
+	virtual void visit(NullExpr&)    override { };
+
 	virtual void visit(BinaryExpr& e) override {
 		e.lhs->accept(*this);
 		e.rhs->accept(*this);
@@ -11,6 +30,17 @@ struct SimpleVisitor: public Visitor
 	}
 	virtual void visit(FieldExpr& e) override {
 		e.expr->accept(*this);
+	}
+	virtual void visit(IdentifierExpr&) override { };
+	virtual void visit(IntConst&)       override { };
+	virtual void visit(NewExpr&)        override { };
+
+	virtual void visit(NoopStmt&) override { };
+	virtual void visit(VariableDeclsStmt& stmt) override
+	{
+		for (auto& e: stmt.decls) {
+			e.accept(*this);
+		}
 	}
 	virtual void visit(AssignStmt& stmt) override {
 		stmt.lhs->accept(*this);
@@ -44,27 +74,58 @@ struct SimpleVisitor: public Visitor
 	virtual void visit(ExprStmt& stmt) override {
 		stmt.expr->accept(*this);
 	}
+	virtual void visit(BreakStmt&)      override { }
+	virtual void visit(ContinueStmt&)   override { }
+	virtual void visit(ReturnVoidStmt&) override { }
 	virtual void visit(ReturnStmt& stmt) override {
 		stmt.expr->accept(*this);
 	}
+
+	virtual void visit(Method& method) override {
+		for (auto& e: method.ast_arguments) {
+			e->accept(*this);
+		}
+		for (auto& e: method.statements) {
+			e->accept(*this);
+		}
+	}
+	virtual void visit(Class& clazz) override {
+		for (auto& e: clazz.ast_pool_parameters) {
+			e.second.accept(*this);
+		}
+		for (auto& e: clazz.ast_fields) {
+			e.second->accept(*this);
+		}
+		for (auto& e: clazz.ast_methods) {
+			e.second->accept(*this);
+		}
+	}
+	virtual void visit(Field&) override { }
+	virtual void visit(Layout& layout) override
+	{
+		for (auto& e: layout.clusters) {
+			e.accept(*this);
+		}
+	}
+	virtual void visit(Cluster&) override { }
+
+	virtual void visit(Ast& ast) override
+	{
+		for (auto e: ast.ast_classes) {
+			e.second->accept(*this);
+		}
+		for (auto e: ast.ast_layouts) {
+			e.second->accept(*this);
+		}
+	}
 };
 
-struct Scope
+struct ClassCheckVisitor: public SimpleVisitor
 {
-	struct Scope* previous_scope = nullptr;
-	std::unordered_map<std::string, VariableDecl*> locals_mappings;
-	std::unordered_map<std::string, VariableDecl*> pool_mappings;
-};
-
-struct ClassCheckVisitor: public Visitor
-{
-	bool passed = true;
 	ErrorList& errors;
 
 	Ast* the_ast = nullptr;
 	Class* curr_class = nullptr;
-
-	Scope* curr_scope = nullptr;
 
 	virtual void visit(Ast& ast) override {
 		the_ast = &ast;
@@ -72,7 +133,6 @@ struct ClassCheckVisitor: public Visitor
 			auto it = ast.ast_classes.emplace(e.name.ident, &e);
 			if (!it.second) {
 				errors.semantic_errors.emplace_back("Duplicate class definition", e.name.loc);
-				passed = false;
 				continue;
 			}
 
@@ -89,7 +149,6 @@ struct ClassCheckVisitor: public Visitor
 		curr_class = &clazz;
 		if (clazz.pool_parameters.empty()) {
 			errors.semantic_errors.emplace_back("Classes with no pool parameters are not yet supported", clazz.name.loc);
-			passed = false;
 			return;
 		}
 
@@ -98,7 +157,6 @@ struct ClassCheckVisitor: public Visitor
 			auto it = pool_params.emplace(e.ident, VariableDecl(e));
 			if (!it.second) {
 				errors.semantic_errors.emplace_back("Duplicate pool parameter definition", e.loc);
-				passed = false;
 			}
 		}
 		std::unordered_set<VariableDecl*> used;
@@ -106,12 +164,11 @@ struct ClassCheckVisitor: public Visitor
 			auto it = pool_params.find(e.name.ident);
 			if (it == pool_params.end()) {
 				errors.semantic_errors.emplace_back("No such pool parameter found", e.name.loc);
-				passed = false;
+				continue;
 			}
 			auto used_it = used.insert(&it->second);
 			if (!used_it.second) {
 				errors.semantic_errors.emplace_back("Pool parameter bound declared more than once", e.name.loc);
-				passed = false;
 			}
 		}
 
@@ -120,7 +177,6 @@ struct ClassCheckVisitor: public Visitor
 			auto it = fields.emplace(e.name.ident, &e);
 			if (!it.second) {
 				errors.semantic_errors.emplace_back("Duplicate field definition", e.name.loc);
-				passed = false;
 			}
 		}
 
@@ -129,23 +185,11 @@ struct ClassCheckVisitor: public Visitor
 			auto it = methods.emplace(e.name.ident, &e);
 			if (!it.second) {
 				errors.semantic_errors.emplace_back("Duplicate method definition", e.name.loc);
-				passed = false;
 			}
 
 			e.accept(*this);
 		}
 		curr_class = nullptr;
-	}
-
-	virtual void visit(Method& method) override {
-		Scope top_scope;
-		curr_scope = &top_scope;
-
-		for (auto& e: method.arguments) {
-			// TODO
-		}
-
-		curr_scope = nullptr;
 	}
 
 	virtual void visit(Layout& layout) override {
@@ -154,20 +198,17 @@ struct ClassCheckVisitor: public Visitor
 		auto class_clash_it = the_ast->ast_classes.find(name);
 		if (class_clash_it != the_ast->ast_classes.end()) {
 			errors.semantic_errors.emplace_back("Layout has same name with class", loc);
-			passed = false;
 		}
 
 		auto it = the_ast->ast_layouts.emplace(name, &layout);
 		if (!it.second) {
 			errors.semantic_errors.emplace_back("Duplicate layout definition", loc);
-			passed = false;
 			return;
 		}
 
 		auto class_it = the_ast->ast_classes.find(layout.class_name.ident);
 		if (class_it == the_ast->ast_classes.end()) {
 			errors.semantic_errors.emplace_back("No such class exists", layout.class_name.loc);
-			passed = false;
 			return;
 		}
 		layout.clazz = class_it->second;
@@ -177,28 +218,24 @@ struct ClassCheckVisitor: public Visitor
 
 		if (layout.clusters.empty()) {
 			errors.semantic_errors.emplace_back("Layout has no clusters", layout.name.loc);
-			passed = false;
 			return;
 		}
 
 		for (auto& c: layout.clusters) {
 			if (c.fields.empty()) {
 				errors.semantic_errors.emplace_back("Layout has an empty cluster", layout.name.loc);
-				passed = false;
 			}
 
 			for (auto& f: c.fields) {
 				auto field_it = fields.find(f.ident);
 				if (field_it == fields.end()) {
 					errors.semantic_errors.emplace_back("Respective class has no such field", f.loc);
-					passed = false;
 					continue;
 				}
 
 				c.field_refs.push_back(field_it->second);
 				if (!used_fields.insert(field_it->second).second) {
 					errors.semantic_errors.emplace_back("Field defined more than once in cluster", f.loc);
-					passed = false;
 					continue;
 				}
 			}
@@ -206,7 +243,6 @@ struct ClassCheckVisitor: public Visitor
 
 		if (used_fields.size() != fields.size()) {
 			errors.semantic_errors.emplace_back("Not all fields have been used", layout.name.loc);
-			passed = false;
 		}
 	}
 
@@ -215,11 +251,123 @@ struct ClassCheckVisitor: public Visitor
 	{}
 };
 
+struct LocalsScope
+{
+	struct LocalScope* prev = nullptr;
+	std::unordered_map<std::string, VariableDecl*> mappings;
+};
+
+struct PoolsScope {
+	struct PoolsScope* prev = nullptr;
+	std::unordered_map<std::string, VariableDecl*> mappings;
+};
+
+struct VariableCheckVisitor: public SimpleVisitor
+{
+	ErrorList& errors;
+
+	Ast* the_ast = nullptr;
+	Class* curr_class = nullptr;
+
+	LocalsScope* curr_locals = nullptr;
+	PoolsScope* curr_pools = nullptr;
+
+	virtual void visit(Class& clazz) override
+	{
+		for (auto& e: clazz.pool_bounds) {
+			auto param = clazz.ast_pool_parameters.find(e.name.ident);
+			if (param == clazz.ast_pool_parameters.end()) {
+				errors.semantic_errors.emplace_back("No pool parameter with this name exists", e.name.loc);
+				continue;
+			}
+			auto* type = static_cast<TmpClassType*>(e.type.get());
+
+			if (type->kind != TmpClassType::Kind::BOUND) {
+				errors.semantic_errors.emplace_back("Not a pool bound", type->name.loc);
+				continue;
+			}
+
+			std::unique_ptr<BoundType> proper_type(new BoundType);
+
+			auto it = the_ast->ast_classes.find(type->name.ident);
+			if (it == the_ast->ast_classes.end()) {
+				errors.semantic_errors.emplace_back("No class with this name exists", type->name.loc);
+				continue;
+			}
+			proper_type->clazz = it->second;
+
+			for (auto& param: type->pool_parameters) {
+				auto it = clazz.ast_pool_parameters.find(param.ident);
+				if (it == clazz.ast_pool_parameters.end()) {
+					errors.semantic_errors.emplace_back("No pool parameter with this name exists", param.loc);
+					continue;
+				}
+
+				proper_type->pool_parameters.push_back(&it->second);
+			}
+			param->second.type = std::move(proper_type);
+		}
+
+		for (auto& e: clazz.ast_fields) {
+			auto* type = static_cast<TmpClassType*>(e.second->type.get());
+			if (type->kind != TmpClassType::Kind::CLASS_LAYOUT) {
+				errors.semantic_errors.emplace_back("Not a pool bound", type->name.loc);
+				continue;
+			}
+
+			std::unique_ptr<ClassType> proper_type(new ClassType);
+
+			auto it = the_ast->ast_classes.find(type->name.ident);
+			if (it == the_ast->ast_classes.end()) {
+				errors.semantic_errors.emplace_back("No class with this name exists", type->name.loc);
+				continue;
+			}
+			proper_type->clazz = it->second;
+
+			for (auto& param: type->pool_parameters) {
+				auto it = clazz.ast_pool_parameters.find(param.ident);
+				if (it == clazz.ast_pool_parameters.end()) {
+					errors.semantic_errors.emplace_back("No pool parameter with this name exists", param.loc);
+					continue;
+				}
+
+				proper_type->pool_parameters.push_back(&it->second);
+			}
+			e.second->type = std::move(proper_type);
+		}
+
+		for (auto& e: clazz.ast_methods) {
+			e.second->accept(*this);
+		}
+	}
+
+	virtual void visit(Method& method) override
+	{
+
+	}
+
+	virtual void visit(Ast& ast) override
+	{
+		the_ast = &ast;
+		SimpleVisitor::visit(ast);
+	}
+
+	VariableCheckVisitor(ErrorList& errors)
+		: errors(errors)
+	{ }
+};
+
 void run_semantic_analysis(Ast& ast, ErrorList& errors)
 {
 	ClassCheckVisitor class_visitor(errors);
 	class_visitor.visit(ast);
-	if (!class_visitor.passed) {
+	if (!errors.semantic_errors.empty()) {
+		return;
+	}
+
+	VariableCheckVisitor vars_visitor(errors);
+	vars_visitor.visit(ast);
+	if (!errors.semantic_errors.empty()) {
 		return;
 	}
 }

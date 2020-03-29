@@ -13,6 +13,7 @@
 
 constexpr size_t NONE_IDENT = -1;
 
+//
 struct Location {
 	int first_line = 1;
 	int first_column = 1;
@@ -20,6 +21,7 @@ struct Location {
 	int last_column = 1;
 };
 
+//
 struct SyntaxError
 {
 	std::string message;
@@ -96,50 +98,50 @@ struct Ast;
 
 struct Visitor
 {
-	virtual void visit(Identifier&)   { }
-	virtual void visit(Number&)       { }
-	virtual void visit(VariableDecl&) { }
+	virtual void visit(Identifier&)   = 0;
+	virtual void visit(Number&)       = 0;
+	virtual void visit(VariableDecl&) = 0;
 
-	virtual void visit(InvalidType&)   { }
-	virtual void visit(VoidType&)      { }
-	virtual void visit(PrimitiveType&) { }
-	virtual void visit(TmpClassType&)  { }
-	virtual void visit(ClassType&)     { }
-	virtual void visit(LayoutType&)    { }
-	virtual void visit(BoundType&)     { }
+	virtual void visit(InvalidType&)   = 0;
+	virtual void visit(VoidType&)      = 0;
+	virtual void visit(PrimitiveType&) = 0;
+	virtual void visit(TmpClassType&)  = 0;
+	virtual void visit(ClassType&)     = 0;
+	virtual void visit(LayoutType&)    = 0;
+	virtual void visit(BoundType&)     = 0;
 
-	virtual void visit(InvalidExpr&)    { }
-	virtual void visit(ThisExpr&)       { }
-	virtual void visit(NullExpr&)       { }
-	virtual void visit(BinaryExpr&)     { }
-	virtual void visit(UnaryExpr&)      { }
-	virtual void visit(FieldExpr&)      { }
-	virtual void visit(IdentifierExpr&) { }
-	virtual void visit(IntConst&)       { }
-	virtual void visit(NewExpr&)        { }
+	virtual void visit(InvalidExpr&)    = 0;
+	virtual void visit(ThisExpr&)       = 0;
+	virtual void visit(NullExpr&)       = 0;
+	virtual void visit(BinaryExpr&)     = 0;
+	virtual void visit(UnaryExpr&)      = 0;
+	virtual void visit(FieldExpr&)      = 0;
+	virtual void visit(IdentifierExpr&) = 0;
+	virtual void visit(IntConst&)       = 0;
+	virtual void visit(NewExpr&)        = 0;
 
-	virtual void visit(NoopStmt&)          { }
-	virtual void visit(VariableDeclsStmt&) { }
-	virtual void visit(AssignStmt&)        { }
-	virtual void visit(OpAssignStmt&)      { }
-	virtual void visit(IfStmt&)            { }
-	virtual void visit(WhileStmt&)         { }
-	virtual void visit(ForeachRangeStmt&)  { }
-	virtual void visit(ForeachPoolStmt&)   { }
-	virtual void visit(BlockStmt&)         { }
-	virtual void visit(ExprStmt&)          { }
-	virtual void visit(BreakStmt&)         { }
-	virtual void visit(ContinueStmt&)      { }
-	virtual void visit(ReturnVoidStmt&)    { }
-	virtual void visit(ReturnStmt&)        { }
+	virtual void visit(NoopStmt&)          = 0;
+	virtual void visit(VariableDeclsStmt&) = 0;
+	virtual void visit(AssignStmt&)        = 0;
+	virtual void visit(OpAssignStmt&)      = 0;
+	virtual void visit(IfStmt&)            = 0;
+	virtual void visit(WhileStmt&)         = 0;
+	virtual void visit(ForeachRangeStmt&)  = 0;
+	virtual void visit(ForeachPoolStmt&)   = 0;
+	virtual void visit(BlockStmt&)         = 0;
+	virtual void visit(ExprStmt&)          = 0;
+	virtual void visit(BreakStmt&)         = 0;
+	virtual void visit(ContinueStmt&)      = 0;
+	virtual void visit(ReturnVoidStmt&)    = 0;
+	virtual void visit(ReturnStmt&)        = 0;
 
-	virtual void visit(Method&)  { }
-	virtual void visit(Class&)   { }
-	virtual void visit(Field&)   { }
-	virtual void visit(Layout&)  { }
-	virtual void visit(Cluster&) { }
+	virtual void visit(Method&)  = 0;
+	virtual void visit(Class&)   = 0;
+	virtual void visit(Field&)   = 0;
+	virtual void visit(Layout&)  = 0;
+	virtual void visit(Cluster&) = 0;
 
-	virtual void visit(Ast&) { }
+	virtual void visit(Ast&) = 0;
 };
 
 struct BaseVisitable

@@ -1,15 +1,16 @@
-#include "ast.h"
-
 #include "parser.tab.h"
 #include "lexer.yy.h"
 
+#include "cst.h"
+
 #include <cerrno>
 #include <cstdio>
+#include <cstdlib>
 
 int main(int argc, char** argv)
 {
 	if (argc < 2) {
-		fprintf(stderr, "Need an input file\n");
+		fprintf(stderr, "You must specify an input file\n");
 		return EXIT_FAILURE;
 	}
 
@@ -19,27 +20,29 @@ int main(int argc, char** argv)
 		return EXIT_FAILURE;
 	}
 
-	Ast ast;
-	ErrorList errors;
+	Cst::Program cst;
+	Cst::SyntaxErrorList syntax_errors;
 	
 	yyscan_t scanner;
 	yylex_init(&scanner);
 	yyset_in(in, scanner);
 
-	yyparse(scanner, &ast, &errors);
+	yyparse(scanner, &cst, &syntax_errors);
 
 	yylex_destroy(scanner);
 
-	if (!errors.syntax_errors.empty()) {
-		for (const auto& e: errors.syntax_errors) {
-			const auto& loc = e.loc;
-			fprintf(stderr, "Parse error (%d,%d - %d,%d): %s\n",
+	if (syntax_errors.has_errors()) {
+		for (auto it = syntax_errors.begin(); it != syntax_errors.end(); it++) {
+			const auto& e = *it;
+			const auto& loc = e.loc();
+			fprintf(stderr, "Parse error (%d,%d-%d,%d): %s\n",
 					loc.first_line, loc.first_column,
 					loc.last_line,  loc.last_column,
-					e.message.c_str());
+					e.msg().c_str());
 		}
 	}
 
+#if 0
 	run_semantic_analysis(ast, errors);
 
 	if (!errors.semantic_errors.empty()) {
@@ -51,6 +54,7 @@ int main(int argc, char** argv)
 					e.message.c_str());
 		}
 	}
+#endif
 
 	fclose(in);
 	return EXIT_SUCCESS;

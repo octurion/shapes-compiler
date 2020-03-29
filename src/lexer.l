@@ -1,5 +1,5 @@
 %{
-#include "ast.h"
+#include "cst.h"
 #include "parser.tab.h"
 
 #define YY_USER_ACTION update_loc(yylloc, yytext, yyleng);
@@ -48,7 +48,6 @@ ALNUM [0-9a-zA-Z_]
 "uniform" { return T_UNIFORM; }
 "varying" { return T_VARYING; }
 
-"void" { return T_VOID; }
 "bool" { return T_BOOL; }
 "i8"   { return T_I8;   }
 "u8"   { return T_U8;   }
@@ -63,14 +62,14 @@ ALNUM [0-9a-zA-Z_]
 
 {ALPHA}{ALNUM}* {
 	// It's Bison that's going to set up the location properly
-	yylval->ident = new Identifier(std::string(yytext, yyleng), Location());
+	yylval->identifier = new Cst::Identifier(std::string(yytext, yyleng));
 	return T_IDENT;
 }
 
 {DIGIT}+ {
 	// It's Bison that's going to set up the location properly
-	yylval->num = new Number(std::string(yytext, yyleng), Location());
-	return T_NUM;
+	yylval->integer = new Cst::IntegerConst(std::string(yytext, yyleng));
+	return T_INT_CONST;
 }
 
 "==" { return T_EQ; }

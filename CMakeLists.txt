@@ -11,7 +11,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 find_package(FLEX REQUIRED 2.6.0)
 find_package(BISON REQUIRED 3.0.4)
-find_package(LLVM REQUIRED 3.9)
+find_package(LLVM REQUIRED 8.0)
 
 set(FLEX_BISON_GENFILES_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen)
 
@@ -27,13 +27,14 @@ add_flex_bison_dependency(lexer parser)
 add_library(shapes_parser ${FLEX_lexer_OUTPUTS} ${BISON_parser_OUTPUTS})
 target_include_directories(shapes_parser PUBLIC ${FLEX_BISON_GENFILES_DIR} include)
 
-llvm_map_components_to_libnames(LLVM_LIBS support core irreader)
+llvm_map_components_to_libnames(LLVM_LIBS support core irreader passes target
+    x86asmparser x86asmprinter x86codegen x86desc x86info x86utils)
 
-add_executable(shapes src/main.cpp src/ast.cpp)
+add_executable(shapes src/main.cpp)
 
 target_compile_options(shapes PRIVATE -Wall -Wextra -Wpedantic -fdiagnostics-color=always)
-# target_compile_definitions(shapes PRIVATE ${LLVM_DEFINITIONS})
-# target_include_directories(shapes SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS})
+target_compile_definitions(shapes PRIVATE ${LLVM_DEFINITIONS})
+target_include_directories(shapes SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS})
 target_include_directories(shapes PRIVATE include)
 
 target_link_libraries(shapes PRIVATE ${LLVM_LIBS})
