@@ -311,7 +311,8 @@ type
 	| T_LSQUARE error T_RSQUARE {
 		$$ = new Cst::InvalidType;
 	}
-	| T_BOOL { $$ = new Cst::PrimitiveType(Cst::PrimitiveType::Kind::BOOL); }
+	/* TODO: Booleans */
+	/* | T_BOOL { $$ = new Cst::PrimitiveType(Cst::PrimitiveType::Kind::BOOL); } */
 	| T_I8   { $$ = new Cst::PrimitiveType(Cst::PrimitiveType::Kind::I8);   }
 	| T_U8   { $$ = new Cst::PrimitiveType(Cst::PrimitiveType::Kind::U8);   }
 	| T_I16  { $$ = new Cst::PrimitiveType(Cst::PrimitiveType::Kind::I16);  }

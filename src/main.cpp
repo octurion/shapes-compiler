@@ -2,6 +2,7 @@
 #include "lexer.yy.h"
 
 #include "cst.h"
+#include "ast.h"
 
 #include <cerrno>
 #include <cstdio>
@@ -22,7 +23,7 @@ int main(int argc, char** argv)
 
 	Cst::Program cst;
 	Cst::SyntaxErrorList syntax_errors;
-	
+
 	yyscan_t scanner;
 	yylex_init(&scanner);
 	yyset_in(in, scanner);
