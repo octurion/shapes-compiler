@@ -10,10 +10,11 @@ jobs:
   build:
     runs-on: ubuntu-16.04
     steps:
-    - name: install-dependencies
+    - name: Install dependencies
       run: sudo apt-get -y install git cmake g++ flex bison llvm-8-dev ninja
-    - name: build
+    - name: Build
       run: |
+        ls
         mkdir build
         cd build
         cmake -DCMAKE_BUILD_TYPE=Debug -GNinja ..
