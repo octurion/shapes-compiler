@@ -14,7 +14,7 @@ jobs:
       run: sudo apt-get -y install git cmake g++ flex bison llvm-8-dev ninja
     - name: Build
       run: |
-        ls
+        ls -la
         mkdir build
         cd build
         cmake -DCMAKE_BUILD_TYPE=Debug -GNinja ..
