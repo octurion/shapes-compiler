@@ -241,6 +241,7 @@ std::unique_ptr<T> ptr_to_unique(T* ptr) {
 
 %code requires {
 #include "cst.h"
+#include "cst_errors.h"
 
 /* Ugly hack to allow both lex and bison to have yyscan_t as the scanner type */
 #ifndef YY_TYPEDEF_YY_SCANNER_T
@@ -507,7 +508,7 @@ pool_param_list
 	}
 	| T_NONE {
 		$$ = new std::vector<std::unique_ptr<Cst::PoolParameter>>;
-		$$->emplace_back(new Cst::NoneParam);
+		$$->emplace_back(new Cst::NoneParam(yyltype_to_location(@1)));
 	}
 	| pool_param_list T_COMMA identifier {
 		$$ = $1;
@@ -515,7 +516,7 @@ pool_param_list
 	}
 	| pool_param_list T_COMMA T_NONE {
 		$$ = $1;
-		$$->emplace_back(new Cst::NoneParam);
+		$$->emplace_back(new Cst::NoneParam(yyltype_to_location(@3)));
 	}
 
 class_pool_parameters

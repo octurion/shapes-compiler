@@ -120,4 +120,70 @@ public:
 	virtual void visit(const Cst::Program&) = 0;
 };
 
+class DefaultVisitor: public Visitor
+{
+public:
+	template<typename Iter>
+	void visitIter(Iter begin, Iter end)
+	{
+		for (auto it = begin; it != end; it++) {
+			it->accept(*this);
+		}
+	}
+
+	template<typename Iter>
+	void visitPtrIter(Iter begin, Iter end)
+	{
+		for (auto it = begin; it != end; it++) {
+			(*it)->accept(*this);
+		}
+	}
+
+	virtual void visit(const Cst::Identifier&)   override;
+	virtual void visit(const Cst::NoneParam&)    override;
+
+	virtual void visit(const Cst::Variable&)     override;
+
+	virtual void visit(const Cst::BoundType&)     override;
+	virtual void visit(const Cst::PrimitiveType&) override;
+	virtual void visit(const Cst::ClassType&)     override;
+	virtual void visit(const Cst::InvalidType&)   override;
+
+	virtual void visit(const Cst::IntegerConst&)     override;
+	virtual void visit(const Cst::NullExpr&)         override;
+	virtual void visit(const Cst::ThisExpr&)         override;
+	virtual void visit(const Cst::BinaryExpr&)       override;
+	virtual void visit(const Cst::UnaryExpr&)        override;
+	virtual void visit(const Cst::IndexExpr&)        override;
+	virtual void visit(const Cst::IdentifierExpr&)   override;
+	virtual void visit(const Cst::MethodCall&)       override;
+	virtual void visit(const Cst::MemberMethodCall&) override;
+	virtual void visit(const Cst::FieldAccess&)      override;
+	virtual void visit(const Cst::NewExpr&)          override;
+	virtual void visit(const Cst::InvalidExpr&)      override;
+
+	virtual void visit(const Cst::NoopStmt&)          override;
+	virtual void visit(const Cst::VariableDeclsStmt&) override;
+	virtual void visit(const Cst::AssignStmt&)        override;
+	virtual void visit(const Cst::OpAssignStmt&)      override;
+	virtual void visit(const Cst::IfStmt&)            override;
+	virtual void visit(const Cst::WhileStmt&)         override;
+	virtual void visit(const Cst::ForeachRangeStmt&)  override;
+	virtual void visit(const Cst::ForeachPoolStmt&)   override;
+	virtual void visit(const Cst::BlockStmt&)         override;
+	virtual void visit(const Cst::ExprStmt&)          override;
+	virtual void visit(const Cst::BreakStmt&)         override;
+	virtual void visit(const Cst::ContinueStmt&)      override;
+	virtual void visit(const Cst::ReturnStmt&)        override;
+	virtual void visit(const Cst::ReturnVoidStmt&)    override;
+
+	virtual void visit(const Cst::Method&)  override;
+	virtual void visit(const Cst::Class&)   override;
+	virtual void visit(const Cst::Field&)   override;
+	virtual void visit(const Cst::Layout&)  override;
+	virtual void visit(const Cst::Cluster&) override;
+
+	virtual void visit(const Cst::Program&) override;
+};
+
 }

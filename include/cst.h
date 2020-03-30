@@ -60,7 +60,7 @@ class NoneParam: public PoolParameter
 	Location m_loc;
 
 public:
-	explicit NoneParam(const Location& loc = Location())
+	explicit NoneParam(const Location& loc)
 		: m_loc(loc)
 	{}
 
@@ -178,7 +178,7 @@ class NullExpr: public Expr
 	Location m_loc;
 
 public:
-	explicit NullExpr(const Location& loc = Location())
+	explicit NullExpr(const Location& loc)
 		: m_loc(loc)
 	{}
 
@@ -192,7 +192,7 @@ class ThisExpr: public Expr
 	Location m_loc;
 
 public:
-	explicit ThisExpr(const Location& loc = Location())
+	explicit ThisExpr(const Location& loc)
 		: m_loc(loc)
 	{}
 
@@ -212,7 +212,7 @@ public:
 	BinaryExpr(std::unique_ptr<Cst::Expr> lhs,
 			   Cst::BinOp op,
 			   std::unique_ptr<Cst::Expr> rhs,
-			   const Location& loc = Location())
+			   const Location& loc)
 		: m_lhs(std::move(lhs))
 		, m_op(op)
 		, m_rhs(std::move(rhs))
@@ -252,7 +252,7 @@ class UnaryExpr: public Expr
 	Location m_loc;
 
 public:
-	UnaryExpr(Cst::UnOp op, std::unique_ptr<Cst::Expr> expr, const Location& loc = Location())
+	UnaryExpr(Cst::UnOp op, std::unique_ptr<Cst::Expr> expr, const Location& loc)
 		: m_op(op)
 		, m_expr(std::move(expr))
 		, m_loc(loc)
@@ -274,7 +274,7 @@ class IndexExpr: public Expr
 	Location m_loc;
 
 public:
-	IndexExpr(std::unique_ptr<Cst::Expr> expr, std::unique_ptr<Cst::Expr> idx, const Location& loc = Location())
+	IndexExpr(std::unique_ptr<Cst::Expr> expr, std::unique_ptr<Cst::Expr> idx, const Location& loc)
 		: m_expr(std::move(expr))
 		, m_idx(std::move(idx))
 		, m_loc(loc)
@@ -297,7 +297,7 @@ class MethodCall: public Expr
 public:
 	explicit MethodCall(Cst::Identifier name,
 						std::vector<std::unique_ptr<Cst::Expr>> expr,
-						const Location& loc = Location())
+						const Location& loc)
 		: m_name(std::move(name))
 		, m_params(std::move(expr))
 		, m_loc(loc)
@@ -324,7 +324,7 @@ public:
 	MemberMethodCall(std::unique_ptr<Expr> this_expr,
 					 Cst::Identifier name,
 					 std::vector<std::unique_ptr<Cst::Expr>> params,
-					 const Location& loc = Location())
+					 const Location& loc)
 		: m_this_expr(std::move(this_expr))
 		, m_name(std::move(name))
 		, m_params(std::move(params))
@@ -352,7 +352,7 @@ class FieldAccess: public Expr
 public:
 	FieldAccess(std::unique_ptr<Expr> expr,
 				Cst::Identifier field,
-				const Location& loc = Location())
+				const Location& loc)
 		: m_expr(std::move(expr))
 		, m_field(std::move(field))
 		, m_loc(loc)
@@ -374,7 +374,7 @@ class NewExpr: public Expr
 
 public:
 	NewExpr(std::unique_ptr<Type> type,
-			const Location& loc = Location())
+			const Location& loc)
 		: m_type(std::move(type))
 		, m_loc(loc)
 	{}
@@ -593,7 +593,7 @@ class BreakStmt: public Stmt
 	Location m_loc;
 
 public:
-	BreakStmt(const Location& loc = Location())
+	BreakStmt(const Location& loc)
 		: m_loc(loc)
 	{}
 
@@ -607,7 +607,7 @@ class ContinueStmt: public Stmt
 	Location m_loc;
 
 public:
-	ContinueStmt(const Location& loc = Location())
+	ContinueStmt(const Location& loc)
 		: m_loc(loc)
 	{}
 
@@ -635,7 +635,7 @@ class ReturnVoidStmt: public Stmt
 	Location m_loc;
 
 public:
-	explicit ReturnVoidStmt(const Location& loc = Location())
+	explicit ReturnVoidStmt(const Location& loc)
 		: m_loc(loc)
 	{}
 
@@ -837,39 +837,5 @@ public:
 };
 
 #undef DEFINE_VISITOR_DISPATCH
-
-class SyntaxError
-{
-	Location m_loc;
-	std::string m_msg;
-
-public:
-	SyntaxError(const Location& loc, std::string msg)
-		: m_loc(std::move(loc))
-		, m_msg(std::move(msg))
-	{}
-
-	const Location&    loc() const { return m_loc; }
-	const std::string& msg() const { return m_msg; }
-};
-
-class SyntaxErrorList
-{
-	std::vector<SyntaxError> m_list;
-
-public:
-	decltype(m_list)::const_iterator begin() const { return m_list.cbegin(); }
-	decltype(m_list)::const_iterator end()   const { return m_list.cend();   }
-
-	void add(Location loc, std::string msg)
-	{
-		m_list.emplace_back(std::move(loc), std::move(msg));
-	}
-
-	bool has_errors() const
-	{
-		return !m_list.empty();
-	}
-};
 
 }

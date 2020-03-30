@@ -2,7 +2,10 @@
 #include "lexer.yy.h"
 
 #include "cst.h"
+#include "cst_errors.h"
+
 #include "ast.h"
+#include "ast_errors.h"
 
 #include <cerrno>
 #include <cstdio>
@@ -36,17 +39,29 @@ int main(int argc, char** argv)
 		for (auto it = syntax_errors.begin(); it != syntax_errors.end(); it++) {
 			const auto& e = *it;
 			const auto& loc = e.loc();
-			fprintf(stderr, "Parse error (%d,%d-%d,%d): %s\n",
+			fprintf(stderr, "[%d:%d-%d:%d]: %s\n",
 					loc.first_line, loc.first_column,
 					loc.last_line,  loc.last_column,
 					e.msg().c_str());
 		}
+
+		fclose(in);
+		return EXIT_SUCCESS;
 	}
 
-#if 0
-	run_semantic_analysis(ast, errors);
+	Ast::Program ast;
+	Ast::SemanticErrorList errors;
 
-	if (!errors.semantic_errors.empty()) {
+	Ast::run_semantic_analysis(cst, &errors, &ast);
+
+	if (errors.has_errors()) {
+		// TODO: Print semantic errors
+		fprintf(stderr, "We have semantic errors (TODO: Print them)\n");
+
+		fclose(in);
+		return EXIT_SUCCESS;
+	}
+#if 0
 		for (const auto& e: errors.semantic_errors) {
 			const auto& loc = e.loc;
 			fprintf(stderr, "Semantic error (%d,%d - %d,%d): %s\n",

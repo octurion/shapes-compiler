@@ -1,373 +1,469 @@
+#include "cst.h"
 #include "ast.h"
+#include "ast_errors.h"
 
-struct SimpleVisitor: public Visitor
+#include <vector>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
+
+template<typename T, typename... Args>
+std::unique_ptr<T> make_unique(Args&&... args)
 {
-	virtual void visit(Identifier&) override { }
-	virtual void visit(Number&)     override { }
-	virtual void visit(VariableDecl& decl) override
-	{
-		decl.type->accept(*this);
-	};
+	return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
+}
 
-	virtual void visit(InvalidType&)   override { }
-	virtual void visit(VoidType&)      override { };
-	virtual void visit(PrimitiveType&) override { };
-	virtual void visit(TmpClassType&)  override { };
-	virtual void visit(ClassType&)     override { };
-	virtual void visit(LayoutType&)    override { };
-	virtual void visit(BoundType&)     override { };
-
-	virtual void visit(InvalidExpr&) override { };
-	virtual void visit(ThisExpr&)    override { };
-	virtual void visit(NullExpr&)    override { };
-
-	virtual void visit(BinaryExpr& e) override {
-		e.lhs->accept(*this);
-		e.rhs->accept(*this);
-	}
-	virtual void visit(UnaryExpr& e) override {
-		e.expr->accept(*this);
-	}
-	virtual void visit(FieldExpr& e) override {
-		e.expr->accept(*this);
-	}
-	virtual void visit(IdentifierExpr&) override { };
-	virtual void visit(IntConst&)       override { };
-	virtual void visit(NewExpr&)        override { };
-
-	virtual void visit(NoopStmt&) override { };
-	virtual void visit(VariableDeclsStmt& stmt) override
-	{
-		for (auto& e: stmt.decls) {
-			e.accept(*this);
-		}
-	}
-	virtual void visit(AssignStmt& stmt) override {
-		stmt.lhs->accept(*this);
-		stmt.rhs->accept(*this);
-	}
-	virtual void visit(OpAssignStmt& stmt) override {
-		stmt.lhs->accept(*this);
-		stmt.rhs->accept(*this);
-	}
-	virtual void visit(IfStmt& stmt) override {
-		stmt.then_branch->accept(*this);
-		stmt.else_branch->accept(*this);
-	}
-	virtual void visit(WhileStmt& stmt) override {
-		stmt.cond->accept(*this);
-		stmt.body->accept(*this);
-	}
-	virtual void visit(ForeachRangeStmt& stmt) override {
-		stmt.begin->accept(*this);
-		stmt.end->accept(*this);
-		stmt.body->accept(*this);
-	}
-	virtual void visit(ForeachPoolStmt& stmt) override {
-		stmt.body->accept(*this);
-	}
-	virtual void visit(BlockStmt& stmt) override {
-		for (auto& e: stmt.stmts) {
-			e->accept(*this);
-		}
-	}
-	virtual void visit(ExprStmt& stmt) override {
-		stmt.expr->accept(*this);
-	}
-	virtual void visit(BreakStmt&)      override { }
-	virtual void visit(ContinueStmt&)   override { }
-	virtual void visit(ReturnVoidStmt&) override { }
-	virtual void visit(ReturnStmt& stmt) override {
-		stmt.expr->accept(*this);
-	}
-
-	virtual void visit(Method& method) override {
-		for (auto& e: method.ast_arguments) {
-			e->accept(*this);
-		}
-		for (auto& e: method.statements) {
-			e->accept(*this);
-		}
-	}
-	virtual void visit(Class& clazz) override {
-		for (auto& e: clazz.ast_pool_parameters) {
-			e.second.accept(*this);
-		}
-		for (auto& e: clazz.ast_fields) {
-			e.second->accept(*this);
-		}
-		for (auto& e: clazz.ast_methods) {
-			e.second->accept(*this);
-		}
-	}
-	virtual void visit(Field&) override { }
-	virtual void visit(Layout& layout) override
-	{
-		for (auto& e: layout.clusters) {
-			e.accept(*this);
-		}
-	}
-	virtual void visit(Cluster&) override { }
-
-	virtual void visit(Ast& ast) override
-	{
-		for (auto e: ast.ast_classes) {
-			e.second->accept(*this);
-		}
-		for (auto e: ast.ast_layouts) {
-			e.second->accept(*this);
-		}
-	}
-};
-
-struct ClassCheckVisitor: public SimpleVisitor
+class TypeCollector: public Cst::DefaultVisitor
 {
-	ErrorList& errors;
+	Ast::Program* m_ast;
+	Ast::SemanticErrorList* m_errors;
 
-	Ast* the_ast = nullptr;
-	Class* curr_class = nullptr;
+	bool m_limited;
+	Ast::TypeKind m_kind;
 
-	virtual void visit(Ast& ast) override {
-		the_ast = &ast;
-		for (auto& e: ast.classes) {
-			auto it = ast.ast_classes.emplace(e.name.ident, &e);
-			if (!it.second) {
-				errors.semantic_errors.emplace_back("Duplicate class definition", e.name.loc);
-				continue;
-			}
+	bool m_success = false;
+	std::unique_ptr<Ast::Type> m_type;
 
-			e.accept(*this);
+	const Ast::Class* m_class = nullptr;
+	std::vector<const Ast::Pool*> m_pools;
+
+	Ast::PrimitiveType::Kind to_kind(Cst::PrimitiveType::Kind kind)
+	{
+		switch (kind) {
+		case Cst::PrimitiveType::Kind::U8:
+			return Ast::PrimitiveType::Kind::U8;
+		case Cst::PrimitiveType::Kind::U16:
+			return Ast::PrimitiveType::Kind::U16;
+		case Cst::PrimitiveType::Kind::U32:
+			return Ast::PrimitiveType::Kind::U32;
+		case Cst::PrimitiveType::Kind::U64:
+			return Ast::PrimitiveType::Kind::U64;
+		case Cst::PrimitiveType::Kind::I8:
+			return Ast::PrimitiveType::Kind::I8;
+		case Cst::PrimitiveType::Kind::I16:
+			return Ast::PrimitiveType::Kind::I16;
+		case Cst::PrimitiveType::Kind::I32:
+			return Ast::PrimitiveType::Kind::I32;
+		case Cst::PrimitiveType::Kind::I64:
+			return Ast::PrimitiveType::Kind::I64;
+		case Cst::PrimitiveType::Kind::F32:
+			return Ast::PrimitiveType::Kind::F32;
+		case Cst::PrimitiveType::Kind::F64:
+			return Ast::PrimitiveType::Kind::F64;
 		}
 
-		for (auto& e: ast.layouts) {
-			e.accept(*this);
-		}
-		the_ast = nullptr;
+		// Dead code, but it silences gcc
+		return Ast::PrimitiveType::Kind::U8;
 	}
 
-	virtual void visit(Class& clazz) override {
-		curr_class = &clazz;
-		if (clazz.pool_parameters.empty()) {
-			errors.semantic_errors.emplace_back("Classes with no pool parameters are not yet supported", clazz.name.loc);
-			return;
+	template<typename Iter>
+	bool construct_bound(const Cst::Identifier& name, Iter begin, Iter end)
+	{
+		if (m_class == nullptr) {
+			m_errors->add(make_unique<Ast::MissingDefinition>(
+					name.ident(),
+					Ast::ErrorKind::CLASS,
+					name.loc()));
+			return false;
 		}
 
-		auto& pool_params = clazz.ast_pool_parameters;
-		for (auto& e: clazz.pool_parameters) {
-			auto it = pool_params.emplace(e.ident, VariableDecl(e));
-			if (!it.second) {
-				errors.semantic_errors.emplace_back("Duplicate pool parameter definition", e.loc);
-			}
-		}
-		std::unordered_set<VariableDecl*> used;
-		for (auto& e: clazz.pool_bounds) {
-			auto it = pool_params.find(e.name.ident);
-			if (it == pool_params.end()) {
-				errors.semantic_errors.emplace_back("No such pool parameter found", e.name.loc);
-				continue;
-			}
-			auto used_it = used.insert(&it->second);
-			if (!used_it.second) {
-				errors.semantic_errors.emplace_back("Pool parameter bound declared more than once", e.name.loc);
-			}
+		m_pools.clear();
+		visitPtrIter(begin, end);
+
+		if (m_pools.size() != m_class->num_pools()) {
+			m_errors->add(make_unique<Ast::PoolParametersMismatch>(
+					m_class->num_pools(),
+					m_pools.size(),
+					name.loc()));
+			return false;
 		}
 
-		auto& fields = clazz.ast_fields;
-		for (auto& e: clazz.fields) {
-			auto it = fields.emplace(e.name.ident, &e);
-			if (!it.second) {
-				errors.semantic_errors.emplace_back("Duplicate field definition", e.name.loc);
-			}
-		}
-
-		auto& methods = clazz.ast_methods;
-		for (auto& e: clazz.methods) {
-			auto it = methods.emplace(e.name.ident, &e);
-			if (!it.second) {
-				errors.semantic_errors.emplace_back("Duplicate method definition", e.name.loc);
-			}
-
-			e.accept(*this);
-		}
-		curr_class = nullptr;
+		return true;
 	}
 
-	virtual void visit(Layout& layout) override {
-		auto& name = layout.name.ident;
-		auto& loc = layout.name.loc;
-		auto class_clash_it = the_ast->ast_classes.find(name);
-		if (class_clash_it != the_ast->ast_classes.end()) {
-			errors.semantic_errors.emplace_back("Layout has same name with class", loc);
-		}
-
-		auto it = the_ast->ast_layouts.emplace(name, &layout);
-		if (!it.second) {
-			errors.semantic_errors.emplace_back("Duplicate layout definition", loc);
-			return;
-		}
-
-		auto class_it = the_ast->ast_classes.find(layout.class_name.ident);
-		if (class_it == the_ast->ast_classes.end()) {
-			errors.semantic_errors.emplace_back("No such class exists", layout.class_name.loc);
-			return;
-		}
-		layout.clazz = class_it->second;
-
-		std::unordered_set<VariableDecl*> used_fields;
-		auto& fields = layout.clazz->ast_fields;
-
-		if (layout.clusters.empty()) {
-			errors.semantic_errors.emplace_back("Layout has no clusters", layout.name.loc);
-			return;
-		}
-
-		for (auto& c: layout.clusters) {
-			if (c.fields.empty()) {
-				errors.semantic_errors.emplace_back("Layout has an empty cluster", layout.name.loc);
-			}
-
-			for (auto& f: c.fields) {
-				auto field_it = fields.find(f.ident);
-				if (field_it == fields.end()) {
-					errors.semantic_errors.emplace_back("Respective class has no such field", f.loc);
-					continue;
-				}
-
-				c.field_refs.push_back(field_it->second);
-				if (!used_fields.insert(field_it->second).second) {
-					errors.semantic_errors.emplace_back("Field defined more than once in cluster", f.loc);
-					continue;
-				}
-			}
-		}
-
-		if (used_fields.size() != fields.size()) {
-			errors.semantic_errors.emplace_back("Not all fields have been used", layout.name.loc);
-		}
-	}
-
-	ClassCheckVisitor(ErrorList& errors)
-		: errors(errors)
+public:
+	TypeCollector(Ast::Program* ast, Ast::SemanticErrorList* errors)
+		: m_ast(ast)
+		, m_errors(errors)
+		, m_limited(false)
+		, m_kind(Ast::TypeKind::PRIMITIVE)
 	{}
+
+	TypeCollector(Ast::Program* ast,
+				  Ast::SemanticErrorList* errors,
+				  Ast::TypeKind kind)
+		: m_ast(ast)
+		, m_errors(errors)
+		, m_limited(true)
+		, m_kind(kind)
+	{}
+
+	bool success() const { return m_success; }
+	std::unique_ptr<Ast::Type> grab_type() { return std::move(m_type); }
+
+	void visit(const Cst::PrimitiveType& type) override
+	{
+		if (m_limited && m_kind != Ast::TypeKind::PRIMITIVE)
+		{
+			m_errors->add(make_unique<Ast::UnexpectedTypeKind>(
+					Ast::TypeKind::PRIMITIVE, Location())); // TODO: Line information
+			return;
+		}
+
+		m_type = make_unique<Ast::PrimitiveType>(to_kind(type.kind()));
+		m_success = true;
+	}
+
+	void visit(const Cst::ClassType& type) override
+	{
+		if (m_limited && m_kind == Ast::TypeKind::POOL) {
+			auto* layout = m_ast->find_layout(type.class_name().ident());
+			if (layout == nullptr) {
+				m_errors->add(make_unique<Ast::UnexpectedTypeKind>(
+						Ast::TypeKind::POOL, Location())); // TODO: Line information
+				return;
+			}
+			m_class = &layout->klass();
+
+			if (!construct_bound(type.class_name(), type.pool_params_begin(), type.pool_params_end())) {
+				return;
+			}
+			m_type = make_unique<Ast::PoolType>(layout, std::move(m_pools));
+			m_success = true;
+
+			return;
+		}
+
+		if (m_limited && m_kind != Ast::TypeKind::CLASS) {
+			m_errors->add(make_unique<Ast::UnexpectedTypeKind>(
+					Ast::TypeKind::CLASS, Location())); // TODO: Line information
+			return;
+		}
+
+		m_class = m_ast->find_class(type.class_name().ident());
+		if (!construct_bound(type.class_name(), type.pool_params_begin(), type.pool_params_end())) {
+			return;
+		}
+		m_type = make_unique<Ast::ClassType>(m_class, std::move(m_pools));
+		m_success = true;
+	}
+
+	void visit(const Cst::BoundType& type) override
+	{
+		if (!m_limited || m_kind != Ast::TypeKind::BOUND)
+		{
+			m_errors->add(make_unique<Ast::UnexpectedTypeKind>(
+					Ast::TypeKind::BOUND, Location())); // TODO: Line information
+			return;
+		}
+
+		m_class = m_ast->find_class(type.class_name().ident());
+		if (!construct_bound(type.class_name(), type.pool_params_begin(), type.pool_params_end())) {
+			return;
+		}
+
+		m_type = make_unique<Ast::BoundType>(m_class, std::move(m_pools));
+		m_success = true;
+	}
+
+	void visit(const Cst::Identifier& pool_param) override
+	{
+		auto* pool = m_class->find_pool(pool_param.ident());
+		if (pool == nullptr) {
+			m_errors->add(make_unique<Ast::MissingDefinition>(
+					pool_param.ident(),
+					Ast::ErrorKind::POOL,
+					pool_param.loc()));
+			m_pools.emplace_back(nullptr);
+		}
+		m_pools.emplace_back(pool);
+	}
+
+	void visit(const Cst::NoneParam&) override
+	{
+		m_pools.emplace_back(nullptr);
+	}
 };
 
-struct LocalsScope
+struct ClassAndPoolsCollector: public Cst::DefaultVisitor
 {
-	struct LocalScope* prev = nullptr;
-	std::unordered_map<std::string, VariableDecl*> mappings;
-};
+	std::unordered_map<std::string, Ast::Class> class_map;
+	std::vector<const Ast::Class*> classes;
 
-struct PoolsScope {
-	struct PoolsScope* prev = nullptr;
-	std::unordered_map<std::string, VariableDecl*> mappings;
-};
+	std::unordered_map<std::string, Ast::Pool> pool_map;
+	std::vector<const Ast::Pool*> pools;
 
-struct VariableCheckVisitor: public SimpleVisitor
-{
-	ErrorList& errors;
+	Ast::SemanticErrorList* errors;
 
-	Ast* the_ast = nullptr;
-	Class* curr_class = nullptr;
-
-	LocalsScope* curr_locals = nullptr;
-	PoolsScope* curr_pools = nullptr;
-
-	virtual void visit(Class& clazz) override
-	{
-		for (auto& e: clazz.pool_bounds) {
-			auto param = clazz.ast_pool_parameters.find(e.name.ident);
-			if (param == clazz.ast_pool_parameters.end()) {
-				errors.semantic_errors.emplace_back("No pool parameter with this name exists", e.name.loc);
-				continue;
-			}
-			auto* type = static_cast<TmpClassType*>(e.type.get());
-
-			if (type->kind != TmpClassType::Kind::BOUND) {
-				errors.semantic_errors.emplace_back("Not a pool bound", type->name.loc);
-				continue;
-			}
-
-			std::unique_ptr<BoundType> proper_type(new BoundType);
-
-			auto it = the_ast->ast_classes.find(type->name.ident);
-			if (it == the_ast->ast_classes.end()) {
-				errors.semantic_errors.emplace_back("No class with this name exists", type->name.loc);
-				continue;
-			}
-			proper_type->clazz = it->second;
-
-			for (auto& param: type->pool_parameters) {
-				auto it = clazz.ast_pool_parameters.find(param.ident);
-				if (it == clazz.ast_pool_parameters.end()) {
-					errors.semantic_errors.emplace_back("No pool parameter with this name exists", param.loc);
-					continue;
-				}
-
-				proper_type->pool_parameters.push_back(&it->second);
-			}
-			param->second.type = std::move(proper_type);
-		}
-
-		for (auto& e: clazz.ast_fields) {
-			auto* type = static_cast<TmpClassType*>(e.second->type.get());
-			if (type->kind != TmpClassType::Kind::CLASS_LAYOUT) {
-				errors.semantic_errors.emplace_back("Not a pool bound", type->name.loc);
-				continue;
-			}
-
-			std::unique_ptr<ClassType> proper_type(new ClassType);
-
-			auto it = the_ast->ast_classes.find(type->name.ident);
-			if (it == the_ast->ast_classes.end()) {
-				errors.semantic_errors.emplace_back("No class with this name exists", type->name.loc);
-				continue;
-			}
-			proper_type->clazz = it->second;
-
-			for (auto& param: type->pool_parameters) {
-				auto it = clazz.ast_pool_parameters.find(param.ident);
-				if (it == clazz.ast_pool_parameters.end()) {
-					errors.semantic_errors.emplace_back("No pool parameter with this name exists", param.loc);
-					continue;
-				}
-
-				proper_type->pool_parameters.push_back(&it->second);
-			}
-			e.second->type = std::move(proper_type);
-		}
-
-		for (auto& e: clazz.ast_methods) {
-			e.second->accept(*this);
-		}
-	}
-
-	virtual void visit(Method& method) override
-	{
-
-	}
-
-	virtual void visit(Ast& ast) override
-	{
-		the_ast = &ast;
-		SimpleVisitor::visit(ast);
-	}
-
-	VariableCheckVisitor(ErrorList& errors)
+	explicit ClassAndPoolsCollector(Ast::SemanticErrorList* errors)
 		: errors(errors)
-	{ }
+	{
+		assert(errors != nullptr);
+	}
+
+	void visit(const Cst::Class& klass) override
+	{
+		const auto& name = klass.name();
+		auto it = class_map.find(name.ident());
+		if (it != class_map.end()) {
+			errors->add(make_unique<Ast::DuplicateDefinition>(
+					name.ident(),
+					Ast::ErrorKind::CLASS,
+					name.loc(),
+					it->second.loc()));
+			return;
+		}
+
+		if (klass.pool_params_begin() == klass.pool_params_end()) {
+			errors->add(make_unique<Ast::NoPoolParameters>(name.loc()));
+			return;
+		}
+
+		Ast::Class new_class(name.ident(), name.loc());
+		for (auto param_it = klass.pool_params_begin(); param_it != klass.pool_params_end(); param_it++) {
+			auto& pool_param = *param_it;
+			auto it = pool_map.find(pool_param.ident());
+			if (it != pool_map.end()) {
+				errors->add(make_unique<Ast::DuplicateDefinition>(
+						pool_param.ident(),
+						Ast::ErrorKind::CLASS,
+						pool_param.loc(),
+						it->second.loc()));
+				return;
+			}
+
+			auto new_it = pool_map.emplace(
+				pool_param.ident(), Ast::Pool(pool_param.ident(), pool_param.loc()));
+			pools.emplace_back(&new_it.first->second);
+		}
+
+		new_class.set_pools(std::move(pool_map), std::move(pools));
+		pool_map.clear();
+		pools.clear();
+
+		auto new_it = class_map.emplace(name.ident(), std::move(new_class));
+		classes.emplace_back(&new_it.first->second);
+	}
 };
 
-void run_semantic_analysis(Ast& ast, ErrorList& errors)
+struct ClassBoundsFieldsCollector: public Cst::DefaultVisitor
 {
-	ClassCheckVisitor class_visitor(errors);
-	class_visitor.visit(ast);
-	if (!errors.semantic_errors.empty()) {
+	Ast::Program* ast;
+	Ast::SemanticErrorList* errors;
+
+	Ast::Class* curr_class = nullptr;
+
+	std::unordered_map<std::string, Ast::Field> class_field_map;
+	std::vector<const Ast::Field*> class_fields;
+
+	explicit ClassBoundsFieldsCollector(Ast::Program* ast, Ast::SemanticErrorList* errors)
+		: ast(ast)
+		, errors(errors)
+	{}
+
+	void visit(const Cst::Class& klass) override
+	{
+		curr_class = ast->find_class(klass.name().ident());
+
+		visitIter(klass.pool_param_bounds_begin(), klass.pool_param_bounds_end());
+		for (auto it = curr_class->pools_begin(); it != curr_class->pools_end(); it++) {
+			auto& pool = **it;
+			if (!pool.type_init()) {
+				errors->add(make_unique<Ast::MissingDefinition>(
+						pool.name(),
+						Ast::ErrorKind::TYPE,
+						pool.loc()));
+			}
+		}
+
+		class_fields.clear();
+		class_field_map.clear();
+		visitIter(klass.fields_begin(), klass.fields_end());
+
+		curr_class->set_fields(std::move(class_field_map), std::move(class_fields));
+	}
+
+	void visit(const Cst::Variable& bound) override
+	{
+		const auto& name = bound.name();
+		auto* pool = curr_class->find_pool(name.ident());
+		if (pool == nullptr) {
+			errors->add(make_unique<Ast::MissingDefinition>(
+					name.ident(),
+					Ast::ErrorKind::POOL,
+					name.loc()));
+			return;
+		}
+
+		if (pool->type_init()) {
+			errors->add(make_unique<Ast::DuplicateDefinition>(
+					name.ident(),
+					Ast::ErrorKind::TYPE,
+					name.loc(),
+					pool->loc()));
+			return;
+		}
+
+		TypeCollector type_collector(ast, errors, Ast::TypeKind::BOUND);
+		bound.type().accept(type_collector);
+		if (!type_collector.success()) {
+			return;
+		}
+
+		auto type = type_collector.grab_type();
+		auto* bound_cast = static_cast<const Ast::BoundType*>(type.get());
+
+		if (pool != *bound_cast->pool_params_begin()) {
+			errors->add(make_unique<Ast::FirstPoolParameterMismatch>(name.loc()));
+			return;
+		}
+
+		pool->set_type(std::move(type));
+	}
+
+	void visit(const Cst::Field& field) override
+	{
+		auto name = field.name();
+		auto existing_it = class_field_map.find(name.ident());
+		if (existing_it != class_field_map.end()) {
+			errors->add(make_unique<Ast::DuplicateDefinition>(
+					name.ident(),
+					Ast::ErrorKind::FIELD,
+					name.loc(),
+					existing_it->second.loc()));
+			return;
+		}
+
+		TypeCollector type_collector(ast, errors);
+		field.type().accept(type_collector);
+		if (!type_collector.success()) {
+			return;
+		}
+
+		auto it = class_field_map.emplace(
+			name.ident(),
+			Ast::Field(name.ident(), type_collector.grab_type(), name.loc()));
+		class_fields.emplace_back(&it.first->second);
+	}
+};
+
+struct LayoutsCollector: public Cst::DefaultVisitor
+{
+	Ast::Program* ast;
+	Ast::SemanticErrorList* errors;
+
+	const Ast::Class* curr_class = nullptr;
+
+	std::unordered_map<std::string, Ast::Layout> layout_map;
+	std::vector<const Ast::Layout*> layouts;
+
+	std::vector<Ast::Cluster> clusters;
+	std::unordered_set<const Ast::Field*> field_set;
+
+	LayoutsCollector(Ast::Program* ast, Ast::SemanticErrorList* errors)
+		: ast(ast)
+		, errors(errors)
+	{}
+
+	void visit(const Cst::Layout& layout) override
+	{
+		const auto& name = layout.name();
+		const auto* existing_layout = ast->find_layout(name.ident());
+		if (existing_layout != nullptr) {
+			errors->add(make_unique<Ast::DuplicateDefinition>(
+					name.ident(), Ast::ErrorKind::LAYOUT, name.loc(), existing_layout->loc()));
+			return;
+		}
+
+		const auto* clashing_class = ast->find_class(name.ident());
+		if (clashing_class != nullptr) {
+			errors->add(make_unique<Ast::ClassLayoutNameClash>(
+					name.ident(), clashing_class->loc(), name.loc()));
+			return;
+		}
+
+		const auto& class_name = layout.for_class();
+		const auto* klass = ast->find_class(class_name.ident());
+		if (klass == nullptr) {
+			errors->add(make_unique<Ast::MissingDefinition>(
+					class_name.ident(), Ast::ErrorKind::CLASS, class_name.loc()));
+			return;
+		}
+
+		curr_class = klass;
+		clusters.clear();
+		field_set.clear();
+		visitIter(layout.clusters_begin(), layout.clusters_end());
+
+		for (auto it = klass->fields_begin(); it != klass->fields_end(); it++) {
+			if (field_set.find(*it) == field_set.end()) {
+				errors->add(make_unique<Ast::MissingFieldInLayout>(
+						(*it)->name(), (*it)->loc(), layout.name().loc()));
+				return;
+			}
+		}
+
+		auto it = layout_map.emplace(
+			name.ident(),
+			Ast::Layout(name.ident(), klass, std::move(clusters), name.loc()));
+
+		layouts.emplace_back(&it.first->second);
+	}
+
+	void visit(const Cst::Cluster& cluster) override
+	{
+		std::vector<const Ast::Field*> fields;
+		for (auto it = cluster.fields_begin(); it != cluster.fields_end(); it++) {
+			const auto& name = *it;
+			const auto* field = curr_class->find_field(name.ident());
+			if (field == nullptr) {
+				errors->add(make_unique<Ast::MissingDefinition>(
+						name.ident(), Ast::ErrorKind::FIELD, name.loc()));
+				continue;
+			}
+
+			bool already_added = field_set.insert(field).second;
+			if (!already_added) {
+				errors->add(make_unique<Ast::DuplicateFieldInLayout>(
+						name.ident(), name.loc()));
+				continue;
+			}
+
+			fields.emplace_back(field);
+		}
+		clusters.emplace_back(std::move(fields));
+	}
+};
+
+void Ast::run_semantic_analysis(const Cst::Program& cst, Ast::SemanticErrorList* errors, Ast::Program* ast)
+{
+	Ast::Program program;
+
+	ClassAndPoolsCollector class_pools_collector(errors);
+	cst.accept(class_pools_collector);
+	if (errors->has_errors()) {
 		return;
 	}
 
-	VariableCheckVisitor vars_visitor(errors);
-	vars_visitor.visit(ast);
-	if (!errors.semantic_errors.empty()) {
+	program.set_classes(
+		std::move(class_pools_collector.class_map),
+		std::move(class_pools_collector.classes));
+
+	ClassBoundsFieldsCollector bounds_collector(&program, errors);
+	cst.accept(bounds_collector);
+	if (errors->has_errors()) {
 		return;
 	}
+
+	LayoutsCollector layouts_collector(&program, errors);
+	cst.accept(layouts_collector);
+	if (errors->has_errors()) {
+		return;
+	}
+
+	program.set_layouts(
+		std::move(layouts_collector.layout_map),
+		std::move(layouts_collector.layouts));
+
+	*ast = std::move(program);
 }

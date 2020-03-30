@@ -1,13 +1,16 @@
 #pragma once
 
 #include "parse_tree_common.h"
+#include "cst.h"
 #include "ast_decls.h"
+#include "ast_errors.h"
 
 #include <cassert>
 #include <cstdint>
 #include <memory>
 #include <utility>
 #include <vector>
+#include <unordered_map>
 
 namespace Ast
 {
@@ -69,15 +72,20 @@ class Pool: public Visitable
 	std::string m_name;
 	std::unique_ptr<Ast::Type> m_type;
 
+	Location m_loc;
+
 public:
-	explicit Pool(std::string name, std::unique_ptr<Ast::Type> type)
+	explicit Pool(std::string name, const Location& loc)
 		: m_name(std::move(name))
-		, m_type(std::move(type))
+		, m_loc(loc)
 	{}
 
-	const std::string& name() const { return m_name; }
+	void set_type(std::unique_ptr<Ast::Type> type) { m_type = std::move(type); }
+	bool type_init() const { return m_type != nullptr; }
 
+	const std::string& name() const { return m_name; }
 	const Ast::Type& type() const { return *m_type; }
+	const Location& loc() const { return m_loc; }
 
 	DEFINE_VISITOR_DISPATCH
 };
@@ -104,11 +112,11 @@ public:
 
 class ClassType: public Type
 {
-	Ast::Class* m_klass;
-	std::vector<std::unique_ptr<const Ast::Pool*>> m_pool_params;
+	const Ast::Class* m_klass;
+	std::vector<const Ast::Pool*> m_pool_params;
 
 public:
-	ClassType(Ast::Class* klass, std::vector<std::unique_ptr<const Ast::Pool*>> pool_params)
+	ClassType(const Ast::Class* klass, std::vector<const Ast::Pool*> pool_params)
 		: m_klass(klass)
 		, m_pool_params(std::move(pool_params))
 	{
@@ -150,11 +158,11 @@ public:
 
 class BoundType: public Type
 {
-	Ast::Class* m_klass;
+	const Ast::Class* m_klass;
 	std::vector<const Ast::Pool*> m_pool_params;
 
 public:
-	BoundType(Ast::Class* klass, std::vector<const Ast::Pool*> pool_params)
+	BoundType(const Ast::Class* klass, std::vector<const Ast::Pool*> pool_params)
 		: m_klass(klass)
 		, m_pool_params(std::move(pool_params))
 	{
@@ -656,15 +664,18 @@ class Field: public Visitable
 	std::string m_name;
 	std::unique_ptr<Ast::Type> m_type;
 
+	Location m_loc;
+
 public:
-	explicit Field(std::string name, std::unique_ptr<Ast::Type> type)
+	explicit Field(std::string name, std::unique_ptr<Ast::Type> type, const Location& loc)
 		: m_name(std::move(name))
 		, m_type(std::move(type))
+		, m_loc(loc)
 	{}
 
 	const std::string& name() const { return m_name; }
-
 	const Ast::Type& type() const { return *m_type; }
+	const Location& loc() const { return m_loc; }
 
 	DEFINE_VISITOR_DISPATCH
 };
@@ -717,14 +728,17 @@ class Layout: public Visitable
 	std::string m_name;
 	const Ast::Class* m_klass;
 	std::vector<Ast::Cluster> m_clusters;
+	Location m_loc;
 
 public:
 	explicit Layout(std::string name,
 					const Ast::Class* klass,
-					std::vector<Ast::Cluster> clusters)
+					std::vector<Ast::Cluster> clusters,
+					const Location& loc)
 		: m_name(std::move(name))
 		, m_klass(klass)
 		, m_clusters(std::move(clusters))
+		, m_loc(loc)
 	{
 		assert(klass != nullptr);
 	}
@@ -734,6 +748,8 @@ public:
 
 	decltype(m_clusters)::const_iterator clusters_begin() const { return m_clusters.cbegin(); }
 	decltype(m_clusters)::const_iterator clusters_end()   const { return m_clusters.cend();   }
+
+	const Location& loc() const { return m_loc; }
 
 	DEFINE_VISITOR_DISPATCH
 };
@@ -755,29 +771,137 @@ public:
 
 class Class: public Visitable
 {
+	std::string m_name;
+
+	std::unordered_map<std::string, Ast::Pool> m_pool_map;
+	std::vector<const Ast::Pool*> m_pools;
+
+	std::unordered_map<std::string, Ast::Field> m_field_map;
+	std::vector<const Ast::Field*> m_fields;
+
+	Location m_loc;
+
 public:
+	explicit Class(std::string name, const Location& loc)
+		: m_name(std::move(name))
+		, m_loc(loc)
+	{}
+
+	void set_pools(std::unordered_map<std::string, Ast::Pool> pool_map,
+				   std::vector<const Ast::Pool*> pools)
+	{
+		m_pool_map = std::move(pool_map);
+		m_pools    = std::move(pools);
+	}
+
+	void set_fields(std::unordered_map<std::string, Ast::Field> field_map,
+					std::vector<const Ast::Field*> fields)
+	{
+		m_field_map = std::move(field_map);
+		m_fields    = std::move(fields);
+	}
+
+	size_t num_pools() const { return m_pools.size(); }
+
+	const Ast::Pool* find_pool(const std::string& name) const
+	{
+		auto it = m_pool_map.find(name);
+		if (it == m_pool_map.end()) {
+			return nullptr;
+		}
+		return &it->second;
+	}
+
+	Ast::Pool* find_pool(const std::string& name)
+	{
+		auto it = m_pool_map.find(name);
+		if (it == m_pool_map.end()) {
+			return nullptr;
+		}
+		return &it->second;
+	}
+
+	const Ast::Field* find_field(const std::string& name) const
+	{
+		auto it = m_field_map.find(name);
+		if (it == m_field_map.end()) {
+			return nullptr;
+		}
+		return &it->second;
+	}
+
+	decltype(m_pools)::const_iterator pools_begin() const { return m_pools.cbegin(); }
+	decltype(m_pools)::const_iterator pools_end()   const { return m_pools.cend();   }
+
+	decltype(m_fields)::const_iterator fields_begin() const { return m_fields.cbegin(); }
+	decltype(m_fields)::const_iterator fields_end()   const { return m_fields.cend();   }
+
+	const std::string& name() const { return m_name; }
+	const Location& loc()     const { return m_loc;  }
+
 	DEFINE_VISITOR_DISPATCH
 };
 
 class Program: public Visitable
 {
-	std::vector<Ast::Class> m_classes;
-	std::vector<Ast::Layout> m_layouts;
+	std::unordered_map<std::string, Ast::Class> m_class_map;
+	std::vector<const Ast::Class*> m_classes;
+
+	std::unordered_map<std::string, Ast::Layout> m_layout_map;
+	std::vector<const Ast::Layout*> m_layouts;
 
 public:
-	explicit Program(std::vector<Ast::Class> classes,
-					 std::vector<Ast::Layout> layouts)
-		: m_classes(std::move(classes))
-		, m_layouts(std::move(layouts))
-	{}
-
 	decltype(m_classes)::const_iterator classes_begin() const { return m_classes.cbegin(); }
 	decltype(m_classes)::const_iterator classes_end()   const { return m_classes.cend();   }
 
 	decltype(m_layouts)::const_iterator layouts_begin() const { return m_layouts.cbegin(); }
 	decltype(m_layouts)::const_iterator layouts_end()   const { return m_layouts.cend();   }
 
+	const Ast::Class* find_class(const std::string& name) const
+	{
+		auto it = m_class_map.find(name);
+		if (it == m_class_map.end()) {
+			return nullptr;
+		}
+		return &it->second;
+	}
+
+	const Ast::Layout* find_layout(const std::string& name) const
+	{
+		auto it = m_layout_map.find(name);
+		if (it == m_layout_map.end()) {
+			return nullptr;
+		}
+		return &it->second;
+	}
+
+	Ast::Class* find_class(const std::string& name)
+	{
+		auto it = m_class_map.find(name);
+		if (it == m_class_map.end()) {
+			return nullptr;
+		}
+		return &it->second;
+	}
+
+	void set_classes(std::unordered_map<std::string, Ast::Class> class_map,
+					 std::vector<const Ast::Class*> classes)
+	{
+		m_class_map = std::move(class_map);
+		m_classes = std::move(classes);
+	}
+
+	void set_layouts(std::unordered_map<std::string, Ast::Layout> layout_map,
+					 std::vector<const Ast::Layout*> layouts)
+	{
+		m_layout_map = std::move(layout_map);
+		m_layouts = std::move(layouts);
+	}
+
 	DEFINE_VISITOR_DISPATCH
 };
 
+extern void run_semantic_analysis(const Cst::Program& cst, Ast::SemanticErrorList* errors, Ast::Program* ast);
+
+#undef DEFINE_VISITOR_DISPATCH
 }
