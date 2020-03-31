@@ -99,7 +99,7 @@ public:
 class PrimitiveType: public Type
 {
 public:
-	enum class Kind { I8, U8, I16, U16, I32, U32, I64, U64, F32, F64 };
+	enum class Kind { BOOL, I8, U8, I16, U16, I32, U32, I64, U64, F32, F64 };
 
 private:
 	Ast::PrimitiveType::Kind m_kind;

@@ -30,6 +30,8 @@ class TypeCollector: public Cst::DefaultVisitor
 	Ast::PrimitiveType::Kind to_kind(Cst::PrimitiveType::Kind kind)
 	{
 		switch (kind) {
+		case Cst::PrimitiveType::Kind::BOOL:
+			return Ast::PrimitiveType::Kind::BOOL;
 		case Cst::PrimitiveType::Kind::U8:
 			return Ast::PrimitiveType::Kind::U8;
 		case Cst::PrimitiveType::Kind::U16:
