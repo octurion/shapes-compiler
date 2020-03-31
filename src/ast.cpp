@@ -15,7 +15,7 @@ std::unique_ptr<T> make_unique(Args&&... args)
 
 class TypeCollector: public Cst::DefaultVisitor
 {
-	Ast::Program* m_ast;
+	const Ast::Program* m_ast;
 	Ast::SemanticErrorList* m_errors;
 
 	bool m_limited;
@@ -82,14 +82,14 @@ class TypeCollector: public Cst::DefaultVisitor
 	}
 
 public:
-	TypeCollector(Ast::Program* ast, Ast::SemanticErrorList* errors)
+	TypeCollector(const Ast::Program* ast, Ast::SemanticErrorList* errors)
 		: m_ast(ast)
 		, m_errors(errors)
 		, m_limited(false)
 		, m_kind(Ast::TypeKind::PRIMITIVE)
 	{}
 
-	TypeCollector(Ast::Program* ast,
+	TypeCollector(const Ast::Program* ast,
 				  Ast::SemanticErrorList* errors,
 				  Ast::TypeKind kind)
 		: m_ast(ast)
@@ -246,7 +246,7 @@ struct ClassAndPoolsCollector: public Cst::DefaultVisitor
 	}
 };
 
-struct ClassBoundsFieldsCollector: public Cst::DefaultVisitor
+struct ClassMembersBoundsCollector: public Cst::DefaultVisitor
 {
 	Ast::Program* ast;
 	Ast::SemanticErrorList* errors;
@@ -256,7 +256,10 @@ struct ClassBoundsFieldsCollector: public Cst::DefaultVisitor
 	std::unordered_map<std::string, Ast::Field> class_field_map;
 	std::vector<const Ast::Field*> class_fields;
 
-	explicit ClassBoundsFieldsCollector(Ast::Program* ast, Ast::SemanticErrorList* errors)
+	std::unordered_map<std::string, Ast::Method> method_map;
+	std::vector<const Ast::Method*> methods;
+
+	explicit ClassMembersBoundsCollector(Ast::Program* ast, Ast::SemanticErrorList* errors)
 		: ast(ast)
 		, errors(errors)
 	{}
@@ -281,6 +284,11 @@ struct ClassBoundsFieldsCollector: public Cst::DefaultVisitor
 		visitIter(klass.fields_begin(), klass.fields_end());
 
 		curr_class->set_fields(std::move(class_field_map), std::move(class_fields));
+
+		methods.clear();
+		method_map.clear();
+		visitIter(klass.methods_begin(), klass.methods_end());
+		curr_class->set_methods(std::move(method_map), std::move(methods));
 	}
 
 	void visit(const Cst::Variable& bound) override
@@ -344,6 +352,58 @@ struct ClassBoundsFieldsCollector: public Cst::DefaultVisitor
 			name.ident(),
 			Ast::Field(name.ident(), type_collector.grab_type(), name.loc()));
 		class_fields.emplace_back(&it.first->second);
+	}
+
+	void visit(const Cst::Method& method) override
+	{
+		const auto& name = method.name();
+		auto existing_it = method_map.find(name.ident());
+		if (existing_it != method_map.end()) {
+			errors->add(make_unique<Ast::DuplicateDefinition>(
+					name.ident(),
+					Ast::ErrorKind::METHOD,
+					name.loc(),
+					existing_it->second.loc()));
+			return;
+		}
+
+		std::unique_ptr<Ast::Type> type;
+		if (method.type() != nullptr) {
+			TypeCollector type_collector(ast, errors);
+			method.type()->accept(type_collector);
+			type = type_collector.grab_type();
+		}
+
+		Ast::Method new_method(name.ident(), std::move(type), name.loc());
+		std::unordered_map<std::string, Location> var_names;
+		for (auto it = method.params_begin(); it != method.params_end(); it++) {
+			const auto& var = *it;
+			const auto& name = var.name();
+			auto existing_it = var_names.find(name.ident());
+			if (existing_it != var_names.end()) {
+				errors->add(make_unique<Ast::DuplicateDefinition>(
+						name.ident(),
+						Ast::ErrorKind::VARIABLE,
+						name.loc(),
+						existing_it->second));
+				continue;
+			}
+
+			TypeCollector type_collector(ast, errors);
+			var.type().accept(type_collector);
+
+			auto type = type_collector.success()
+				? type_collector.grab_type()
+				: std::unique_ptr<Ast::Type>();
+
+			new_method.add_parameter(
+				Ast::Variable(name.ident(), std::move(type), name.loc())
+			);
+			var_names.emplace(name.ident(), name.loc());
+		}
+
+		auto it = method_map.emplace(name.ident(), std::move(new_method));
+		methods.push_back(&it.first->second);
 	}
 };
 
@@ -449,8 +509,8 @@ void Ast::run_semantic_analysis(const Cst::Program& cst, Ast::SemanticErrorList*
 		std::move(class_pools_collector.class_map),
 		std::move(class_pools_collector.classes));
 
-	ClassBoundsFieldsCollector bounds_collector(&program, errors);
-	cst.accept(bounds_collector);
+	ClassMembersBoundsCollector members_bounds_collector(&program, errors);
+	cst.accept(members_bounds_collector);
 	if (errors->has_errors()) {
 		return;
 	}

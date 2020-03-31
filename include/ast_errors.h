@@ -10,7 +10,7 @@ namespace Ast
 #define DEFINE_VISITOR_DISPATCH \
 	void accept(SemanticErrorVisitor& v) const override { v.visit(*this); }
 
-enum class ErrorKind { CLASS, FIELD, POOL, VARIABLE, TYPE, LAYOUT };
+enum class ErrorKind { CLASS, FIELD, POOL, VARIABLE, TYPE, LAYOUT, METHOD };
 
 enum class TypeKind { CLASS, POOL, BOUND, PRIMITIVE };
 

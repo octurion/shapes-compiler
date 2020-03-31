@@ -11,6 +11,21 @@
 #include <cstdio>
 #include <cstdlib>
 
+class SemanticErrorPrinter: public Ast::SemanticErrorVisitor
+{
+	void visit(const Ast::NotLvalue& e)                  override {}
+	void visit(const Ast::MissingDefinition& e)          override {}
+	void visit(const Ast::DuplicateDefinition& e)        override {}
+	void visit(const Ast::UnexpectedTypeKind& e)         override {}
+	void visit(const Ast::MissingBound& e)               override {}
+	void visit(const Ast::NoPoolParameters& e)           override {}
+	void visit(const Ast::PoolParametersMismatch& e)     override {}
+	void visit(const Ast::FirstPoolParameterMismatch& e) override {}
+	void visit(const Ast::ClassLayoutNameClash& e)       override {}
+	void visit(const Ast::MissingFieldInLayout& e)       override {}
+	void visit(const Ast::DuplicateFieldInLayout& e)     override {}
+};
+
 int main(int argc, char** argv)
 {
 	if (argc < 2) {
@@ -57,20 +72,14 @@ int main(int argc, char** argv)
 	if (errors.has_errors()) {
 		// TODO: Print semantic errors
 		fprintf(stderr, "We have semantic errors (TODO: Print them)\n");
+		SemanticErrorPrinter printer;
+		for (auto it = errors.begin(); it != errors.end(); it++) {
+			(*it)->accept(printer);
+		}
 
 		fclose(in);
 		return EXIT_SUCCESS;
 	}
-#if 0
-		for (const auto& e: errors.semantic_errors) {
-			const auto& loc = e.loc;
-			fprintf(stderr, "Semantic error (%d,%d - %d,%d): %s\n",
-					loc.first_line, loc.first_column,
-					loc.last_line,  loc.last_column,
-					e.message.c_str());
-		}
-	}
-#endif
 
 	fclose(in);
 	return EXIT_SUCCESS;

@@ -38,6 +38,10 @@ void Cst::DefaultVisitor::visit(const Cst::IntegerConst&)
 {
 }
 
+void Cst::DefaultVisitor::visit(const Cst::BooleanConst&)
+{
+}
+
 void Cst::DefaultVisitor::visit(const Cst::NullExpr&)
 {
 }

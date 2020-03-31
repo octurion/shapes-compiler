@@ -41,6 +41,9 @@ ALNUM [0-9a-zA-Z_]
 "continue" { return T_CONTINUE; }
 "return"   { return T_RETURN;   }
 
+"true"  { return T_TRUE;  }
+"false" { return T_FALSE; }
+
 "new"  { return T_NEW;  }
 "null" { return T_NULL; }
 "this" { return T_THIS; }

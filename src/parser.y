@@ -78,6 +78,8 @@ std::unique_ptr<T> ptr_to_unique(T* ptr) {
 	Cst::Cluster* cluster;
 	std::vector<Cst::Cluster>* cluster_list;
 
+	std::vector<std::unique_ptr<Cst::Expr>>* expr_list;
+
 	Cst::Identifier* identifier;
 	std::vector<Cst::Identifier>* identifier_list;
 
@@ -140,6 +142,9 @@ std::unique_ptr<T> ptr_to_unique(T* ptr) {
 
 %token T_F32 "f32"
 %token T_F64 "f64"
+
+%token T_TRUE  "true"
+%token T_FALSE "false"
 
 %token T_COMMA     ","
 %token T_COLON     ":"
@@ -222,6 +227,8 @@ std::unique_ptr<T> ptr_to_unique(T* ptr) {
 
 %type<bin_op> op_assign
 %type<expr>   expr
+%type<expr_list> argument_exprs
+                 argument_expr_list
 
 %type<cluster_list> clusters cluster_list
 %type<cluster>  cluster
@@ -312,8 +319,7 @@ type
 	| T_LSQUARE error T_RSQUARE {
 		$$ = new Cst::InvalidType;
 	}
-	/* TODO: Booleans */
-	/* | T_BOOL { $$ = new Cst::PrimitiveType(Cst::PrimitiveType::Kind::BOOL); } */
+	| T_BOOL { $$ = new Cst::PrimitiveType(Cst::PrimitiveType::Kind::BOOL); }
 	| T_I8   { $$ = new Cst::PrimitiveType(Cst::PrimitiveType::Kind::I8);   }
 	| T_U8   { $$ = new Cst::PrimitiveType(Cst::PrimitiveType::Kind::U8);   }
 	| T_I16  { $$ = new Cst::PrimitiveType(Cst::PrimitiveType::Kind::I16);  }
@@ -358,6 +364,19 @@ expr
 			move_and_delete($3),
 			yyltype_to_location(@$));
 	}
+	| expr T_DOT identifier argument_exprs {
+		$$ = new Cst::MemberMethodCall(
+			ptr_to_unique($1),
+			move_and_delete($3),
+			move_and_delete($4),
+			yyltype_to_location(@$));
+	}
+	| identifier argument_exprs {
+		$$ = new Cst::MethodCall(
+			move_and_delete($1),
+			move_and_delete($2),
+			yyltype_to_location(@$));
+	}
 	| identifier {
 		$$ = new Cst::IdentifierExpr(move_and_delete($1));
 	}
@@ -368,8 +387,27 @@ expr
 		$1->set_loc(yyltype_to_location(@$));
 		$$ = $1;
 	}
-	| T_THIS { $$ = new Cst::ThisExpr(yyltype_to_location(@$)); }
-	| T_NULL { $$ = new Cst::NullExpr(yyltype_to_location(@$)); }
+	| T_THIS  { $$ = new Cst::ThisExpr(yyltype_to_location(@$)); }
+	| T_NULL  { $$ = new Cst::NullExpr(yyltype_to_location(@$)); }
+	| T_TRUE  { $$ = new Cst::BooleanConst(true,  yyltype_to_location(@$)); }
+	| T_FALSE { $$ = new Cst::BooleanConst(false, yyltype_to_location(@$)); }
+
+argument_exprs
+	: T_LPAREN T_RPAREN { $$ = new std::vector<std::unique_ptr<Cst::Expr>>; }
+	| T_LPAREN argument_expr_list T_RPAREN { $$ = $2; }
+	| T_LPAREN error T_RPAREN { $$ = new std::vector<std::unique_ptr<Cst::Expr>>; }
+	;
+
+argument_expr_list
+	: expr {
+		$$ = new std::vector<std::unique_ptr<Cst::Expr>>;
+		$$->emplace_back(ptr_to_unique($1));
+	}
+	| argument_expr_list expr {
+		$1->emplace_back(ptr_to_unique($2));
+		$$ = $1;
+	}
+	;
 
 stmt
 	: block_stmt  { $$ = $1; }

@@ -28,6 +28,7 @@ class InvalidType;
 class Variable;
 
 class IntegerConst;
+class BooleanConst;
 class NullExpr;
 class ThisExpr;
 class BinaryExpr;
@@ -84,6 +85,7 @@ public:
 	virtual void visit(const Cst::InvalidType&)   = 0;
 
 	virtual void visit(const Cst::IntegerConst&)     = 0;
+	virtual void visit(const Cst::BooleanConst&)     = 0;
 	virtual void visit(const Cst::NullExpr&)         = 0;
 	virtual void visit(const Cst::ThisExpr&)         = 0;
 	virtual void visit(const Cst::BinaryExpr&)       = 0;
@@ -111,8 +113,8 @@ public:
 	virtual void visit(const Cst::ReturnStmt&)        = 0;
 	virtual void visit(const Cst::ReturnVoidStmt&)    = 0;
 
-	virtual void visit(const Cst::Method&)  = 0;
 	virtual void visit(const Cst::Class&)   = 0;
+	virtual void visit(const Cst::Method&)  = 0;
 	virtual void visit(const Cst::Field&)   = 0;
 	virtual void visit(const Cst::Layout&)  = 0;
 	virtual void visit(const Cst::Cluster&) = 0;
@@ -150,6 +152,7 @@ public:
 	virtual void visit(const Cst::InvalidType&)   override;
 
 	virtual void visit(const Cst::IntegerConst&)     override;
+	virtual void visit(const Cst::BooleanConst&)     override;
 	virtual void visit(const Cst::NullExpr&)         override;
 	virtual void visit(const Cst::ThisExpr&)         override;
 	virtual void visit(const Cst::BinaryExpr&)       override;

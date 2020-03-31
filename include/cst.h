@@ -173,6 +173,24 @@ public:
 	DEFINE_VISITOR_DISPATCH
 };
 
+class BooleanConst: public Expr
+{
+	bool m_value;
+	Location m_loc;
+
+public:
+	explicit BooleanConst(bool value, const Location& loc)
+		: m_value(std::move(value))
+		, m_loc(std::move(loc))
+	{}
+
+	bool value() const { return m_value; }
+
+	const Location& loc() const override { return m_loc; }
+
+	DEFINE_VISITOR_DISPATCH
+};
+
 class NullExpr: public Expr
 {
 	Location m_loc;
@@ -321,7 +339,7 @@ class MemberMethodCall: public Expr
 	Location m_loc;
 
 public:
-	MemberMethodCall(std::unique_ptr<Expr> this_expr,
+	MemberMethodCall(std::unique_ptr<Cst::Expr> this_expr,
 					 Cst::Identifier name,
 					 std::vector<std::unique_ptr<Cst::Expr>> params,
 					 const Location& loc)
@@ -724,8 +742,8 @@ public:
 
 	const Cst::Type* type() const { return m_type.get(); }
 
-	decltype(m_params)::const_iterator params_begin() { return m_params.cbegin(); }
-	decltype(m_params)::const_iterator params_end()   { return m_params.cend();   }
+	decltype(m_params)::const_iterator params_begin() const { return m_params.cbegin(); }
+	decltype(m_params)::const_iterator params_end()   const { return m_params.cend();   }
 
 	const Cst::BlockStmt& body() const { return m_body; }
 

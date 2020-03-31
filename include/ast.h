@@ -7,6 +7,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -54,15 +55,20 @@ class Variable: public Visitable
 	std::string m_name;
 	std::unique_ptr<Ast::Type> m_type;
 
+	Location m_loc;
+
 public:
-	explicit Variable(std::string name, std::unique_ptr<Ast::Type> type)
+	explicit Variable(std::string name, std::unique_ptr<Ast::Type> type, const Location& loc)
 		: m_name(std::move(name))
 		, m_type(std::move(type))
+		, m_loc(loc)
 	{}
 
 	const std::string& name() const { return m_name; }
 
 	const Ast::Type& type() const { return *m_type; }
+
+	const Location& loc() const { return m_loc; }
 
 	DEFINE_VISITOR_DISPATCH
 };
@@ -247,7 +253,7 @@ class BinaryExpr: public Expr
 	std::unique_ptr<Ast::Expr> m_lhs;
 	Ast::BinOp m_op;
 	std::unique_ptr<Ast::Expr> m_rhs;
-	std::unique_ptr<Ast::Type> m_type;
+	Ast::PrimitiveType m_type;
 
 	Location m_loc;
 
@@ -255,12 +261,12 @@ public:
 	explicit BinaryExpr(std::unique_ptr<Ast::Expr> lhs,
 						Ast::BinOp op,
 						std::unique_ptr<Ast::Expr> rhs,
-						std::unique_ptr<Ast::Type> type,
+						Ast::PrimitiveType type,
 						const Location& loc = Location())
 		: m_lhs(std::move(lhs))
 		, m_op(op)
 		, m_rhs(std::move(rhs))
-		, m_type(std::move(type))
+		, m_type(type)
 		, m_loc(loc)
 	{}
 
@@ -269,9 +275,9 @@ public:
 
 	Ast::BinOp op() const { return m_op; }
 
-	const Ast::Type& type() const override { return *m_type; }
-	bool is_lvalue()        const override { return false;   }
-	const Location& loc()   const override { return m_loc;   }
+	const Ast::PrimitiveType& type() const override { return m_type; }
+	bool is_lvalue()                 const override { return false;   }
+	const Location& loc()            const override { return m_loc;   }
 
 	DEFINE_VISITOR_DISPATCH
 };
@@ -280,18 +286,18 @@ class UnaryExpr: public Expr
 {
 	Ast::UnOp m_op;
 	std::unique_ptr<Ast::Expr> m_expr;
-	std::unique_ptr<Ast::Type> m_type;
+	Ast::PrimitiveType m_type;
 
 	Location m_loc;
 
 public:
 	explicit UnaryExpr(Ast::UnOp op,
 					   std::unique_ptr<Ast::Expr> expr,
-					   std::unique_ptr<Ast::Type> type,
+					   Ast::PrimitiveType type,
 					   const Location& loc = Location())
 		: m_op(op)
 		, m_expr(std::move(expr))
-		, m_type(std::move(type))
+		, m_type(type)
 		, m_loc(loc)
 	{}
 
@@ -299,9 +305,9 @@ public:
 
 	Ast::UnOp op() const { return m_op; }
 
-	const Ast::Type& type() const override { return *m_type; }
-	bool is_lvalue()        const override { return false;   }
-	const Location& loc()   const override { return m_loc;   }
+	const Ast::PrimitiveType& type() const override { return m_type; }
+	bool is_lvalue()                 const override { return false;  }
+	const Location& loc()            const override { return m_loc;  }
 
 	DEFINE_VISITOR_DISPATCH
 };
@@ -367,7 +373,7 @@ public:
 class MethodCall: public Expr
 {
 	std::unique_ptr<Ast::Expr> m_this_expr;
-	const Method* m_method;
+	const Ast::Method* m_method;
 	std::vector<std::unique_ptr<Ast::Expr>> m_args;
 	std::unique_ptr<Ast::Type> m_return_type;
 
@@ -375,7 +381,7 @@ class MethodCall: public Expr
 
 public:
 	explicit MethodCall(std::unique_ptr<Ast::Expr> this_expr,
-						const Method* method,
+						const Ast::Method* method,
 						std::vector<std::unique_ptr<Ast::Expr>> args,
 						std::unique_ptr<Ast::Type> return_type,
 						const Location& loc = Location())
@@ -680,28 +686,28 @@ public:
 	DEFINE_VISITOR_DISPATCH
 };
 
-class Method: public Expr
+class Method: public Visitable
 {
 	std::string m_name;
-	std::vector<Ast::Variable> m_vars;
+
 	std::vector<Ast::Pool> m_pools;
-	std::vector<const Ast::Variable*> m_params;
+	std::deque<Ast::Variable> m_vars;
+
+	size_t m_param_count;
+
 	std::unique_ptr<Ast::Type> m_return_type;
 	std::vector<std::unique_ptr<Ast::Type>> m_body;
 
+	Location m_loc;
+
 public:
 	explicit Method(std::string name,
-					std::vector<Ast::Variable> vars,
-					std::vector<Ast::Pool> pools,
-					std::vector<const Ast::Variable*> params,
 					std::unique_ptr<Ast::Type> return_type,
-					std::vector<std::unique_ptr<Ast::Type>> body)
+					const Location& loc)
 		: m_name(std::move(name))
-		, m_vars(std::move(vars))
-		, m_pools(std::move(pools))
-		, m_params(std::move(params))
+		, m_param_count(0)
 		, m_return_type(std::move(return_type))
-		, m_body(std::move(body))
+		, m_loc(loc)
 	{}
 
 	const std::string& name() const { return m_name; }
@@ -712,13 +718,28 @@ public:
 	decltype(m_pools)::const_iterator pools_begin() const { return m_pools.cbegin(); }
 	decltype(m_pools)::const_iterator pools_end()   const { return m_pools.cend();   }
 
-	decltype(m_params)::const_iterator params_begin() const { return m_params.cbegin(); }
-	decltype(m_params)::const_iterator params_end()   const { return m_params.cend();   }
+	decltype(m_vars)::const_iterator params_begin() const { return vars_begin(); }
+	decltype(m_vars)::const_iterator params_end()   const { return params_begin() + m_param_count; }
+
+	size_t num_params() const { return m_param_count; }
 
 	const Ast::Type* return_type() const { return m_return_type.get(); }
 
 	decltype(m_body)::const_iterator body_begin() const { return m_body.cbegin(); }
 	decltype(m_body)::const_iterator body_end()   const { return m_body.cend();   }
+
+	const Location& loc() const { return m_loc; }
+
+	void add_parameter(Ast::Variable param)
+	{
+		m_vars.emplace_back(std::move(param));
+		m_param_count++;
+	}
+
+	void add_variable(Ast::Variable var)
+	{
+		m_vars.emplace_back(std::move(var));
+	}
 
 	DEFINE_VISITOR_DISPATCH
 };
@@ -779,6 +800,9 @@ class Class: public Visitable
 	std::unordered_map<std::string, Ast::Field> m_field_map;
 	std::vector<const Ast::Field*> m_fields;
 
+	std::unordered_map<std::string, Ast::Method> m_method_map;
+	std::vector<const Ast::Method*> m_methods;
+
 	Location m_loc;
 
 public:
@@ -792,6 +816,13 @@ public:
 	{
 		m_pool_map = std::move(pool_map);
 		m_pools    = std::move(pools);
+	}
+
+	void set_methods(std::unordered_map<std::string, Ast::Method> method_map,
+					 std::vector<const Ast::Method*> methods)
+	{
+		m_method_map = std::move(method_map);
+		m_methods    = std::move(methods);
 	}
 
 	void set_fields(std::unordered_map<std::string, Ast::Field> field_map,
