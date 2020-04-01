@@ -328,6 +328,13 @@ struct ClassMembersBoundsCollector: public Cst::DefaultVisitor
 			return;
 		}
 
+		for (auto it = bound_cast->pool_params_begin(); it != bound_cast->pool_params_end(); it++) {
+			if (*it == nullptr) {
+				errors->add(make_unique<Ast::ClassPoolParameterNoNone>(name.ident(), name.loc()));
+				continue;
+			}
+		}
+
 		pool->set_type(std::move(type));
 	}
 

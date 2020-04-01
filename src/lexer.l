@@ -2,10 +2,14 @@
 #include "cst.h"
 #include "parser.tab.h"
 
-#define YY_USER_ACTION update_loc(yylloc, yytext, yyleng);
+#define YY_USER_INIT init_loc(yylloc);
+#define YY_USER_ACTION update_loc(yylloc, yytext, yyleng, YY_START);
+
+// Fix the tab width to 4 for now (when calculating line numbers)
+static const unsigned TAB_WIDTH = 4;
 
 static void init_loc(YYLTYPE* loc);
-static void update_loc(YYLTYPE* loc, const char* text, yy_size_t len);
+static void update_loc(YYLTYPE* loc, const char* text, yy_size_t len, int state);
 %}
 
 %option reentrant
@@ -14,11 +18,28 @@ static void update_loc(YYLTYPE* loc, const char* text, yy_size_t len);
 %option never-interactive
 %option nodefault noyywrap nounput noinput
 
+%x MULTILINE_COMMENT COMMENT
+
 DIGIT [0-9]
 ALPHA [a-zA-Z_]
 ALNUM [0-9a-zA-Z_]
 
 %%
+
+"/*" { BEGIN(MULTILINE_COMMENT); }
+<MULTILINE_COMMENT>{
+	"*/"    { BEGIN(INITIAL); }
+	<<EOF>> { BEGIN(INITIAL); return T_UNTERMINATED_COMMENT; }
+	\n      ;
+	.       ;
+}
+
+"//" { BEGIN(COMMENT); }
+<COMMENT>{
+	"\n"    { BEGIN(INITIAL); }
+	<<EOF>> { BEGIN(INITIAL); }
+	.       ;
+}
 
 "class"  { return T_CLASS;  }
 "export" { return T_EXPORT; }
@@ -128,30 +149,41 @@ ALNUM [0-9a-zA-Z_]
 "{" { return T_LBRACE; }
 "}" { return T_RBRACE; }
 
-"="  { return T_ASSIGN;   }
+"="  { return T_ASSIGN; }
 
 [\t\r\n ] ;
 
 <<EOF>> { return T_END; }
 
-. { return T_UNRECOGNIZED; }
+. { return T_UNRECOGNIZED_TOKEN; }
 
 %%
 
-static void update_loc(YYLTYPE* loc, const char* text, yy_size_t len)
+static void init_loc(YYLTYPE* loc)
 {
-	if (len == 1 && text[0] == '\n') {
-		loc->first_line += 1;
-		loc->last_line += 1;
+	loc->first_line = 1;
+	loc->first_column = 0;
 
-		loc->first_column = loc->last_column = 1;
-		return;
+	loc->last_line = 1;
+	loc->last_column = 0;
+}
+
+static void update_loc(YYLTYPE* loc, const char* text, yy_size_t len, int state)
+{
+	if (state != COMMENT && state != MULTILINE_COMMENT) {
+		loc->first_line = loc->last_line;
+		loc->first_column = loc->last_column + 1;
 	}
 
-	if (loc->last_column == 1) {
-		loc->last_column = 0;
-	}
+	for (yy_size_t i = 0; i < len; i++) {
+		if (text[i] == '\n') {
+			loc->last_line++;
+			loc->last_column = 0;
+			continue;
+		}
 
-	loc->first_column = loc->last_column + 1;
-	loc->last_column = loc->first_column + len - 1;
+		loc->last_column += (text[i] == '\t')
+			? TAB_WIDTH
+			: 1;
+	}
 }

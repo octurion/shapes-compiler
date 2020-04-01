@@ -24,6 +24,7 @@ class SemanticErrorPrinter: public Ast::SemanticErrorVisitor
 	void visit(const Ast::ClassLayoutNameClash& e)       override {}
 	void visit(const Ast::MissingFieldInLayout& e)       override {}
 	void visit(const Ast::DuplicateFieldInLayout& e)     override {}
+	void visit(const Ast::ClassPoolParameterNoNone& e)   override {}
 };
 
 int main(int argc, char** argv)

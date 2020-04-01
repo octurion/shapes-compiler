@@ -25,6 +25,7 @@ class FirstPoolParameterMismatch;
 class ClassLayoutNameClash;
 class MissingFieldInLayout;
 class DuplicateFieldInLayout;
+class ClassPoolParameterNoNone;
 
 class SemanticErrorList;
 
@@ -44,6 +45,7 @@ public:
 	virtual void visit(const ClassLayoutNameClash&)       = 0;
 	virtual void visit(const MissingFieldInLayout&)       = 0;
 	virtual void visit(const DuplicateFieldInLayout&)     = 0;
+	virtual void visit(const ClassPoolParameterNoNone&)   = 0;
 };
 
 class SemanticError
@@ -62,6 +64,23 @@ public:
 	{}
 
 	const Location& loc() const { return m_loc; }
+
+	DEFINE_VISITOR_DISPATCH
+};
+
+class ClassPoolParameterNoNone: public SemanticError
+{
+	std::string m_name;
+	Location m_loc;
+
+public:
+	explicit ClassPoolParameterNoNone(std::string name, const Location& loc)
+		: m_name(std::move(name))
+		, m_loc(loc)
+	{}
+
+	const std::string name() const { return m_name; }
+	const Location& loc()    const { return m_loc;  }
 
 	DEFINE_VISITOR_DISPATCH
 };

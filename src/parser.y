@@ -196,8 +196,9 @@ std::unique_ptr<T> ptr_to_unique(T* ptr) {
 
 %token T_ASSIGN "="
 
-%token T_UNRECOGNIZED "unrecognized token"
-%token T_END 0        "end of file"
+%token T_UNTERMINATED_COMMENT "unterminated comment"
+%token T_UNRECOGNIZED_TOKEN   "unrecognized token"
+%token T_END 0                "end of file"
 
 %type<program> program_definitions
 
@@ -403,8 +404,8 @@ argument_expr_list
 		$$ = new std::vector<std::unique_ptr<Cst::Expr>>;
 		$$->emplace_back(ptr_to_unique($1));
 	}
-	| argument_expr_list expr {
-		$1->emplace_back(ptr_to_unique($2));
+	| argument_expr_list T_COMMA expr {
+		$1->emplace_back(ptr_to_unique($3));
 		$$ = $1;
 	}
 	;
