@@ -18,28 +18,15 @@ static void update_loc(YYLTYPE* loc, const char* text, yy_size_t len, int state)
 %option never-interactive
 %option nodefault noyywrap nounput noinput
 
-%x MULTILINE_COMMENT COMMENT
+%x MULTILINE_COMMENT
 
 DIGIT [0-9]
 ALPHA [a-zA-Z_]
 ALNUM [0-9a-zA-Z_]
 
+NON_PRINT_ASCII [\x00-\x1F\x7F]
+
 %%
-
-"/*" { BEGIN(MULTILINE_COMMENT); }
-<MULTILINE_COMMENT>{
-	"*/"    { BEGIN(INITIAL); }
-	<<EOF>> { BEGIN(INITIAL); return T_UNTERMINATED_COMMENT; }
-	\n      ;
-	.       ;
-}
-
-"//" { BEGIN(COMMENT); }
-<COMMENT>{
-	"\n"    { BEGIN(INITIAL); }
-	<<EOF>> { BEGIN(INITIAL); }
-	.       ;
-}
 
 "class"  { return T_CLASS;  }
 "export" { return T_EXPORT; }
@@ -151,9 +138,20 @@ ALNUM [0-9a-zA-Z_]
 
 "="  { return T_ASSIGN; }
 
-[\t\r\n ] ;
+"/*" { BEGIN(MULTILINE_COMMENT); }
+<MULTILINE_COMMENT>{
+	"*/"    { BEGIN(INITIAL); }
+	<<EOF>> { BEGIN(INITIAL); return T_UNTERMINATED_COMMENT; }
+	(.|\n)  ;
+}
+
+"//".* ;
+
+[\t\r\n ]* ;
 
 <<EOF>> { return T_END; }
+
+{NON_PRINT_ASCII} { return T_UNPRINTABLE_CHARACTER; }
 
 . { return T_UNRECOGNIZED_TOKEN; }
 
@@ -170,7 +168,7 @@ static void init_loc(YYLTYPE* loc)
 
 static void update_loc(YYLTYPE* loc, const char* text, yy_size_t len, int state)
 {
-	if (state != COMMENT && state != MULTILINE_COMMENT) {
+	if (state != MULTILINE_COMMENT) {
 		loc->first_line = loc->last_line;
 		loc->first_column = loc->last_column + 1;
 	}
@@ -183,7 +181,7 @@ static void update_loc(YYLTYPE* loc, const char* text, yy_size_t len, int state)
 		}
 
 		loc->last_column += (text[i] == '\t')
-			? TAB_WIDTH
+			? TAB_WIDTH - (loc->last_column % TAB_WIDTH)
 			: 1;
 	}
 }
