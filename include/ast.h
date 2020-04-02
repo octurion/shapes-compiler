@@ -5,9 +5,11 @@
 #include "ast_decls.h"
 #include "ast_errors.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <deque>
+#include <iterator>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -866,6 +868,9 @@ public:
 
 	decltype(m_fields)::const_iterator fields_begin() const { return m_fields.cbegin(); }
 	decltype(m_fields)::const_iterator fields_end()   const { return m_fields.cend();   }
+
+	decltype(m_methods)::const_iterator methods_begin() const { return m_methods.cbegin(); }
+	decltype(m_methods)::const_iterator methods_end()   const { return m_methods.cend();   }
 
 	const std::string& name() const { return m_name; }
 	const Location& loc()     const { return m_loc;  }

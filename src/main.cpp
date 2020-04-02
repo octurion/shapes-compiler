@@ -19,12 +19,14 @@ class SemanticErrorPrinter: public Ast::SemanticErrorVisitor
 	void visit(const Ast::UnexpectedTypeKind& e)         override {}
 	void visit(const Ast::MissingBound& e)               override {}
 	void visit(const Ast::NoPoolParameters& e)           override {}
-	void visit(const Ast::PoolParametersMismatch& e)     override {}
+	void visit(const Ast::PoolParameterCountMismatch& e) override {}
 	void visit(const Ast::FirstPoolParameterMismatch& e) override {}
 	void visit(const Ast::ClassLayoutNameClash& e)       override {}
 	void visit(const Ast::MissingFieldInLayout& e)       override {}
 	void visit(const Ast::DuplicateFieldInLayout& e)     override {}
 	void visit(const Ast::ClassPoolParameterNoNone& e)   override {}
+	void visit(const Ast::ClassTypeMismatch& e)          override {}
+	void visit(const Ast::PoolParameterMismatch& e)      override {}
 };
 
 int main(int argc, char** argv)

@@ -20,12 +20,14 @@ class DuplicateDefinition;
 class UnexpectedTypeKind;
 class MissingBound;
 class NoPoolParameters;
-class PoolParametersMismatch;
+class PoolParameterCountMismatch;
 class FirstPoolParameterMismatch;
 class ClassLayoutNameClash;
 class MissingFieldInLayout;
 class DuplicateFieldInLayout;
 class ClassPoolParameterNoNone;
+class ClassTypeMismatch;
+class PoolParameterMismatch;
 
 class SemanticErrorList;
 
@@ -34,18 +36,20 @@ class SemanticErrorVisitor
 public:
 	virtual ~SemanticErrorVisitor() {}
 
-	virtual void visit(const NotLvalue&)                  = 0;
-	virtual void visit(const MissingDefinition&)          = 0;
-	virtual void visit(const DuplicateDefinition&)        = 0;
-	virtual void visit(const UnexpectedTypeKind&)         = 0;
-	virtual void visit(const MissingBound&)               = 0;
-	virtual void visit(const NoPoolParameters&)           = 0;
-	virtual void visit(const PoolParametersMismatch&)     = 0;
-	virtual void visit(const FirstPoolParameterMismatch&) = 0;
-	virtual void visit(const ClassLayoutNameClash&)       = 0;
-	virtual void visit(const MissingFieldInLayout&)       = 0;
-	virtual void visit(const DuplicateFieldInLayout&)     = 0;
-	virtual void visit(const ClassPoolParameterNoNone&)   = 0;
+	virtual void visit(const Ast::NotLvalue&)                  = 0;
+	virtual void visit(const Ast::MissingDefinition&)          = 0;
+	virtual void visit(const Ast::DuplicateDefinition&)        = 0;
+	virtual void visit(const Ast::UnexpectedTypeKind&)         = 0;
+	virtual void visit(const Ast::MissingBound&)               = 0;
+	virtual void visit(const Ast::NoPoolParameters&)           = 0;
+	virtual void visit(const Ast::PoolParameterCountMismatch&) = 0;
+	virtual void visit(const Ast::FirstPoolParameterMismatch&) = 0;
+	virtual void visit(const Ast::ClassLayoutNameClash&)       = 0;
+	virtual void visit(const Ast::MissingFieldInLayout&)       = 0;
+	virtual void visit(const Ast::DuplicateFieldInLayout&)     = 0;
+	virtual void visit(const Ast::ClassPoolParameterNoNone&)   = 0;
+	virtual void visit(const Ast::ClassTypeMismatch&)          = 0;
+	virtual void visit(const Ast::PoolParameterMismatch&)      = 0;
 };
 
 class SemanticError
@@ -182,14 +186,14 @@ public:
 	DEFINE_VISITOR_DISPATCH
 };
 
-class PoolParametersMismatch: public SemanticError
+class PoolParameterCountMismatch: public SemanticError
 {
 	size_t m_expected;
 	size_t m_got;
 	Location m_loc;
 
 public:
-	explicit PoolParametersMismatch(size_t expected, size_t got, const Location& loc)
+	explicit PoolParameterCountMismatch(size_t expected, size_t got, const Location& loc)
 		: m_expected(expected)
 		, m_got(got)
 		, m_loc(loc)
@@ -274,6 +278,50 @@ public:
 	const std::string& name()    const { return m_name;       }
 	const Location& loc()        const { return m_loc;        }
 	const Location& layout_loc() const { return m_layout_loc; }
+
+	DEFINE_VISITOR_DISPATCH
+};
+
+class ClassTypeMismatch: public SemanticError
+{
+	std::string m_expected_name;
+	std::string m_got_name;
+	Location m_loc;
+
+public:
+	explicit ClassTypeMismatch(std::string expected_name,
+							   std::string got_name,
+							   const Location& loc)
+		: m_expected_name(std::move(expected_name))
+		, m_got_name(std::move(got_name))
+		, m_loc(loc)
+	{}
+
+	const std::string& expected_name() const { return m_expected_name; }
+	const std::string& got_name()      const { return m_got_name;      }
+	const Location& loc()              const { return m_loc;           }
+
+	DEFINE_VISITOR_DISPATCH
+};
+
+class PoolParameterMismatch: public SemanticError
+{
+	std::string m_expected_name;
+	std::string m_got_name;
+	Location m_loc;
+
+public:
+	explicit PoolParameterMismatch(std::string expected_name,
+								   std::string got_name,
+								   const Location& loc)
+		: m_expected_name(std::move(expected_name))
+		, m_got_name(std::move(got_name))
+		, m_loc(loc)
+	{}
+
+	const std::string& expected_name() const { return m_expected_name; }
+	const std::string& got_name()      const { return m_got_name;      }
+	const Location& loc()              const { return m_loc;           }
 
 	DEFINE_VISITOR_DISPATCH
 };

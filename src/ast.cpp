@@ -2,6 +2,7 @@
 #include "ast.h"
 #include "ast_errors.h"
 
+#include <iterator>
 #include <vector>
 #include <unordered_map>
 #include <unordered_set>
@@ -73,7 +74,7 @@ class TypeCollector: public Cst::DefaultVisitor
 		visitPtrIter(begin, end);
 
 		if (m_pools.size() != m_class->num_pools()) {
-			m_errors->add(make_unique<Ast::PoolParametersMismatch>(
+			m_errors->add(make_unique<Ast::PoolParameterCountMismatch>(
 					m_class->num_pools(),
 					m_pools.size(),
 					name.loc()));
@@ -271,6 +272,7 @@ struct ClassMembersBoundsCollector: public Cst::DefaultVisitor
 		curr_class = ast->find_class(klass.name().ident());
 
 		visitIter(klass.pool_param_bounds_begin(), klass.pool_param_bounds_end());
+		bool must_abort = false;
 		for (auto it = curr_class->pools_begin(); it != curr_class->pools_end(); it++) {
 			auto& pool = **it;
 			if (!pool.type_init()) {
@@ -279,6 +281,38 @@ struct ClassMembersBoundsCollector: public Cst::DefaultVisitor
 						Ast::ErrorKind::TYPE,
 						pool.loc()));
 			}
+			must_abort = true;
+		}
+		if (must_abort) {
+			return;
+		}
+
+ 		auto& first_param = *curr_class->pools_begin();
+		auto& first_param_type = static_cast<const Ast::BoundType&>(first_param->type());
+
+		if (&first_param_type.klass() != curr_class) {
+			errors->add(make_unique<Ast::ClassTypeMismatch>(
+					first_param_type.klass().name(), curr_class->name(), first_param->loc()));
+			return;
+		}
+
+		auto num_params = std::distance(curr_class->pools_begin(), curr_class->pools_end());
+		auto num_formal = std::distance(first_param_type.pool_params_begin(), first_param_type.pool_params_end());
+		if (num_params != num_formal) {
+			errors->add(make_unique<Ast::PoolParameterCountMismatch>(
+					num_formal, num_params, first_param->loc()));
+			return;
+		}
+
+		auto mismatch = std::mismatch(
+			curr_class->pools_begin(), curr_class->pools_end(),
+			first_param_type.pool_params_begin());
+
+		if (mismatch.first != curr_class->pools_end()) {
+			errors->add(make_unique<Ast::PoolParameterMismatch>(
+				(*mismatch.second)->name(), (*mismatch.first)->name(),
+				(*mismatch.first)->loc()));
+			return;
 		}
 
 		class_fields.clear();
@@ -504,6 +538,270 @@ struct LayoutsCollector: public Cst::DefaultVisitor
 	}
 };
 
+bool validate_type(const Ast::Type& type, const Location& loc, Ast::SemanticErrorList* errors)
+{
+	const Ast::Class* klass;
+	std::vector<const Ast::Pool*>::const_iterator begin;
+	std::vector<const Ast::Pool*>::const_iterator end;
+
+	switch (type.kind()) {
+	case Ast::Type::Kind::PRIMITIVE:
+	case Ast::Type::Kind::NULLPTR:
+		return true;
+
+	case Ast::Type::Kind::CLASS: {
+		const auto& class_type = static_cast<const Ast::ClassType&>(type);
+		klass = &class_type.klass();
+		begin = class_type.pool_params_begin();
+		end = class_type.pool_params_end();
+		break;
+	}
+
+	case Ast::Type::Kind::BOUND: {
+		const auto& bound_type = static_cast<const Ast::BoundType&>(type);
+		klass = &bound_type.klass();
+		begin = bound_type.pool_params_begin();
+		end = bound_type.pool_params_end();
+		break;
+	}
+
+	case Ast::Type::Kind::POOL: {
+		const auto& pool_type = static_cast<const Ast::PoolType&>(type);
+		klass = &pool_type.layout().klass();
+		begin = pool_type.pool_params_begin();
+		end = pool_type.pool_params_end();
+		break;
+	}
+	}
+
+	auto formal_begin = klass->pools_begin();
+	auto formal_end = klass->pools_end();
+
+	auto num_params = std::distance(begin, end);
+	auto num_formal_params = std::distance(formal_begin, formal_end);
+
+	if (num_params != num_formal_params) {
+		errors->add(make_unique<Ast::PoolParameterCountMismatch>(
+				num_formal_params, num_params, loc));
+		return false;
+	}
+
+	std::unordered_map<const Ast::Pool*, const Ast::Pool*> map;
+	for (auto formal_it = formal_begin, pool_it = begin;
+			formal_it != formal_end; formal_it++, pool_it++) {
+		map.emplace(*formal_it, *pool_it);
+	}
+
+	bool success = true;
+	for (auto formal_it = formal_begin, pool_it = begin;
+			formal_it != formal_end; formal_it++, pool_it++) {
+		const auto* pool_pool = *pool_it;
+		const auto* formal_pool = *formal_it;
+		if (pool_pool == nullptr) {
+			continue;
+		}
+
+		const Ast::Class* pool_class;
+		std::vector<const Ast::Pool*>::const_iterator pool_begin;
+		std::vector<const Ast::Pool*>::const_iterator pool_end;
+
+		assert(pool_pool->type().kind() == Ast::Type::Kind::POOL
+				|| pool_pool->type().kind() == Ast::Type::Kind::BOUND);
+
+		if (pool_pool->type().kind() == Ast::Type::Kind::POOL) {
+			const auto& pool_type = static_cast<const Ast::PoolType&>(pool_pool->type());
+			pool_class = &pool_type.layout().klass();
+			pool_begin = pool_type.pool_params_begin();
+			pool_end = pool_type.pool_params_end();
+		} else {
+			const auto& bound_type = static_cast<const Ast::BoundType&>(pool_pool->type());
+			pool_class = &bound_type.klass();
+			pool_begin = bound_type.pool_params_begin();
+			pool_end = bound_type.pool_params_end();
+		}
+
+		const Ast::Class* formal_class;
+		std::vector<const Ast::Pool*>::const_iterator formal_begin;
+		std::vector<const Ast::Pool*>::const_iterator formal_end;
+
+		if (formal_pool->type().kind() == Ast::Type::Kind::POOL) {
+			const auto& pool_type = static_cast<const Ast::PoolType&>(formal_pool->type());
+			formal_class = &pool_type.layout().klass();
+			formal_begin = pool_type.pool_params_begin();
+			formal_end = pool_type.pool_params_end();
+		} else {
+			const auto& bound_type = static_cast<const Ast::BoundType&>(formal_pool->type());
+			formal_class = &bound_type.klass();
+			formal_begin = bound_type.pool_params_begin();
+			formal_end = bound_type.pool_params_end();
+		}
+
+		if (formal_class != pool_class) {
+			errors->add(make_unique<Ast::ClassTypeMismatch>(
+				formal_class->name(), pool_class->name(), loc));
+			success = false;
+			continue;
+		}
+
+		for (auto pool_it = pool_begin, formal_it = formal_begin;
+				pool_it != pool_end; pool_it++, formal_it++) {
+			if (map[*formal_it] != *pool_it) {
+				std::string got_name = (map[*formal_it] != nullptr)
+					?  map[*formal_it]->name()
+					: "none";
+				errors->add(make_unique<Ast::PoolParameterMismatch>(
+					(*pool_it)->name(), std::move(got_name), loc));
+				success = false;
+				continue;
+			}
+		}
+	}
+
+	return success;
+}
+
+class TypeAndMethodBodyVisitor: public Cst::DefaultVisitor
+{
+	Ast::Program* prog;
+	Ast::SemanticErrorList* errors;
+
+	Ast::Class* curr_class = nullptr;
+	Ast::Method* curr_method = nullptr;
+
+public:
+	explicit TypeAndMethodBodyVisitor(Ast::Program* prog, Ast::SemanticErrorList* errors)
+		: prog(prog)
+		, errors(errors)
+	{}
+
+	void visit(const Cst::Class& klass) override
+	{
+		curr_class = prog->find_class(klass.name().ident());
+		for (auto it = curr_class->pools_begin(); it != curr_class->pools_end(); it++) {
+			validate_type((*it)->type(), (*it)->loc(), errors);
+		}
+
+		for (auto it = curr_class->fields_begin(); it != curr_class->fields_end(); it++) {
+			validate_type((*it)->type(), (*it)->loc(), errors);
+		}
+
+		for (auto it = curr_class->methods_begin(); it != curr_class->methods_end(); it++) {
+			auto& method = *it;
+			if (method->return_type() != nullptr) {
+				validate_type(*method->return_type(), (*it)->loc(), errors);
+			}
+
+			for (auto param_it = method->params_begin(); param_it != method->params_end(); param_it++) {
+				validate_type(param_it->type(), (*it)->loc(), errors);
+			}
+		}
+	}
+
+	void visit(const Cst::Method&) override
+	{
+	}
+
+	void visit(const Cst::VariableDeclsStmt&) override
+	{
+	}
+
+	void visit(const Cst::AssignStmt&) override
+	{
+	}
+
+	void visit(const Cst::OpAssignStmt&) override
+	{
+	}
+
+	void visit(const Cst::IfStmt&) override
+	{
+	}
+
+	void visit(const Cst::WhileStmt&) override
+	{
+	}
+
+	void visit(const Cst::ForeachRangeStmt&) override
+	{
+	}
+
+	void visit(const Cst::ForeachPoolStmt&) override
+	{
+	}
+
+	void visit(const Cst::BlockStmt&) override
+	{
+	}
+
+	void visit(const Cst::ExprStmt&) override
+	{
+	}
+
+	void visit(const Cst::BreakStmt&) override
+	{
+	}
+
+	void visit(const Cst::ContinueStmt&) override
+	{
+	}
+
+	void visit(const Cst::ReturnStmt&) override
+	{
+	}
+
+	void visit(const Cst::ReturnVoidStmt&) override
+	{
+	}
+
+	void visit(const Cst::IntegerConst&) override
+	{
+	}
+
+	void visit(const Cst::BooleanConst&) override
+	{
+	}
+
+	void visit(const Cst::NullExpr&) override
+	{
+	}
+
+	void visit(const Cst::ThisExpr&) override
+	{
+	}
+
+	void visit(const Cst::BinaryExpr&) override
+	{
+	}
+
+	void visit(const Cst::UnaryExpr&) override
+	{
+	}
+
+	void visit(const Cst::IndexExpr&) override
+	{
+	}
+
+	void visit(const Cst::IdentifierExpr&) override
+	{
+	}
+
+	void visit(const Cst::MethodCall&) override
+	{
+	}
+
+	void visit(const Cst::MemberMethodCall&) override
+	{
+	}
+
+	void visit(const Cst::FieldAccess&) override
+	{
+	}
+
+	void visit(const Cst::NewExpr&) override
+	{
+	}
+};
+
 void Ast::run_semantic_analysis(const Cst::Program& cst, Ast::SemanticErrorList* errors, Ast::Program* ast)
 {
 	Ast::Program program;
@@ -533,6 +831,12 @@ void Ast::run_semantic_analysis(const Cst::Program& cst, Ast::SemanticErrorList*
 	program.set_layouts(
 		std::move(layouts_collector.layout_map),
 		std::move(layouts_collector.layouts));
+
+	TypeAndMethodBodyVisitor body_visitor(&program, errors);
+	cst.accept(body_visitor);
+	if (errors->has_errors()) {
+		return;
+	}
 
 	*ast = std::move(program);
 }
