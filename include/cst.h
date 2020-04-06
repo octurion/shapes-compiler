@@ -92,6 +92,20 @@ public:
 	PoolParameter& operator=(PoolParameter&&);
 
 	~PoolParameter();
+
+	template<typename T>
+	void accept(T& visitor) const
+	{
+		switch (m_tag) {
+		case Tag::POOL:
+			visitor.visit(m_pool);
+			break;
+
+		case Tag::NONE:
+			visitor.visit(m_none);
+			break;
+		}
+	}
 };
 
 class Type
@@ -171,6 +185,20 @@ public:
 		, m_object_type(std::move(object_type))
 		, m_loc(loc)
 	{}
+
+	template<typename T>
+	void accept(T& visitor) const
+	{
+		switch (m_tag) {
+		case Tag::PRIMITIVE:
+			visitor.visit(m_primitive_type);
+			break;
+
+		case Tag::OBJECT:
+			visitor.visit(m_object_type);
+			break;
+		}
+	}
 };
 
 class BoundType: public BaseVisitable<BoundType>
@@ -400,11 +428,11 @@ public:
 
 		const Identifier& name() const { return m_name; }
 
-		const_iterator params_begin() const { return m_params.begin(); }
-		const_iterator params_end()   const { return m_params.end();   }
+		const_iterator begin() const { return m_params.begin(); }
+		const_iterator end()   const { return m_params.end();   }
 
-		iterator params_begin() { return m_params.begin(); }
-		iterator params_end()   { return m_params.end();   }
+		iterator begin() { return m_params.begin(); }
+		iterator end()   { return m_params.end();   }
 	};
 
 	class MemberMethodCall: public BaseVisitable<MemberMethodCall>
@@ -1083,70 +1111,10 @@ public:
 	const Location& loc() const { return m_loc; }
 };
 
-class ReturnType
-{
-	bool m_present;
-	union {
-		Type m_type;
-	};
-
-public:
-	ReturnType()
-		: m_present(false)
-	{}
-
-	explicit ReturnType(Type type)
-		: m_present(true)
-		, m_type(std::move(type))
-	{}
-
-	ReturnType(const ReturnType&) = delete;
-	ReturnType& operator=(const ReturnType&) = delete;
-
-	ReturnType(ReturnType&& other)
-		: m_present(other.m_present)
-	{
-		if (other.m_present) {
-			new (&m_type) Type(std::move(other.m_type));
-		}
-	}
-
-	ReturnType& operator=(ReturnType&& other)
-	{
-		if (m_present) {
-			m_type.~Type();
-		}
-
-		m_present = other.m_present;
-		if (other.m_present) {
-			new (&m_type) Type(std::move(other.m_type));
-		}
-
-		return *this;
-	}
-
-	~ReturnType()
-	{
-		if (m_present) {
-			m_type.~Type();
-		}
-	}
-
-	bool present() const { return m_present; }
-
-	const Type* type() const { return m_present ? &m_type : nullptr; }
-
-	template<typename T>
-	void accept(T& visitor) const
-	{
-		if (m_present) {
-			visitor.visit(m_type);
-		}
-	}
-};
-
 class Method: public BaseVisitable<Method>
 {
+	using ReturnType = Optional<Type>;
+
 	Identifier m_name;
 	ReturnType m_return_type;
 	std::vector<MethodParameter> m_params;
@@ -1172,7 +1140,7 @@ public:
 
 	const Identifier& name() const { return m_name; }
 
-	const ReturnType& type() const { return m_return_type; }
+	const Type* type() const { return m_return_type.get(); }
 
 	const_iterator begin() const { return m_params.begin(); }
 	const_iterator end()   const { return m_params.end();   }
@@ -1355,57 +1323,66 @@ public:
 	}
 };
 
-class CstVisitor: public BaseVisitor,
-	public Visitor<FormalPoolParameter>,
-	public Visitor<PoolParameter::Pool>,
-	public Visitor<PoolParameter::None>,
-	public Visitor<Type::PrimitiveType>,
-	public Visitor<Type::ObjectType>,
-	public Visitor<BoundType>,
-	public Visitor<LayoutType>,
-	public Visitor<FormalPoolBound>,
-	public Visitor<VariableDeclaration>,
-	public Visitor<PoolDeclaration>,
-	public Visitor<Expr::IntegerConst>,
-	public Visitor<Expr::BooleanConst>,
-	public Visitor<Expr::Null>,
-	public Visitor<Expr::This>,
-	public Visitor<Expr::Binary>,
-	public Visitor<Expr::VariableExpr>,
-	public Visitor<Expr::Unary>,
-	public Visitor<Expr::IndexExpr>,
-	public Visitor<Expr::MethodCall>,
-	public Visitor<Expr::MemberMethodCall>,
-	public Visitor<Expr::FieldAccess>,
-	public Visitor<Expr::New>,
-	public Visitor<Stmt::Noop>,
-	public Visitor<Stmt::VariableDeclarations>,
-	public Visitor<Stmt::PoolDeclarations>,
-	public Visitor<Stmt::Assignment>,
-	public Visitor<Stmt::OpAssignment>,
-	public Visitor<Stmt::If>,
-	public Visitor<Stmt::While>,
-	public Visitor<Stmt::ForeachRange>,
-	public Visitor<Stmt::ForeachPool>,
-	public Visitor<Stmt::Block>,
-	public Visitor<Stmt::ExprStmt>,
-	public Visitor<Stmt::Break>,
-	public Visitor<Stmt::Continue>,
-	public Visitor<Stmt::Return>,
-	public Visitor<Stmt::ReturnVoid>,
-	public Visitor<Field>,
-	public Visitor<MethodParameter>,
-	public Visitor<Method>,
-	public Visitor<Class>,
-	public Visitor<ClusterField>,
-	public Visitor<Cluster>,
-	public Visitor<Layout>,
-	public Visitor<Program>
+class CstVisitor: public BaseVisitor
+	, public Visitor<FormalPoolParameter>
+	, public Visitor<PoolParameter::Pool>
+	, public Visitor<PoolParameter::None>
+	, public Visitor<Type::PrimitiveType>
+	, public Visitor<Type::ObjectType>
+	, public Visitor<BoundType>
+	, public Visitor<LayoutType>
+	, public Visitor<FormalPoolBound>
+	, public Visitor<VariableDeclaration>
+	, public Visitor<PoolDeclaration>
+	, public Visitor<Expr::IntegerConst>
+	, public Visitor<Expr::BooleanConst>
+	, public Visitor<Expr::Null>
+	, public Visitor<Expr::This>
+	, public Visitor<Expr::Binary>
+	, public Visitor<Expr::VariableExpr>
+	, public Visitor<Expr::Unary>
+	, public Visitor<Expr::IndexExpr>
+	, public Visitor<Expr::MethodCall>
+	, public Visitor<Expr::MemberMethodCall>
+	, public Visitor<Expr::FieldAccess>
+	, public Visitor<Expr::New>
+	, public Visitor<Stmt::Noop>
+	, public Visitor<Stmt::VariableDeclarations>
+	, public Visitor<Stmt::PoolDeclarations>
+	, public Visitor<Stmt::Assignment>
+	, public Visitor<Stmt::OpAssignment>
+	, public Visitor<Stmt::If>
+	, public Visitor<Stmt::While>
+	, public Visitor<Stmt::ForeachRange>
+	, public Visitor<Stmt::ForeachPool>
+	, public Visitor<Stmt::Block>
+	, public Visitor<Stmt::ExprStmt>
+	, public Visitor<Stmt::Break>
+	, public Visitor<Stmt::Continue>
+	, public Visitor<Stmt::Return>
+	, public Visitor<Stmt::ReturnVoid>
+	, public Visitor<Field>
+	, public Visitor<MethodParameter>
+	, public Visitor<Method>
+	, public Visitor<Class>
+	, public Visitor<ClusterField>
+	, public Visitor<Cluster>
+	, public Visitor<Layout>
+	, public Visitor<Program>
 {
 };
 
 class DefaultVisitor: public CstVisitor
 {
+public:
+	template<typename Iter>
+	void visit(Iter begin, Iter end)
+	{
+		for (auto it = begin; it != end; it++) {
+			it->accept(*this);
+		}
+	}
+
 	void visit(const FormalPoolParameter& e)        override;
 	void visit(const PoolParameter::Pool& e)        override;
 	void visit(const PoolParameter::None& e)        override;
@@ -1453,4 +1430,4 @@ class DefaultVisitor: public CstVisitor
 	void visit(const Program& e)                    override;
 };
 
-}
+} // namespace Cst

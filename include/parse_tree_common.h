@@ -1,5 +1,7 @@
 #pragma once
 
+#include <utility>
+
 template <class Visitable>
 class BaseVisitable
 {
@@ -22,6 +24,69 @@ class Visitor
 {
 public:
 	virtual void visit(const T&) = 0;
+};
+
+template<typename T>
+class Optional
+{
+	bool m_present;
+	union {
+		T m_item;
+	};
+
+public:
+	Optional()
+		: m_present(false)
+	{}
+
+	explicit Optional(T item)
+		: m_present(true)
+		, m_item(std::move(item))
+	{}
+
+	Optional(const Optional&) = delete;
+	Optional& operator=(const Optional&) = delete;
+
+	Optional(Optional&& other)
+		: m_present(other.m_present)
+	{
+		if (other.m_present) {
+			new (&m_item) T(std::move(other.m_item));
+		}
+	}
+
+	Optional& operator=(Optional&& other)
+	{
+		if (m_present) {
+			m_item.~T();
+		}
+
+		m_present = other.m_present;
+		if (other.m_present) {
+			new (&m_item) T(std::move(other.m_item));
+		}
+
+		return *this;
+	}
+
+	~Optional()
+	{
+		if (m_present) {
+			m_item.~T();
+		}
+	}
+
+	bool present() const { return m_present; }
+
+	const T* get() const { return m_present ? &m_item : nullptr; }
+
+	template<typename U>
+	void accept(U& visitor) const
+	{
+		if (m_present) {
+			visitor.visit(m_item);
+		}
+	}
 };
 
 struct Location {

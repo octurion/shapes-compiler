@@ -289,7 +289,7 @@ T move_and_delete(T* ptr) {
 
 %code requires {
 #include "cst.h"
-#include "cst_errors.h"
+#include "syntactic_analysis.h"
 
 /* Ugly hack to allow both lex and bison to have yyscan_t as the scanner type */
 #ifndef YY_TYPEDEF_YY_SCANNER_T

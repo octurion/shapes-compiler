@@ -383,4 +383,228 @@ void Stmt::construct_variant_from_other(Stmt& other)
 	}
 }
 
+void DefaultVisitor::visit(const FormalPoolParameter&)
+{
 }
+
+void DefaultVisitor::visit(const PoolParameter::Pool&)
+{
+}
+
+void DefaultVisitor::visit(const PoolParameter::None&)
+{
+}
+
+void DefaultVisitor::visit(const Type::PrimitiveType&)
+{
+}
+
+void DefaultVisitor::visit(const Type::ObjectType& e)
+{
+	visit(e.begin(), e.end());
+}
+
+void DefaultVisitor::visit(const BoundType& e)
+{
+	visit(e.begin(), e.end());
+}
+
+void DefaultVisitor::visit(const LayoutType& e)
+{
+	visit(e.begin(), e.end());
+}
+
+void DefaultVisitor::visit(const FormalPoolBound& e)
+{
+	e.type().accept(*this);
+}
+
+void DefaultVisitor::visit(const VariableDeclaration& e)
+{
+	e.type().accept(*this);
+}
+
+void DefaultVisitor::visit(const PoolDeclaration& e)
+{
+	e.type().accept(*this);
+}
+
+void DefaultVisitor::visit(const Expr::IntegerConst&)
+{
+}
+
+void DefaultVisitor::visit(const Expr::BooleanConst&)
+{
+}
+
+void DefaultVisitor::visit(const Expr::Null&)
+{
+}
+
+void DefaultVisitor::visit(const Expr::This&)
+{
+}
+
+void DefaultVisitor::visit(const Expr::Binary& e)
+{
+	e.lhs().accept(*this);
+	e.rhs().accept(*this);
+}
+
+void DefaultVisitor::visit(const Expr::VariableExpr&)
+{
+}
+
+void DefaultVisitor::visit(const Expr::Unary& e)
+{
+	e.expr().accept(*this);
+}
+
+void DefaultVisitor::visit(const Expr::IndexExpr& e)
+{
+	e.pool().accept(*this);
+	e.idx().accept(*this);
+}
+
+void DefaultVisitor::visit(const Expr::MethodCall& e)
+{
+	visit(e.begin(), e.end());
+}
+
+void DefaultVisitor::visit(const Expr::MemberMethodCall& e)
+{
+	visit(e.begin(), e.end());
+}
+
+void DefaultVisitor::visit(const Expr::FieldAccess& e)
+{
+	e.expr().accept(*this);
+}
+
+void DefaultVisitor::visit(const Expr::New& e)
+{
+	e.type().accept(*this);
+}
+
+void DefaultVisitor::visit(const Stmt::Noop&)
+{
+}
+
+void DefaultVisitor::visit(const Stmt::VariableDeclarations& e)
+{
+	visit(e.begin(), e.end());
+}
+
+void DefaultVisitor::visit(const Stmt::PoolDeclarations& e)
+{
+	visit(e.begin(), e.end());
+}
+
+void DefaultVisitor::visit(const Stmt::Assignment& e)
+{
+	e.lhs().accept(*this);
+	e.rhs().accept(*this);
+}
+
+void DefaultVisitor::visit(const Stmt::OpAssignment& e)
+{
+	e.lhs().accept(*this);
+	e.rhs().accept(*this);
+}
+
+void DefaultVisitor::visit(const Stmt::If& e)
+{
+	e.cond().accept(*this);
+	e.then_branch().accept(*this);
+	e.else_branch().accept(*this);
+}
+
+void DefaultVisitor::visit(const Stmt::While& e)
+{
+	e.cond().accept(*this);
+	e.body().accept(*this);
+}
+
+void DefaultVisitor::visit(const Stmt::ForeachRange& e)
+{
+	e.range_begin().accept(*this);
+	e.range_end().accept(*this);
+	e.body().accept(*this);
+}
+
+void DefaultVisitor::visit(const Stmt::ForeachPool& e)
+{
+	e.body().accept(*this);
+}
+
+void DefaultVisitor::visit(const Stmt::Block& e)
+{
+	visit(e.begin(), e.end());
+}
+
+void DefaultVisitor::visit(const Stmt::ExprStmt& e)
+{
+	e.expr().accept(*this);
+}
+
+void DefaultVisitor::visit(const Stmt::Break&)
+{
+}
+
+void DefaultVisitor::visit(const Stmt::Continue&)
+{
+}
+
+void DefaultVisitor::visit(const Stmt::Return& e)
+{
+	e.expr().accept(*this);
+}
+
+void DefaultVisitor::visit(const Stmt::ReturnVoid&)
+{
+}
+
+void DefaultVisitor::visit(const Field& e)
+{
+	e.type().accept(*this);
+}
+
+void DefaultVisitor::visit(const MethodParameter& e)
+{
+	e.type().accept(*this);
+}
+
+void DefaultVisitor::visit(const Method& e)
+{
+	visit(e.begin(), e.end());
+	e.body().accept(*this);
+}
+
+void DefaultVisitor::visit(const Class& e)
+{
+	visit(e.pool_params_begin(), e.pool_params_end());
+	visit(e.pool_param_bounds_begin(), e.pool_param_bounds_end());
+	visit(e.fields_begin(), e.fields_end());
+	visit(e.methods_begin(), e.methods_end());
+}
+
+void DefaultVisitor::visit(const ClusterField&)
+{
+}
+
+void DefaultVisitor::visit(const Cluster& e)
+{
+	visit(e.begin(), e.end());
+}
+
+void DefaultVisitor::visit(const Layout& e)
+{
+	visit(e.begin(), e.end());
+}
+
+void DefaultVisitor::visit(const Program& e)
+{
+	visit(e.classes_begin(), e.classes_end());
+}
+
+} // namespace Cst

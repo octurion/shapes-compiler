@@ -1,13 +1,16 @@
 #pragma once
 
-#include "parse_tree_common.h"
-
-#include <string>
-#include <utility>
+#include "ast.h"
+#include "cst.h"
 
 namespace Ast
 {
 
+class SemanticError
+{
+};
+
+#if 0
 enum class ErrorKind { CLASS, FIELD, POOL, VARIABLE, TYPE, LAYOUT, METHOD };
 
 enum class TypeKind { CLASS, POOL, BOUND, PRIMITIVE };
@@ -402,6 +405,7 @@ public:
 
 	DEFINE_VISITOR_DISPATCH
 };
+#endif
 
 class SemanticErrorList
 {
@@ -424,5 +428,6 @@ public:
 	}
 };
 
-#undef DEFINE_VISITOR_DISPATCH
+extern void run_semantic_analysis(const Cst::Program& cst, SemanticErrorList& errors, Cst::Program* ast);
+
 }

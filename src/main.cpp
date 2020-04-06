@@ -2,10 +2,10 @@
 #include "lexer.yy.h"
 
 #include "cst.h"
-#include "cst_errors.h"
+#include "syntactic_analysis.h"
 
-// #include "ast.h"
-// #include "ast_errors.h"
+#include "ast.h"
+#include "semantic_analysis.h"
 
 #include <cerrno>
 #include <cstdio>

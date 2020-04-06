@@ -30,7 +30,12 @@ target_include_directories(shapes_parser PUBLIC ${FLEX_BISON_GENFILES_DIR} inclu
 llvm_map_components_to_libnames(LLVM_LIBS support core irreader passes target
     x86asmparser x86asmprinter x86codegen x86desc x86info x86utils)
 
-add_executable(shapes src/main.cpp src/cst.cpp src/ast.cpp)
+add_executable(shapes
+    src/main.cpp
+    src/cst.cpp
+    src/ast.cpp
+    src/semantic_analysis.cpp
+)
 
 target_compile_options(shapes PRIVATE -Wall -Wextra -Wpedantic -fdiagnostics-color=always)
 target_compile_definitions(shapes PRIVATE ${LLVM_DEFINITIONS})
