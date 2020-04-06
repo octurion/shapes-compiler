@@ -1,5 +1,4 @@
 %{
-#include "cst.h"
 #include "parser.tab.h"
 
 #define YY_USER_INIT init_loc(yylloc);
@@ -72,14 +71,12 @@ NON_PRINT_ASCII [\x00-\x1F\x7F]
 "f64"  { return T_F64;  }
 
 {ALPHA}{ALNUM}* {
-	// It's Bison that's going to set up the location properly
-	yylval->identifier = new Cst::Identifier(std::string(yytext, yyleng));
+	yylval->str = new std::string(yytext, yyleng);
 	return T_IDENT;
 }
 
 {DIGIT}+ {
-	// It's Bison that's going to set up the location properly
-	yylval->integer = new Cst::IntegerConst(std::string(yytext, yyleng));
+	yylval->str = new std::string(yytext, yyleng);
 	return T_INT_CONST;
 }
 

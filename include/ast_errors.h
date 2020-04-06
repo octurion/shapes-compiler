@@ -7,8 +7,6 @@
 
 namespace Ast
 {
-#define DEFINE_VISITOR_DISPATCH \
-	void accept(SemanticErrorVisitor& v) const override { v.visit(*this); }
 
 enum class ErrorKind { CLASS, FIELD, POOL, VARIABLE, TYPE, LAYOUT, METHOD };
 
@@ -28,6 +26,10 @@ class DuplicateFieldInLayout;
 class ClassPoolParameterNoNone;
 class ClassTypeMismatch;
 class PoolParameterMismatch;
+class UnexpectedType;
+class NotInsideLoop;
+class NoReturnType;
+class ExpectedReturnType;
 
 class SemanticErrorList;
 
@@ -50,6 +52,10 @@ public:
 	virtual void visit(const Ast::ClassPoolParameterNoNone&)   = 0;
 	virtual void visit(const Ast::ClassTypeMismatch&)          = 0;
 	virtual void visit(const Ast::PoolParameterMismatch&)      = 0;
+	virtual void visit(const Ast::NotInsideLoop&)              = 0;
+	virtual void visit(const Ast::UnexpectedType&)             = 0;
+	virtual void visit(const Ast::NoReturnType&)               = 0;
+	virtual void visit(const Ast::ExpectedReturnType&)         = 0;
 };
 
 class SemanticError
@@ -150,6 +156,29 @@ public:
 	{}
 
 	TypeKind kind()       const { return m_kind; }
+	const Location& loc() const { return m_loc;  }
+
+	DEFINE_VISITOR_DISPATCH
+};
+
+class UnexpectedType: public SemanticError
+{
+	std::string m_expected;
+	std::string m_got;
+	Location m_loc;
+
+public:
+	explicit UnexpectedType(std::string expected,
+							std::string got,
+							const Location& loc)
+		: m_expected(std::move(expected))
+		, m_got(std::move(got))
+		, m_loc(loc)
+	{}
+
+	const std::string& expected() const { return m_expected; }
+	const std::string& got()      const { return m_got;      }
+
 	const Location& loc() const { return m_loc;  }
 
 	DEFINE_VISITOR_DISPATCH
@@ -322,6 +351,54 @@ public:
 	const std::string& expected_name() const { return m_expected_name; }
 	const std::string& got_name()      const { return m_got_name;      }
 	const Location& loc()              const { return m_loc;           }
+
+	DEFINE_VISITOR_DISPATCH
+};
+
+class NotInsideLoop: public SemanticError
+{
+	Location m_loc;
+
+public:
+	explicit NotInsideLoop(const Location& loc)
+		: m_loc(loc)
+	{}
+
+	const Location& loc() const { return m_loc; }
+
+	DEFINE_VISITOR_DISPATCH
+};
+
+class NoReturnType: public SemanticError
+{
+	std::string m_method_name;
+	Location m_loc;
+
+public:
+	explicit NoReturnType(std::string method_name, const Location& loc)
+		: m_method_name(std::move(method_name))
+		, m_loc(loc)
+	{}
+
+	const std::string& method_name() const { return m_method_name; }
+	const Location& loc()            const { return m_loc;         }
+
+	DEFINE_VISITOR_DISPATCH
+};
+
+class ExpectedReturnType: public SemanticError
+{
+	std::string m_method_name;
+	Location m_loc;
+
+public:
+	explicit ExpectedReturnType(std::string method_name, const Location& loc)
+		: m_method_name(std::move(method_name))
+		, m_loc(loc)
+	{}
+
+	const std::string& method_name() const { return m_method_name; }
+	const Location& loc()            const { return m_loc;         }
 
 	DEFINE_VISITOR_DISPATCH
 };

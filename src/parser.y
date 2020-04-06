@@ -13,7 +13,7 @@ extern void yyerror(
 	Cst::SyntaxErrorList* syntax_errors,
 	const char* msg);
 
-static Location yyltype_to_location(const YYLTYPE& orig_loc);
+static Location make_loc(const YYLTYPE& orig_loc);
 
 /*
  * How we do memory management: Unfortunately, Bison does not really let us use
@@ -31,15 +31,6 @@ T move_and_delete(T* ptr) {
 	T moved(std::move(*ptr));
 	delete ptr;
 	return moved;
-}
-
-/**
- * Wraps a raw `ptr` object into a `std::unique_ptr`. This `std::unique_ptr`
- * takes ownership of the heap-allocated object.
- */
-template<typename T>
-std::unique_ptr<T> ptr_to_unique(T* ptr) {
-	return std::unique_ptr<T>(ptr);
 }
 %}
 
@@ -62,30 +53,53 @@ std::unique_ptr<T> ptr_to_unique(T* ptr) {
 	Cst::Method* method;
 
 	Cst::Type* type;
+	Cst::Type::ObjectType* object_type;
+	Cst::Type::PrimitiveType* primitive_type;
+
+	Cst::LayoutType* layout_type;
+	Cst::BoundType* bound_type;
 
 	Cst::Stmt* stmt;
-	Cst::BlockStmt* block;
+	Cst::Stmt::Block* block;
 
 	Cst::Expr* expr;
 
 	Cst::BinOp bin_op;
 
-	Cst::Variable* variable;
-	std::vector<Cst::Variable>* variable_list;
+	Cst::VariableDeclaration* variable_decl;
+	std::vector<Cst::VariableDeclaration>* variable_decl_list;
 
+	Cst::PoolDeclaration* pool_decl;
+	std::vector<Cst::PoolDeclaration>* pool_decl_list;
+
+	Cst::FormalPoolBound* pool_bound;
+	std::vector<Cst::FormalPoolBound>* pool_bound_list;
+
+	Cst::FormalPoolParameter* formal_pool_parameter;
+	std::vector<Cst::FormalPoolParameter>* formal_pool_parameter_list;
+
+	std::vector<Cst::PoolParameter>* pool_parameter_list;
+
+	Cst::PoolParameter::Pool* bound_pool_parameter;
+	std::vector<Cst::PoolParameter::Pool>* bound_pool_parameter_list;
+
+	Cst::MethodParameter* method_parameter;
+	std::vector<Cst::MethodParameter>* method_parameter_list;
+
+	Cst::Field* field;
 	std::vector<Cst::Field>* field_list;
+
+	Cst::ClusterField* cluster_field;
+	std::vector<Cst::ClusterField>* cluster_field_list;
 
 	Cst::Cluster* cluster;
 	std::vector<Cst::Cluster>* cluster_list;
 
-	std::vector<std::unique_ptr<Cst::Expr>>* expr_list;
+	std::vector<Cst::Expr>* expr_list;
 
 	Cst::Identifier* identifier;
-	std::vector<Cst::Identifier>* identifier_list;
 
-	std::vector<std::unique_ptr<Cst::PoolParameter>>* pool_param_list;
-
-	Cst::IntegerConst* integer;
+	std::string* str;
 }
 
 /* This will ensure that in the case of error recovery, the intermediate
@@ -98,8 +112,8 @@ std::unique_ptr<T> ptr_to_unique(T* ptr) {
 
 /* List of all tokens (fed into lex) */
 
-%token<identifier> T_IDENT     "identifier"
-%token<integer>    T_INT_CONST "integer constant"
+%token<str> T_IDENT     "identifier"
+%token<str> T_INT_CONST "integer constant"
 
 %token T_CLASS  "class"
 %token T_EXPORT "export"
@@ -206,31 +220,56 @@ std::unique_ptr<T> ptr_to_unique(T* ptr) {
 %type<class_def> class_definition
 %type<layout>    layout_definition
 
-%type<variable_list> variable_declarations
-                     variable_declaration_list
-                     pool_bounds
-                     method_arguments
-%type<field_list>    field_declarations
-%type<variable> variable_declaration
-%type<identifier_list> identifiers
-                       identifier_list
-                       class_pool_parameters
-%type<pool_param_list> pool_parameters
-                       pool_param_list_header
-                       pool_param_list
+%type<field> field_declaration
+%type<field_list> field_declarations
+                  field_declaration_list
+
+%type<variable_decl> variable_declaration
+%type<variable_decl_list> variable_declaration_list
+
+%type<pool_decl> pool_declaration
+%type<pool_decl_list> pool_declaration_list
+
+%type<formal_pool_parameter> formal_pool_parameter
+%type<formal_pool_parameter_list> formal_pool_parameters
+                                  formal_pool_parameter_list
+
+%type<bound_pool_parameter> bound_pool_parameter
+%type<bound_pool_parameter_list> bound_pool_parameters
+                                 bound_pool_parameter_list
+
+%type<method_parameter> method_parameter
+%type<method_parameter_list> method_parameters
+                             method_parameter_list
+
+%type<cluster_field> cluster_field
+%type<cluster_field_list> cluster_field_list
+
+%type<pool_bound> pool_bound
+%type<pool_bound_list> pool_bounds pool_bound_list
+
+%type<pool_parameter_list> pool_parameters
+                           pool_parameter_list
+
 %type<class_body> class_body
                   class_members
 %type<method> method_declaration
 
-%type<type> type return_type
+%type<type> type
+%type<object_type> object_type
+%type<primitive_type> primitive_type
+
+%type<bound_type> bound_type
+%type<layout_type> layout_type
 
 %type<stmt>  stmt else_branch
 %type<block> stmt_list block_stmt
 
 %type<bin_op> op_assign
-%type<expr>   expr
-%type<expr_list> argument_exprs
-                 argument_expr_list
+
+%type<expr> expr
+
+%type<expr_list> method_call_args method_call_arg_list
 
 %type<cluster_list> clusters cluster_list
 %type<cluster>  cluster
@@ -276,7 +315,7 @@ program_definitions
 	}
 
 class_definition
-	: T_CLASS identifier class_pool_parameters pool_bounds class_body {
+	: T_CLASS identifier formal_pool_parameters pool_bounds class_body {
 		auto body = move_and_delete($5);
 		$$ = new Cst::Class(
 			move_and_delete($2),
@@ -287,17 +326,59 @@ class_definition
 	}
 
 pool_bounds
-	: %empty                        { $$ = new std::vector<Cst::Variable>; }
-	| T_WHERE variable_declarations { $$ = $2; }
+	: %empty { $$ = new std::vector<Cst::FormalPoolBound>; }
+	| T_WHERE pool_bound_list { $$ = $2; }
+	| T_WHERE pool_bound_list T_COMMA { $$ = $2; }
 
-variable_declarations
-	: %empty { $$ = new std::vector<Cst::Variable>; }
-	| variable_declaration_list         { $$ = $1; }
-	| variable_declaration_list T_COMMA { $$ = $1; }
+pool_bound_list
+	: pool_bound {
+		$$ = new std::vector<Cst::FormalPoolBound>;
+		$$->emplace_back(move_and_delete($1));
+	}
+	| pool_bound_list T_COMMA pool_bound {
+		$$ = $1;
+		$$->emplace_back(move_and_delete($3));
+	}
+
+pool_bound
+	: formal_pool_parameter T_COLON bound_type {
+		$$ = new Cst::FormalPoolBound(move_and_delete($1), move_and_delete($3), make_loc(@$));
+	}
+
+bound_type
+	: T_LSQUARE identifier bound_pool_parameters T_RSQUARE {
+		$$ = new Cst::BoundType(move_and_delete($2), move_and_delete($3));
+	}
+	/* Just make up one for error recovery */
+	| T_LSQUARE error T_RSQUARE {
+		$$ = new Cst::BoundType;
+	}
+
+bound_pool_parameters
+	: T_LANGLE T_RANGLE { $$ = new std::vector<Cst::PoolParameter::Pool>; }
+	| T_LANGLE bound_pool_parameter_list T_RANGLE { $$ = $2; }
+	| T_LANGLE bound_pool_parameter_list T_COMMA T_RANGLE { $$ = $2; }
+	| T_LANGLE error T_RANGLE { $$ = new std::vector<Cst::PoolParameter::Pool>; }
+
+bound_pool_parameter_list
+	: bound_pool_parameter {
+		$$ = new std::vector<Cst::PoolParameter::Pool>;
+		$$->emplace_back(move_and_delete($1));
+	}
+	| bound_pool_parameter_list T_COMMA bound_pool_parameter {
+		$$ = $1;
+		$$->emplace_back(move_and_delete($3));
+	}
+
+bound_pool_parameter
+	: identifier { $$ = new Cst::PoolParameter::Pool(move_and_delete($1)); }
+
+formal_pool_parameter
+	: identifier { $$ = new Cst::FormalPoolParameter(move_and_delete($1)); }
 
 variable_declaration_list
 	: variable_declaration {
-		$$ = new std::vector<Cst::Variable>;
+		$$ = new std::vector<Cst::VariableDeclaration>;
 		$$->emplace_back(move_and_delete($1));
 	}
 	| variable_declaration_list T_COMMA variable_declaration {
@@ -307,189 +388,329 @@ variable_declaration_list
 
 variable_declaration
 	: identifier T_COLON type {
-		$$ = new Cst::Variable(move_and_delete($1), ptr_to_unique($3));
+		$$ = new Cst::VariableDeclaration(
+			move_and_delete($1), move_and_delete($3), make_loc(@$));
 	}
 
-type
+pool_declaration_list
+	: pool_declaration {
+		$$ = new std::vector<Cst::PoolDeclaration>;
+		$$->emplace_back(move_and_delete($1));
+	}
+	| pool_declaration_list T_COMMA pool_declaration {
+		$$ = $1;
+		$$->emplace_back(move_and_delete($3));
+	}
+
+pool_declaration
+	: identifier T_COLON layout_type {
+		$$ = new Cst::PoolDeclaration(
+			move_and_delete($1), move_and_delete($3), make_loc(@$));
+	}
+
+layout_type
 	: identifier pool_parameters {
-		$$ = new Cst::ClassType(move_and_delete($1), move_and_delete($2));
-		}
-	| T_LSQUARE identifier pool_parameters T_RSQUARE {
-		$$ = new Cst::BoundType(move_and_delete($2), move_and_delete($3));
+		$$ = new Cst::LayoutType(
+			move_and_delete($1), move_and_delete($2), make_loc(@$));
 	}
-	/* Just make up one for error recovery */
-	| T_LSQUARE error T_RSQUARE {
-		$$ = new Cst::InvalidType;
+
+object_type
+	: identifier pool_parameters {
+		$$ = new Cst::Type::ObjectType(move_and_delete($1), move_and_delete($2));
 	}
-	| T_BOOL { $$ = new Cst::PrimitiveType(Cst::PrimitiveType::Kind::BOOL); }
-	| T_I8   { $$ = new Cst::PrimitiveType(Cst::PrimitiveType::Kind::I8);   }
-	| T_U8   { $$ = new Cst::PrimitiveType(Cst::PrimitiveType::Kind::U8);   }
-	| T_I16  { $$ = new Cst::PrimitiveType(Cst::PrimitiveType::Kind::I16);  }
-	| T_U16  { $$ = new Cst::PrimitiveType(Cst::PrimitiveType::Kind::U16);  }
-	| T_I32  { $$ = new Cst::PrimitiveType(Cst::PrimitiveType::Kind::I32);  }
-	| T_U32  { $$ = new Cst::PrimitiveType(Cst::PrimitiveType::Kind::U32);  }
-	| T_I64  { $$ = new Cst::PrimitiveType(Cst::PrimitiveType::Kind::I64);  }
-	| T_U64  { $$ = new Cst::PrimitiveType(Cst::PrimitiveType::Kind::U64);  }
-	| T_F32  { $$ = new Cst::PrimitiveType(Cst::PrimitiveType::Kind::F32);  }
-	| T_F64  { $$ = new Cst::PrimitiveType(Cst::PrimitiveType::Kind::F64);  }
+
+primitive_type
+	: T_BOOL { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::BOOL); }
+	| T_I8   { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::I8);   }
+	| T_U8   { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::U8);   }
+	| T_I16  { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::I16);  }
+	| T_U16  { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::U16);  }
+	| T_I32  { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::I32);  }
+	| T_U32  { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::U32);  }
+	| T_I64  { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::I64);  }
+	| T_U64  { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::U64);  }
+	| T_F32  { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::F32);  }
+	| T_F64  { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::F64);  }
+
+type
+	: object_type    { $$ = new Cst::Type(move_and_delete($1), make_loc(@$)); }
+	| primitive_type { $$ = new Cst::Type(move_and_delete($1), make_loc(@$)); }
 
 expr
 	: T_LPAREN expr T_RPAREN { $$ = $2; }
 
 	/* Unary expressions; must be inline for Bison to do its precedence magic */
-	| T_PLUS  expr { $$ = new Cst::UnaryExpr(Cst::UnOp::PLUS,  ptr_to_unique($2), yyltype_to_location(@$)); }
-	| T_MINUS expr { $$ = new Cst::UnaryExpr(Cst::UnOp::MINUS, ptr_to_unique($2), yyltype_to_location(@$)); }
-	| T_NOT   expr { $$ = new Cst::UnaryExpr(Cst::UnOp::NOT,   ptr_to_unique($2), yyltype_to_location(@$)); }
+	| T_PLUS  expr { $$ = new Cst::Expr(Cst::Expr::Unary(Cst::UnOp::PLUS,  move_and_delete($2)), make_loc(@$)); }
+	| T_MINUS expr { $$ = new Cst::Expr(Cst::Expr::Unary(Cst::UnOp::MINUS, move_and_delete($2)), make_loc(@$)); }
+	| T_NOT   expr { $$ = new Cst::Expr(Cst::Expr::Unary(Cst::UnOp::NOT,   move_and_delete($2)), make_loc(@$)); }
 
 	/* Binary expressions; must be inline for Bison to do its precedence magic */
-	| expr T_PLUS   expr { $$ = new Cst::BinaryExpr(ptr_to_unique($1), Cst::BinOp::PLUS,  ptr_to_unique($3), yyltype_to_location(@$)); }
-	| expr T_MINUS  expr { $$ = new Cst::BinaryExpr(ptr_to_unique($1), Cst::BinOp::MINUS, ptr_to_unique($3), yyltype_to_location(@$)); }
-	| expr T_TIMES  expr { $$ = new Cst::BinaryExpr(ptr_to_unique($1), Cst::BinOp::TIMES, ptr_to_unique($3), yyltype_to_location(@$)); }
-	| expr T_DIV    expr { $$ = new Cst::BinaryExpr(ptr_to_unique($1), Cst::BinOp::DIV,   ptr_to_unique($3), yyltype_to_location(@$)); }
-	| expr T_SHL    expr { $$ = new Cst::BinaryExpr(ptr_to_unique($1), Cst::BinOp::SHL,   ptr_to_unique($3), yyltype_to_location(@$)); }
-	| expr T_SHR    expr { $$ = new Cst::BinaryExpr(ptr_to_unique($1), Cst::BinOp::SHR,   ptr_to_unique($3), yyltype_to_location(@$)); }
-	| expr T_AND    expr { $$ = new Cst::BinaryExpr(ptr_to_unique($1), Cst::BinOp::AND,   ptr_to_unique($3), yyltype_to_location(@$)); }
-	| expr T_OR     expr { $$ = new Cst::BinaryExpr(ptr_to_unique($1), Cst::BinOp::OR,    ptr_to_unique($3), yyltype_to_location(@$)); }
-	| expr T_XOR    expr { $$ = new Cst::BinaryExpr(ptr_to_unique($1), Cst::BinOp::XOR,   ptr_to_unique($3), yyltype_to_location(@$)); }
-	| expr T_LAND   expr { $$ = new Cst::BinaryExpr(ptr_to_unique($1), Cst::BinOp::LAND,  ptr_to_unique($3), yyltype_to_location(@$)); }
-	| expr T_LOR    expr { $$ = new Cst::BinaryExpr(ptr_to_unique($1), Cst::BinOp::LOR,   ptr_to_unique($3), yyltype_to_location(@$)); }
-	| expr T_LANGLE expr { $$ = new Cst::BinaryExpr(ptr_to_unique($1), Cst::BinOp::LT,    ptr_to_unique($3), yyltype_to_location(@$)); }
-	| expr T_RANGLE expr { $$ = new Cst::BinaryExpr(ptr_to_unique($1), Cst::BinOp::GT,    ptr_to_unique($3), yyltype_to_location(@$)); }
-	| expr T_LE     expr { $$ = new Cst::BinaryExpr(ptr_to_unique($1), Cst::BinOp::LE,    ptr_to_unique($3), yyltype_to_location(@$)); }
-	| expr T_GE     expr { $$ = new Cst::BinaryExpr(ptr_to_unique($1), Cst::BinOp::GE,    ptr_to_unique($3), yyltype_to_location(@$)); }
-	| expr T_EQ     expr { $$ = new Cst::BinaryExpr(ptr_to_unique($1), Cst::BinOp::EQ,    ptr_to_unique($3), yyltype_to_location(@$)); }
-	| expr T_NE     expr { $$ = new Cst::BinaryExpr(ptr_to_unique($1), Cst::BinOp::NE,    ptr_to_unique($3), yyltype_to_location(@$)); }
+	| expr T_PLUS   expr {
+		$$ = new Cst::Expr(
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::PLUS, move_and_delete($3)),
+			make_loc(@$)
+		);
+	}
+	| expr T_MINUS  expr {
+		$$ = new Cst::Expr(
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::MINUS, move_and_delete($3)),
+			make_loc(@$)
+		);
+	}
+	| expr T_TIMES expr {
+		$$ = new Cst::Expr(
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::TIMES, move_and_delete($3)),
+			make_loc(@$)
+		);
+	}
+	| expr T_DIV expr {
+		$$ = new Cst::Expr(
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::DIV, move_and_delete($3)),
+			make_loc(@$)
+		);
+	}
+	| expr T_SHL expr {
+		$$ = new Cst::Expr(
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::SHL, move_and_delete($3)),
+			make_loc(@$)
+		);
+	}
+	| expr T_SHR expr {
+		$$ = new Cst::Expr(
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::SHR, move_and_delete($3)),
+			make_loc(@$)
+		);
+	}
+	| expr T_AND expr {
+		$$ = new Cst::Expr(
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::AND, move_and_delete($3)),
+			make_loc(@$)
+		);
+	}
+	| expr T_OR expr {
+		$$ = new Cst::Expr(
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::OR, move_and_delete($3)),
+			make_loc(@$)
+		);
+	}
+	| expr T_XOR expr {
+		$$ = new Cst::Expr(
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::XOR, move_and_delete($3)),
+			make_loc(@$)
+		);
+	}
+	| expr T_LAND expr {
+		$$ = new Cst::Expr(
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::LAND, move_and_delete($3)),
+			make_loc(@$)
+		);
+	}
+	| expr T_LOR expr {
+		$$ = new Cst::Expr(
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::LOR, move_and_delete($3)),
+			make_loc(@$)
+		);
+	}
+	| expr T_LANGLE expr {
+		$$ = new Cst::Expr(
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::LT, move_and_delete($3)),
+			make_loc(@$)
+		);
+	}
+	| expr T_RANGLE expr {
+		$$ = new Cst::Expr(
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::GT, move_and_delete($3)),
+			make_loc(@$)
+		);
+	}
+	| expr T_LE expr {
+		$$ = new Cst::Expr(
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::LE, move_and_delete($3)),
+			make_loc(@$)
+		);
+	}
+	| expr T_GE expr {
+		$$ = new Cst::Expr(
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::GE, move_and_delete($3)),
+			make_loc(@$)
+		);
+	}
+	| expr T_EQ expr {
+		$$ = new Cst::Expr(
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::EQ, move_and_delete($3)),
+			make_loc(@$)
+		);
+	}
+	| expr T_NE expr {
+		$$ = new Cst::Expr(
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::NE, move_and_delete($3)),
+			make_loc(@$)
+		);
+	}
 
 	| expr T_DOT identifier {
-		$$ = new Cst::FieldAccess(
-			ptr_to_unique($1),
-			move_and_delete($3),
-			yyltype_to_location(@$));
+		$$ = new Cst::Expr(
+			Cst::Expr::FieldAccess(move_and_delete($1), move_and_delete($3)),
+			make_loc(@$)
+		);
 	}
-	| expr T_DOT identifier argument_exprs {
-		$$ = new Cst::MemberMethodCall(
-			ptr_to_unique($1),
-			move_and_delete($3),
-			move_and_delete($4),
-			yyltype_to_location(@$));
+	| expr T_DOT identifier method_call_args {
+		$$ = new Cst::Expr(
+			Cst::Expr::MemberMethodCall(
+				move_and_delete($1), move_and_delete($3), move_and_delete($4)
+			),
+			make_loc(@$)
+		);
 	}
-	| identifier argument_exprs {
-		$$ = new Cst::MethodCall(
-			move_and_delete($1),
-			move_and_delete($2),
-			yyltype_to_location(@$));
+	| identifier method_call_args {
+		$$ = new Cst::Expr(
+			Cst::Expr::MethodCall(move_and_delete($1), move_and_delete($2)),
+			make_loc(@$)
+		);
 	}
 	| identifier {
-		$$ = new Cst::IdentifierExpr(move_and_delete($1));
+		$$ = new Cst::Expr(Cst::Expr::VariableExpr(move_and_delete($1)), make_loc(@$));
 	}
-	| T_NEW type {
-		$$ = new Cst::NewExpr(ptr_to_unique($2), yyltype_to_location(@$));
+	| T_NEW object_type {
+		$$ = new Cst::Expr(Cst::Expr::New(move_and_delete($2)), make_loc(@$));
 	}
 	| T_INT_CONST {
-		$1->set_loc(yyltype_to_location(@$));
-		$$ = $1;
+		$$ = new Cst::Expr(Cst::Expr::IntegerConst(move_and_delete($1)), make_loc(@$));
 	}
-	| T_THIS  { $$ = new Cst::ThisExpr(yyltype_to_location(@$)); }
-	| T_NULL  { $$ = new Cst::NullExpr(yyltype_to_location(@$)); }
-	| T_TRUE  { $$ = new Cst::BooleanConst(true,  yyltype_to_location(@$)); }
-	| T_FALSE { $$ = new Cst::BooleanConst(false, yyltype_to_location(@$)); }
+	| T_THIS  { $$ = new Cst::Expr(Cst::Expr::This(), make_loc(@$)); }
+	| T_NULL  { $$ = new Cst::Expr(Cst::Expr::Null(), make_loc(@$)); }
 
-argument_exprs
-	: T_LPAREN T_RPAREN { $$ = new std::vector<std::unique_ptr<Cst::Expr>>; }
-	| T_LPAREN argument_expr_list T_RPAREN         { $$ = $2; }
-	| T_LPAREN argument_expr_list T_COMMA T_RPAREN { $$ = $2; }
-	| T_LPAREN error T_RPAREN { $$ = new std::vector<std::unique_ptr<Cst::Expr>>; }
+	| T_TRUE  { $$ = new Cst::Expr(Cst::Expr::BooleanConst(true),  make_loc(@$)); }
+	| T_FALSE { $$ = new Cst::Expr(Cst::Expr::BooleanConst(false), make_loc(@$)); }
+
+method_call_args
+	: T_LPAREN T_RPAREN { $$ = new std::vector<Cst::Expr>; }
+	| T_LPAREN method_call_arg_list T_RPAREN         { $$ = $2; }
+	| T_LPAREN method_call_arg_list T_COMMA T_RPAREN { $$ = $2; }
+	| T_LPAREN error T_RPAREN { $$ = new std::vector<Cst::Expr>; }
 	;
 
-argument_expr_list
+method_call_arg_list
 	: expr {
-		$$ = new std::vector<std::unique_ptr<Cst::Expr>>;
-		$$->emplace_back(ptr_to_unique($1));
+		$$ = new std::vector<Cst::Expr>;
+		$$->emplace_back(move_and_delete($1));
 	}
-	| argument_expr_list T_COMMA expr {
-		$1->emplace_back(ptr_to_unique($3));
+	| method_call_arg_list T_COMMA expr {
 		$$ = $1;
+		$$->emplace_back(move_and_delete($3));
 	}
 	;
 
 stmt
-	: block_stmt  { $$ = $1; }
-	| T_SEMICOLON { $$ = new Cst::NoopStmt; }
+	: block_stmt  { $$ = new Cst::Stmt(move_and_delete($1), make_loc(@$)); }
+	| T_SEMICOLON { $$ = new Cst::Stmt(Cst::Stmt::Noop(), make_loc(@$)); }
 	| T_LET variable_declaration_list T_SEMICOLON {
-		$$ = new Cst::VariableDeclsStmt(
-			move_and_delete($2),
-			Cst::VariableDeclsStmt::Kind::VARS);
+		$$ = new Cst::Stmt(
+			Cst::Stmt::VariableDeclarations(move_and_delete($2)),
+			make_loc(@$)
+		);
 	}
-	| T_POOLS variable_declaration_list T_SEMICOLON {
-		$$ = new Cst::VariableDeclsStmt(
-			move_and_delete($2),
-			Cst::VariableDeclsStmt::Kind::POOLS);
+	| T_POOLS pool_declaration_list T_SEMICOLON {
+		$$ = new Cst::Stmt(
+			Cst::Stmt::PoolDeclarations(move_and_delete($2)),
+			make_loc(@$)
+		);
 	}
-	| T_POOL variable_declaration T_SEMICOLON {
-		std::vector<Cst::Variable> tmp;
+	| T_POOL pool_declaration T_SEMICOLON {
+		std::vector<Cst::PoolDeclaration> tmp;
 		tmp.emplace_back(move_and_delete($2));
-		$$ = new Cst::VariableDeclsStmt(std::move(tmp), Cst::VariableDeclsStmt::Kind::POOLS);
+		$$ = new Cst::Stmt(
+			Cst::Stmt::PoolDeclarations(std::move(tmp)),
+			make_loc(@$)
+		);
 	}
 	| expr T_ASSIGN expr T_SEMICOLON {
-		$$ = new Cst::AssignStmt(ptr_to_unique($1), ptr_to_unique($3));
+		$$ = new Cst::Stmt(
+			Cst::Stmt::Assignment(move_and_delete($1), move_and_delete($3)),
+			make_loc(@$)
+		);
 	}
 	| expr op_assign expr T_SEMICOLON {
-		$$ = new Cst::OpAssignStmt(ptr_to_unique($1), $2, ptr_to_unique($3));
+		$$ = new Cst::Stmt(
+			Cst::Stmt::OpAssignment(move_and_delete($1), $2, move_and_delete($3)),
+			make_loc(@$)
+		);
 	}
 	| T_IF expr block_stmt else_branch {
-		$$ = new Cst::IfStmt(
-			ptr_to_unique($2),
-			ptr_to_unique($3),
-			ptr_to_unique($4));
+		$$ = new Cst::Stmt(
+			Cst::Stmt::If(
+				move_and_delete($2),
+				Cst::Stmt(move_and_delete($3), make_loc(@3)),
+				move_and_delete($4)
+			),
+			make_loc(@$)
+		);
 	}
 	| T_WHILE expr block_stmt {
-		$$ = new Cst::WhileStmt(ptr_to_unique($2), ptr_to_unique($3));
+		$$ = new Cst::Stmt(
+			Cst::Stmt::While(
+				move_and_delete($2),
+				Cst::Stmt(move_and_delete($3), make_loc(@3))
+			),
+			make_loc(@$)
+		);
 	}
 	| T_FOREACH identifier T_ASSIGN expr T_DOTDOT expr block_stmt {
-		$$ = new Cst::ForeachRangeStmt(
-			move_and_delete($2),
-			ptr_to_unique($4),
-			ptr_to_unique($6),
-			ptr_to_unique($7));
+		$$ = new Cst::Stmt(
+			Cst::Stmt::ForeachRange(
+				move_and_delete($2),
+				move_and_delete($4),
+				move_and_delete($6),
+				Cst::Stmt(move_and_delete($7), make_loc(@7))
+			),
+			make_loc(@$)
+		);
 	}
 	| T_FOREACH identifier T_COLON identifier block_stmt {
-		$$ = new Cst::ForeachPoolStmt(
-			move_and_delete($2),
-			move_and_delete($4),
-			ptr_to_unique($5));
+		$$ = new Cst::Stmt(
+			Cst::Stmt::ForeachPool(
+				move_and_delete($2),
+				move_and_delete($4),
+				Cst::Stmt(move_and_delete($5), make_loc(@5))
+			),
+			make_loc(@$)
+		);
 	}
 	| T_BREAK T_SEMICOLON {
-		$$ = new Cst::BreakStmt(yyltype_to_location(@1));
+		$$ = new Cst::Stmt(Cst::Stmt::Break(), make_loc(@$));
 	}
 	| T_CONTINUE T_SEMICOLON {
-		$$ = new Cst::ContinueStmt(yyltype_to_location(@1));
+		$$ = new Cst::Stmt(Cst::Stmt::Continue(), make_loc(@$));
 	}
 	| T_RETURN T_SEMICOLON {
-		$$ = new Cst::ReturnVoidStmt(yyltype_to_location(@1));
+		$$ = new Cst::Stmt(Cst::Stmt::ReturnVoid(), make_loc(@$));
 	}
 	| T_RETURN expr T_SEMICOLON {
-		$$ = new Cst::ReturnStmt(ptr_to_unique($2));
+		$$ = new Cst::Stmt(Cst::Stmt::Return(move_and_delete($2)), make_loc(@$));
 	}
 	| expr T_SEMICOLON {
-		$$ = new Cst::ExprStmt(ptr_to_unique($1));
+		$$ = new Cst::Stmt(Cst::Stmt::ExprStmt(move_and_delete($1)), make_loc(@$));
 	}
-	| error T_SEMICOLON { $$ = new Cst::NoopStmt; }
+	/* Just make one up for error recovery */
+	| error T_SEMICOLON {
+		$$ = new Cst::Stmt(Cst::Stmt::Noop(), make_loc(@$));
+	}
 
 block_stmt
 	: T_LBRACE stmt_list T_RBRACE { $$ = $2; }
 	/* Just make one up for error recovery */
-	| T_LBRACE error T_RBRACE { $$ = new Cst::BlockStmt; }
+	| T_LBRACE error T_RBRACE { $$ = new Cst::Stmt::Block; }
 
 stmt_list
-	: %empty { $$ = new Cst::BlockStmt; }
+	: %empty { $$ = new Cst::Stmt::Block; }
 	| stmt_list stmt {
 		$$ = $1;
-		$$->add(ptr_to_unique($2));
+		$$->add(move_and_delete($2));
 	}
 
 else_branch
-	: %empty { $$ = new Cst::NoopStmt; }
-	| T_ELSE block_stmt { $$ = $2; }
+	: %empty { $$ = new Cst::Stmt(Cst::Stmt::Noop(), Location()); }
+	| T_ELSE block_stmt { $$ = new Cst::Stmt(move_and_delete($2), make_loc(@$)); }
 
 op_assign
 	: T_PLUS_ASSIGN  { $$ = Cst::BinOp::PLUS;  }
@@ -532,86 +753,122 @@ class_members
 	}
 
 pool_parameters
-	: %empty { $$ = new std::vector<std::unique_ptr<Cst::PoolParameter>>; }
-	| T_LANGLE pool_param_list_header T_RANGLE { $$ = $2; }
+	: T_LANGLE T_RANGLE { $$ = new std::vector<Cst::PoolParameter>; }
+	| T_LANGLE pool_parameter_list T_RANGLE { $$ = $2; }
+	| T_LANGLE pool_parameter_list T_COMMA T_RANGLE { $$ = $2; }
 	/* Just make up one for error recovery */
-	| T_LANGLE error T_RANGLE { $$ = new std::vector<std::unique_ptr<Cst::PoolParameter>>; }
+	| T_LANGLE error T_RANGLE { $$ = new std::vector<Cst::PoolParameter>; }
 
-pool_param_list_header
-	: %empty                  { $$ = new std::vector<std::unique_ptr<Cst::PoolParameter>>; }
-	| pool_param_list         { $$ = $1; }
-	| pool_param_list T_COMMA { $$ = $1; }
-
-pool_param_list
+pool_parameter_list
 	: identifier {
-		$$ = new std::vector<std::unique_ptr<Cst::PoolParameter>>;
-		$$->emplace_back($1);
+		$$ = new std::vector<Cst::PoolParameter>;
+		$$->emplace_back(Cst::PoolParameter::Pool(move_and_delete($1)), make_loc(@1));
 	}
 	| T_NONE {
-		$$ = new std::vector<std::unique_ptr<Cst::PoolParameter>>;
-		$$->emplace_back(new Cst::NoneParam(yyltype_to_location(@1)));
+		$$ = new std::vector<Cst::PoolParameter>;
+		$$->emplace_back(Cst::PoolParameter::None(), make_loc(@1));
 	}
-	| pool_param_list T_COMMA identifier {
+	| pool_parameter_list T_COMMA identifier {
 		$$ = $1;
-		$$->emplace_back($3);
+		$$->emplace_back(Cst::PoolParameter::Pool(move_and_delete($3)), make_loc(@3));
 	}
-	| pool_param_list T_COMMA T_NONE {
+	| pool_parameter_list T_COMMA T_NONE {
 		$$ = $1;
-		$$->emplace_back(new Cst::NoneParam(yyltype_to_location(@3)));
+		$$->emplace_back(Cst::PoolParameter::None(), make_loc(@3));
 	}
 
-class_pool_parameters
-	: %empty                        { $$ = new std::vector<Cst::Identifier>; }
-	| T_LANGLE identifiers T_RANGLE { $$ = $2; }
+formal_pool_parameters
+	: %empty { $$ = new std::vector<Cst::FormalPoolParameter>; }
+	| T_LANGLE T_RANGLE { $$ = new std::vector<Cst::FormalPoolParameter>; }
+	| T_LANGLE formal_pool_parameter_list T_RANGLE { $$ = $2; }
+	| T_LANGLE formal_pool_parameter_list T_COMMA T_RANGLE { $$ = $2; }
 	/* Just make up one for error recovery */
-	| T_LANGLE error T_RANGLE       { $$ = new std::vector<Cst::Identifier>; }
+	| T_LANGLE error T_RANGLE { $$ = new std::vector<Cst::FormalPoolParameter>; }
+
+formal_pool_parameter_list
+	: formal_pool_parameter {
+		$$ = new std::vector<Cst::FormalPoolParameter>;
+		$$->emplace_back(move_and_delete($1));
+	}
+	| formal_pool_parameter_list T_COMMA formal_pool_parameter {
+		$$ = $1;
+		$$->emplace_back(move_and_delete($3));
+	}
 
 field_declarations
-	: variable_declarations T_SEMICOLON {
-		$$ = new std::vector<Cst::Field>;
-		auto fields = move_and_delete($1);
+	: field_declaration_list T_SEMICOLON { $$ = $1; }
 
-		for (auto& e: fields) {
-			$$->emplace_back(e.consume_name(), e.consume_type());
-		}
+field_declaration_list
+	: field_declaration {
+		$$ = new std::vector<Cst::Field>;
+		$$->emplace_back(move_and_delete($1));
+	}
+	| field_declaration_list T_COMMA field_declaration {
+		$$ = $1;
+		$$->emplace_back(move_and_delete($3));
+	}
+
+field_declaration
+	: identifier T_COLON type {
+		$$ = new Cst::Field(move_and_delete($1), move_and_delete($3));
 	}
 
 method_declaration
-	: T_FN T_IDENT method_arguments T_COLON return_type block_stmt {
+	: T_FN identifier method_parameters T_COLON type block_stmt {
 		$$ = new Cst::Method(
 			move_and_delete($2),
 			move_and_delete($3),
-			ptr_to_unique($5),
-			move_and_delete($6));
+			move_and_delete($5),
+			move_and_delete($6)
+		);
 	}
-	| T_FN T_IDENT method_arguments block_stmt {
+	| T_FN identifier method_parameters block_stmt {
 		$$ = new Cst::Method(
 			move_and_delete($2),
 			move_and_delete($3),
-			nullptr,
-			move_and_delete($4));
+			move_and_delete($4)
+		);
 	}
 
-method_arguments
-	: T_LPAREN variable_declarations T_RPAREN { $$ = $2; }
+method_parameters
+	: T_LPAREN T_RPAREN { $$ = new std::vector<Cst::MethodParameter>; }
+	| T_LPAREN method_parameter_list T_RPAREN { $$ = $2; }
+	| T_LPAREN method_parameter_list T_COMMA T_RPAREN { $$ = $2; }
 	/* Just make up one for error recovery */
-	| T_LPAREN error T_RPAREN { $$ = new std::vector<Cst::Variable>; }
+	| T_LPAREN error T_RPAREN { $$ = new std::vector<Cst::MethodParameter>; }
 
-return_type
-	: type   { $$ = $1; }
-	| %empty { $$ = nullptr; }
+method_parameter_list
+	: method_parameter {
+		$$ = new std::vector<Cst::MethodParameter>;
+		$$->emplace_back(move_and_delete($1));
+	}
+	| method_parameter_list T_COMMA method_parameter {
+		$$ = $1;
+		$$->emplace_back(move_and_delete($3));
+	}
+
+method_parameter
+	: identifier T_COLON type {
+		$$ = new Cst::MethodParameter(
+			move_and_delete($1), move_and_delete($3), make_loc(@$)
+		);
+	}
 
 layout_definition
 	: T_LAYOUT identifier T_COLON identifier T_ASSIGN clusters {
 		$$ = new Cst::Layout(
-			move_and_delete($2), move_and_delete($4), move_and_delete($6));
+			move_and_delete($2),
+			move_and_delete($4),
+			move_and_delete($6),
+			make_loc(@2)
+		);
 	}
 
 clusters
-	: T_SEMICOLON              { $$ = new std::vector<Cst::Cluster>; }
-	| cluster_list T_SEMICOLON { $$ = $1;                            }
+	: T_SEMICOLON { $$ = new std::vector<Cst::Cluster>; }
+	| cluster_list T_SEMICOLON { $$ = $1; }
 	/* Just make up one for error recovery */
-	| error T_SEMICOLON        { $$ = new std::vector<Cst::Cluster>; }
+	| error T_SEMICOLON { $$ = new std::vector<Cst::Cluster>; }
 
 cluster_list
 	: cluster {
@@ -624,33 +881,27 @@ cluster_list
 	}
 
 cluster
-	: T_REC T_LBRACE identifiers T_RBRACE {
-		$$ = new Cst::Cluster(move_and_delete($3));
+	: T_REC T_LBRACE cluster_field_list T_RBRACE {
+		$$ = new Cst::Cluster(move_and_delete($3), make_loc(@3));
 	}
 	/* Just make up one for error recovery */
 	| T_REC T_LBRACE error T_RBRACE { $$ = new Cst::Cluster; }
 
-identifiers
-	: %empty                  { $$ = new std::vector<Cst::Identifier>; }
-	| identifier_list         { $$ = $1; }
-	| identifier_list T_COMMA { $$ = $1; }
-
-identifier_list
-	: identifier {
-		$$ = new std::vector<Cst::Identifier>;
+cluster_field_list
+	: cluster_field {
+		$$ = new std::vector<Cst::ClusterField>;
 		$$->emplace_back(move_and_delete($1));
 	}
-	| identifier_list T_COMMA identifier {
+	| cluster_field_list T_COMMA cluster_field {
 		$$ = $1;
 		$$->emplace_back(move_and_delete($3));
 	}
 
+cluster_field
+	: identifier { $$ = new Cst::ClusterField(move_and_delete($1)); }
+
 identifier
-	: T_IDENT {
-		$$ = $1;
-		// Fix up the location that flex did not set up
-		$$->set_loc(yyltype_to_location(@1));
-	}
+	: T_IDENT { $$ = new Cst::Identifier(move_and_delete($1), make_loc(@1)); }
 %%
 
 void yyerror(
@@ -663,10 +914,10 @@ void yyerror(
 	(void) state;
 	(void) program;
 
-	errors->add(yyltype_to_location(*orig_loc), std::string(msg));
+	errors->add(make_loc(*orig_loc), std::string(msg));
 }
 
-static Location yyltype_to_location(const YYLTYPE& orig_loc)
+static Location make_loc(const YYLTYPE& orig_loc)
 {
 	Location loc;
 	loc.first_line   = orig_loc.first_line;

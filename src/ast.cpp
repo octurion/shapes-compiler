@@ -1,18 +1,660 @@
-#include "cst.h"
 #include "ast.h"
-#include "ast_errors.h"
 
-#include <iterator>
 #include <vector>
-#include <unordered_map>
-#include <unordered_set>
 #include <utility>
+
+namespace Ast
+{
+
+PoolType::PoolType(PoolType&& other)
+	: m_tag(other.m_tag)
+	, m_loc(other.m_loc)
+{
+	construct_variant_from_other(other);
+}
+
+PoolType& PoolType::operator=(PoolType&& other)
+{
+	destroy_variant();
+
+	m_tag = other.m_tag;
+	m_loc = other.m_loc;
+	construct_variant_from_other(other);
+
+	return *this;
+}
+
+PoolType::~PoolType()
+{
+	destroy_variant();
+}
+
+void PoolType::destroy_variant()
+{
+	switch (m_tag) {
+	case Tag::LAYOUT:
+		m_layout.~LayoutType();
+		break;
+
+	case Tag::BOUND:
+		m_bound.~BoundType();
+		break;
+	}
+}
+
+void PoolType::construct_variant_from_other(PoolType& other)
+{
+	switch (other.m_tag) {
+	case Tag::LAYOUT:
+		new (&m_layout) LayoutType(std::move(other.m_layout));
+		break;
+
+	case Tag::BOUND:
+		new (&m_bound) BoundType(std::move(other.m_bound));
+		break;
+	}
+}
+
+PoolParameter::PoolParameter(PoolParameter&& other)
+	: m_tag(other.m_tag)
+	, m_loc(other.m_loc)
+{
+	construct_variant_from_other(other);
+}
+
+PoolParameter& PoolParameter::operator=(PoolParameter&& other)
+{
+	destroy_variant();
+
+	m_tag = other.m_tag;
+	m_loc = other.m_loc;
+	construct_variant_from_other(other);
+
+	return *this;
+}
+
+PoolParameter::~PoolParameter()
+{
+	destroy_variant();
+}
+
+void PoolParameter::destroy_variant()
+{
+	switch (m_tag) {
+	case Tag::NONE:
+		m_none.~None();
+		break;
+
+	case Tag::POOL:
+		m_pool.~PoolRef();
+		break;
+	}
+}
+
+void PoolParameter::construct_variant_from_other(PoolParameter& other)
+{
+	switch (other.m_tag) {
+	case Tag::NONE:
+		new (&m_none) None(std::move(other.m_none));
+		break;
+
+	case Tag::POOL:
+		new (&m_pool) PoolRef(std::move(other.m_pool));
+		break;
+	}
+}
+
+bool PoolParameter::operator==(const PoolParameter& rhs) const
+{
+	if (m_tag != rhs.m_tag) {
+		return false;
+	}
+
+	switch (m_tag) {
+	case Tag::NONE:
+		return true;
+
+	case Tag::POOL:
+		return &m_pool.pool() == &rhs.m_pool.pool();
+	}
+
+	// Silence gcc
+	return false;
+}
+
+Type::Type(Type&& other)
+	: m_tag(other.m_tag)
+	, m_loc(other.m_loc)
+{
+	construct_variant_from_other(other);
+}
+
+Type& Type::operator=(Type&& other)
+{
+	destroy_variant();
+
+	m_tag = other.m_tag;
+	m_loc = other.m_loc;
+	construct_variant_from_other(other);
+
+	return *this;
+}
+
+Type::~Type()
+{
+	destroy_variant();
+}
+
+void Type::destroy_variant()
+{
+	switch (m_tag) {
+	case Tag::PRIMITIVE:
+		m_primitive_type.~PrimitiveType();
+		break;
+
+	case Tag::NULLPTR:
+		m_null_type.~NullType();
+		break;
+
+	case Tag::OBJECT:
+		m_object_type.~ObjectType();
+		break;
+	}
+}
+
+void Type::construct_variant_from_other(Type& other)
+{
+	switch (other.m_tag) {
+	case Tag::PRIMITIVE:
+		new (&m_primitive_type) PrimitiveType(std::move(other.m_primitive_type));
+		break;
+
+	case Tag::NULLPTR:
+		new (&m_null_type) NullType(std::move(other.m_null_type));
+		break;
+
+	case Tag::OBJECT:
+		new (&m_object_type) ObjectType(std::move(other.m_object_type));
+		break;
+	}
+}
+
+const Type::PrimitiveType* Type::as_primitive_type() const
+{
+	if (m_tag == Tag::PRIMITIVE) {
+		return &m_primitive_type;
+	}
+	return nullptr;
+}
+
+const Type::ObjectType* Type::as_object_type() const
+{
+	if (m_tag == Tag::OBJECT) {
+		return &m_object_type;
+	}
+	return nullptr;
+}
+
+const Type::NullType* Type::as_null_type() const
+{
+	if (m_tag == Tag::OBJECT) {
+		return &m_null_type;
+	}
+	return nullptr;
+}
+
+bool Type::ObjectType::operator==(const ObjectType& rhs) const
+{
+	if (&m_class != &rhs.m_class) {
+		return false;
+	}
+
+	if (m_params.size() != rhs.m_params.size()) {
+		return false;
+	}
+
+	return std::equal(m_params.begin(), m_params.end(), rhs.m_params.begin());
+}
+
+bool Type::operator==(const Type& rhs) const
+{
+	if (m_tag != rhs.m_tag) {
+		return false;
+	}
+
+	switch (m_tag) {
+	case Tag::PRIMITIVE:
+		return m_primitive_type.kind() == rhs.m_primitive_type.kind();
+
+	case Tag::NULLPTR:
+		return true;
+		break;
+
+	case Tag::OBJECT:
+		return m_object_type == rhs.m_object_type;
+		break;
+	}
+
+	// Silence gcc
+	return false;
+}
+
+Expr::Expr(Expr&& other)
+	: m_tag(other.m_tag)
+	, m_loc(other.m_loc)
+{
+	construct_variant_from_other(other);
+}
+
+Expr& Expr::operator=(Expr&& other)
+{
+	destroy_variant();
+
+	m_tag = other.m_tag;
+	m_loc = other.m_loc;
+	construct_variant_from_other(other);
+
+	return *this;
+}
+
+Expr::~Expr()
+{
+	destroy_variant();
+}
+
+void Expr::destroy_variant()
+{
+	switch (m_tag) {
+	case Tag::INTEGER_CONST:
+		m_integer_const.~IntegerConst();
+		break;
+
+	case Tag::BOOLEAN_CONST:
+		m_boolean_const.~BooleanConst();
+		break;
+
+	case Tag::NULL_EXPR:
+		m_null_expr.~Null();
+		break;
+
+	case Tag::THIS:
+		m_this_expr.~This();
+		break;
+
+	case Tag::UNARY:
+		m_unary.~Unary();
+		break;
+
+	case Tag::BINARY:
+		m_binary.~Binary();
+		break;
+
+	case Tag::INDEX:
+		m_index_expr.~IndexExpr();
+		break;
+
+	case Tag::VARIABLE:
+		m_variable_expr.~VariableExpr();
+		break;
+
+	case Tag::METHOD_CALL:
+		m_method_call.~MethodCall();
+		break;
+
+	case Tag::FIELD_ACCESS:
+		m_field_access.~FieldAccess();
+		break;
+
+	case Tag::NEW:
+		m_new_expr.~New();
+		break;
+	}
+}
+
+void Expr::construct_variant_from_other(Expr& other)
+{
+	switch (other.m_tag) {
+	case Tag::INTEGER_CONST:
+		new (&m_integer_const) IntegerConst(std::move(other.m_integer_const));
+		break;
+
+	case Tag::BOOLEAN_CONST:
+		new (&m_boolean_const) BooleanConst(std::move(other.m_boolean_const));
+		break;
+
+	case Tag::NULL_EXPR:
+		new (&m_null_expr) Null(std::move(other.m_null_expr));
+		break;
+
+	case Tag::THIS:
+		new (&m_this_expr) This(std::move(other.m_this_expr));
+		break;
+
+	case Tag::UNARY:
+		new (&m_unary) Unary(std::move(other.m_unary));
+		break;
+
+	case Tag::BINARY:
+		new (&m_binary) Binary(std::move(other.m_binary));
+		break;
+
+	case Tag::INDEX:
+		new (&m_index_expr) IndexExpr(std::move(other.m_index_expr));
+		break;
+
+	case Tag::VARIABLE:
+		new (&m_variable_expr) VariableExpr(std::move(other.m_variable_expr));
+		break;
+
+	case Tag::METHOD_CALL:
+		new (&m_method_call) MethodCall(std::move(other.m_method_call));
+		break;
+
+	case Tag::FIELD_ACCESS:
+		new (&m_field_access) FieldAccess(std::move(other.m_field_access));
+		break;
+
+	case Tag::NEW:
+		new (&m_new_expr) New(std::move(other.m_new_expr));
+		break;
+	}
+}
+
+const Expr::IntegerConst* Expr::as_integer_const() const
+{
+	if (m_tag == Tag::INTEGER_CONST) {
+		return &m_integer_const;
+	}
+	return nullptr;
+}
+
+const Expr::BooleanConst* Expr::as_boolean_const() const
+{
+	if (m_tag == Tag::BOOLEAN_CONST) {
+		return &m_boolean_const;
+	}
+	return nullptr;
+}
+
+const Expr::Null* Expr::as_null_expr() const
+{
+	if (m_tag == Tag::NULL_EXPR) {
+		return &m_null_expr;
+	}
+	return nullptr;
+}
+
+const Expr::This* Expr::as_this_expr() const
+{
+	if (m_tag == Tag::THIS) {
+		return &m_this_expr;
+	}
+	return nullptr;
+}
+
+const Expr::Unary* Expr::as_unary() const
+{
+	if (m_tag == Tag::UNARY) {
+		return &m_unary;
+	}
+	return nullptr;
+}
+
+const Expr::Binary* Expr::as_binary() const
+{
+	if (m_tag == Tag::BINARY) {
+		return &m_binary;
+	}
+	return nullptr;
+}
+
+const Expr::IndexExpr* Expr::as_index_expr() const
+{
+	if (m_tag == Tag::INDEX) {
+		return &m_index_expr;
+	}
+	return nullptr;
+}
+
+const Expr::VariableExpr* Expr::as_variable_expr() const
+{
+	if (m_tag == Tag::VARIABLE) {
+		return &m_variable_expr;
+	}
+	return nullptr;
+}
+
+const Expr::MethodCall* Expr::as_method_call() const
+{
+	if (m_tag == Tag::METHOD_CALL) {
+		return &m_method_call;
+	}
+	return nullptr;
+}
+
+const Expr::FieldAccess* Expr::as_field_access() const
+{
+	if (m_tag == Tag::FIELD_ACCESS) {
+		return &m_field_access;
+	}
+	return nullptr;
+}
+
+const Expr::New* Expr::as_new_expr() const
+{
+	if (m_tag == Tag::NEW) {
+		return &m_new_expr;
+	}
+	return nullptr;
+}
+
+}
+
+#if 0
+
+template<typename Iter>
+void print_pool_params(std::ostringstream& os, Iter begin, Iter end)
+{
+	auto it = begin;
+	if (it != end) {
+		if (*it == nullptr) {
+			os << "none";
+		}
+		else {
+			os << (*it)->name();
+		}
+		it++;
+	}
+	for (; it != end; it++) {
+		os << ", ";
+		if (*it == nullptr) {
+			os << "none";
+		}
+		else {
+			os << (*it)->name();
+		}
+	}
+}
+
+std::string Ast::PrimitiveType::to_string() const
+{
+	switch (m_kind) {
+	case Ast::PrimitiveType::Kind::BOOL:
+		return "bool";
+	case Ast::PrimitiveType::Kind::U8:
+		return "u8";
+	case Ast::PrimitiveType::Kind::U16:
+		return "u16";
+	case Ast::PrimitiveType::Kind::U32:
+		return "u32";
+	case Ast::PrimitiveType::Kind::U64:
+		return "u64";
+	case Ast::PrimitiveType::Kind::I8:
+		return "i8";
+	case Ast::PrimitiveType::Kind::I16:
+		return "i16";
+	case Ast::PrimitiveType::Kind::I32:
+		return "i32";
+	case Ast::PrimitiveType::Kind::I64:
+		return "i64";
+	case Ast::PrimitiveType::Kind::F32:
+		return "f32";
+	case Ast::PrimitiveType::Kind::F64:
+		return "f64";
+	}
+
+	// Not reachable
+	return std::string();
+}
+
+std::string Ast::ClassType::to_string() const
+{
+	std::ostringstream os;
+	os << m_klass->name() << "<";
+	print_pool_params(os, pool_params_begin(), pool_params_end());
+	os << ">";
+
+	return os.str();
+}
+
+std::string Ast::PoolType::to_string() const
+{
+	std::ostringstream os;
+	os << m_layout->klass().name() << "<";
+	print_pool_params(os, pool_params_begin(), pool_params_end());
+	os << ">";
+
+	return os.str();
+}
+
+std::string Ast::BoundType::to_string() const
+{
+	std::ostringstream os;
+	os << m_klass->name() << "<";
+	print_pool_params(os, pool_params_begin(), pool_params_end());
+	os << ">";
+
+	return os.str();
+}
+
+bool Ast::PoolType::operator==(const Ast::PoolType& oth) const
+{
+	if (&m_layout->klass() != &oth.m_layout->klass()) {
+		return false;
+	}
+
+	if (m_pool_params.size() != oth.m_pool_params.size()) {
+		return false;
+	}
+
+	return std::equal(pool_params_begin(), pool_params_end(),
+					  oth.pool_params_begin());
+}
+
+bool Ast::BoundType::operator==(const Ast::BoundType& oth) const
+{
+	if (m_klass != oth.m_klass) {
+		return false;
+	}
+
+	if (m_pool_params.size() != oth.m_pool_params.size()) {
+		return false;
+	}
+
+	return std::equal(pool_params_begin(), pool_params_end(),
+					  oth.pool_params_begin());
+}
+
+bool Ast::ClassType::operator==(const Ast::ClassType& oth) const
+{
+	if (m_klass != oth.m_klass) {
+		return false;
+	}
+
+	if (m_pool_params.size() != oth.m_pool_params.size()) {
+		return false;
+	}
+
+	return std::equal(pool_params_begin(), pool_params_end(),
+					  oth.pool_params_begin());
+}
 
 template<typename T, typename... Args>
 std::unique_ptr<T> make_unique(Args&&... args)
 {
 	return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
 }
+
+class SymbolTable
+{
+	struct SymbolTableEntry
+	{
+		std::vector<std::string> m_vars_declared;
+		std::vector<std::string> m_pools_declared;
+	};
+
+	std::unordered_map<std::string, const Ast::Pool*> m_pools;
+	std::unordered_map<std::string, std::vector<const Ast::Variable*>> m_vars;
+
+	std::vector<SymbolTableEntry> m_entries;
+
+public:
+	void push_scope()
+	{
+		m_entries.emplace_back();
+	}
+
+	void pop_scope()
+	{
+		auto& top = m_entries.back();
+		for (auto& e: top.m_pools_declared) {
+			m_pools.erase(e);
+		}
+
+		for (auto& e: top.m_vars_declared) {
+			m_vars[e].pop_back();
+		}
+
+		m_entries.pop_back();
+	}
+
+	bool add_pool(const std::string& name, const Ast::Pool* pool)
+	{
+		auto it = m_pools.emplace(name, pool);
+		if (!it.second) {
+			return false;
+		}
+
+		m_entries.back().m_pools_declared.push_back(name);
+		return true;
+	}
+
+	void add_variable(const std::string& name, const Ast::Variable* var)
+	{
+		m_vars[name].emplace_back(var);
+		m_entries.back().m_vars_declared.push_back(name);
+	}
+
+	const Ast::Pool* find_pool(const std::string& name) const
+	{
+		auto it = m_pools.find(name);
+		if (it == m_pools.end()) {
+			return nullptr;
+		}
+
+		return it->second;
+	}
+
+	const Ast::Variable* find_variable(const std::string& name) const
+	{
+		auto it = m_vars.find(name);
+		if (it == m_vars.end()) {
+			return nullptr;
+		}
+
+		return it->second.back();
+	}
+};
 
 class TypeCollector: public Cst::DefaultVisitor
 {
@@ -26,6 +668,7 @@ class TypeCollector: public Cst::DefaultVisitor
 	std::unique_ptr<Ast::Type> m_type;
 
 	const Ast::Class* m_class = nullptr;
+	const SymbolTable* m_table;
 	std::vector<const Ast::Pool*> m_pools;
 
 	Ast::PrimitiveType::Kind to_kind(Cst::PrimitiveType::Kind kind)
@@ -85,20 +728,23 @@ class TypeCollector: public Cst::DefaultVisitor
 	}
 
 public:
-	TypeCollector(const Ast::Program* ast, Ast::SemanticErrorList* errors)
+	TypeCollector(const Ast::Program* ast, Ast::SemanticErrorList* errors, const SymbolTable* table)
 		: m_ast(ast)
 		, m_errors(errors)
 		, m_limited(false)
 		, m_kind(Ast::TypeKind::PRIMITIVE)
+		, m_table(table)
 	{}
 
 	TypeCollector(const Ast::Program* ast,
 				  Ast::SemanticErrorList* errors,
+				  const SymbolTable* table,
 				  Ast::TypeKind kind)
 		: m_ast(ast)
 		, m_errors(errors)
 		, m_limited(true)
 		, m_kind(kind)
+		, m_table(table)
 	{}
 
 	bool success() const { return m_success; }
@@ -171,7 +817,7 @@ public:
 
 	void visit(const Cst::Identifier& pool_param) override
 	{
-		auto* pool = m_class->find_pool(pool_param.ident());
+		auto* pool = m_table->find_pool(pool_param.ident());
 		if (pool == nullptr) {
 			m_errors->add(make_unique<Ast::MissingDefinition>(
 					pool_param.ident(),
@@ -255,6 +901,7 @@ struct ClassMembersBoundsCollector: public Cst::DefaultVisitor
 	Ast::SemanticErrorList* errors;
 
 	Ast::Class* curr_class = nullptr;
+	SymbolTable* table = nullptr;
 
 	std::unordered_map<std::string, Ast::Field> class_field_map;
 	std::vector<const Ast::Field*> class_fields;
@@ -270,6 +917,13 @@ struct ClassMembersBoundsCollector: public Cst::DefaultVisitor
 	void visit(const Cst::Class& klass) override
 	{
 		curr_class = ast->find_class(klass.name().ident());
+
+		SymbolTable table;
+		table.push_scope();
+
+		for (auto it = curr_class->pools_begin(); it != curr_class->pools_end(); it++) {
+			table.add_pool((*it)->name(), *it);
+		}
 
 		visitIter(klass.pool_param_bounds_begin(), klass.pool_param_bounds_end());
 		bool must_abort = false;
@@ -287,7 +941,7 @@ struct ClassMembersBoundsCollector: public Cst::DefaultVisitor
 			return;
 		}
 
- 		auto& first_param = *curr_class->pools_begin();
+		auto& first_param = *curr_class->pools_begin();
 		auto& first_param_type = static_cast<const Ast::BoundType&>(first_param->type());
 
 		if (&first_param_type.klass() != curr_class) {
@@ -325,6 +979,8 @@ struct ClassMembersBoundsCollector: public Cst::DefaultVisitor
 		method_map.clear();
 		visitIter(klass.methods_begin(), klass.methods_end());
 		curr_class->set_methods(std::move(method_map), std::move(methods));
+
+		table.pop_scope();
 	}
 
 	void visit(const Cst::Variable& bound) override
@@ -348,7 +1004,7 @@ struct ClassMembersBoundsCollector: public Cst::DefaultVisitor
 			return;
 		}
 
-		TypeCollector type_collector(ast, errors, Ast::TypeKind::BOUND);
+		TypeCollector type_collector(ast, errors, table, Ast::TypeKind::BOUND);
 		bound.type().accept(type_collector);
 		if (!type_collector.success()) {
 			return;
@@ -385,7 +1041,7 @@ struct ClassMembersBoundsCollector: public Cst::DefaultVisitor
 			return;
 		}
 
-		TypeCollector type_collector(ast, errors);
+		TypeCollector type_collector(ast, errors, table);
 		field.type().accept(type_collector);
 		if (!type_collector.success()) {
 			return;
@@ -412,7 +1068,7 @@ struct ClassMembersBoundsCollector: public Cst::DefaultVisitor
 
 		std::unique_ptr<Ast::Type> type;
 		if (method.type() != nullptr) {
-			TypeCollector type_collector(ast, errors);
+			TypeCollector type_collector(ast, errors, table);
 			method.type()->accept(type_collector);
 			type = type_collector.grab_type();
 		}
@@ -432,7 +1088,7 @@ struct ClassMembersBoundsCollector: public Cst::DefaultVisitor
 				continue;
 			}
 
-			TypeCollector type_collector(ast, errors);
+			TypeCollector type_collector(ast, errors, table);
 			var.type().accept(type_collector);
 
 			auto type = type_collector.success()
@@ -662,11 +1318,42 @@ bool validate_type(const Ast::Type& type, const Location& loc, Ast::SemanticErro
 
 class TypeAndMethodBodyVisitor: public Cst::DefaultVisitor
 {
+	struct BlockStack
+	{
+		std::vector<std::vector<std::unique_ptr<Ast::Stmt>>> blocks;
+
+		void push_block()
+		{
+			blocks.emplace_back();
+		}
+
+		std::vector<std::unique_ptr<Ast::Stmt>> pop_block()
+		{
+			auto block = std::move(blocks.back());
+			blocks.pop_back();
+
+			return block;
+		}
+
+		void add_stmt(std::unique_ptr<Ast::Stmt> stmt)
+		{
+			blocks.back().emplace_back(std::move(stmt));
+		}
+	};
+
 	Ast::Program* prog;
 	Ast::SemanticErrorList* errors;
 
 	Ast::Class* curr_class = nullptr;
 	Ast::Method* curr_method = nullptr;
+
+	SymbolTable* table = nullptr;
+
+	BlockStack block_stack;
+	size_t loop_nesting = 0;
+
+	std::unique_ptr<Ast::Expr> result_expr;
+	std::vector<Ast::Stmt> result_block;
 
 public:
 	explicit TypeAndMethodBodyVisitor(Ast::Program* prog, Ast::SemanticErrorList* errors)
@@ -676,128 +1363,238 @@ public:
 
 	void visit(const Cst::Class& klass) override
 	{
+		SymbolTable symtab;
+		table = &symtab;
+
+		table->push_scope();
+
 		curr_class = prog->find_class(klass.name().ident());
 		for (auto it = curr_class->pools_begin(); it != curr_class->pools_end(); it++) {
 			validate_type((*it)->type(), (*it)->loc(), errors);
+			table->add_pool((*it)->name(), *it);
 		}
 
 		for (auto it = curr_class->fields_begin(); it != curr_class->fields_end(); it++) {
 			validate_type((*it)->type(), (*it)->loc(), errors);
 		}
 
-		for (auto it = curr_class->methods_begin(); it != curr_class->methods_end(); it++) {
-			auto& method = *it;
-			if (method->return_type() != nullptr) {
-				validate_type(*method->return_type(), (*it)->loc(), errors);
-			}
+		visitIter(klass.methods_begin(), klass.methods_end());
+	}
 
-			for (auto param_it = method->params_begin(); param_it != method->params_end(); param_it++) {
-				validate_type(param_it->type(), (*it)->loc(), errors);
-			}
+	void visit(const Cst::Method& method) override
+	{
+		curr_method = curr_class->find_method(method.name().ident());
+		table->push_scope();
+
+		if (curr_method->return_type() != nullptr) {
+			validate_type(*curr_method->return_type(), curr_method->loc(), errors);
 		}
+
+		for (auto param_it = curr_method->params_begin(); param_it != curr_method->params_end(); param_it++) {
+			validate_type(param_it->type(), param_it->loc(), errors);
+			table->add_variable(param_it->name(), &*param_it);
+		}
+
+		if (!errors->has_errors()) {
+			method.body().accept(*this);
+		}
+
+		table->pop_scope();
 	}
 
-	void visit(const Cst::Method&) override
+	void visit(const Cst::VariableDeclsStmt& stmt) override
 	{
 	}
 
-	void visit(const Cst::VariableDeclsStmt&) override
+	void visit(const Cst::AssignStmt& stmt) override
 	{
 	}
 
-	void visit(const Cst::AssignStmt&) override
+	void visit(const Cst::OpAssignStmt& stmt) override
 	{
 	}
 
-	void visit(const Cst::OpAssignStmt&) override
+	void visit(const Cst::IfStmt& stmt) override
+	{
+		stmt.cond().accept(*this);
+		auto cond = std::move(result_expr);
+		if (cond == nullptr) {
+			cond = make_unique<Ast::BooleanConst>(true);
+		}
+
+		Ast::PrimitiveType bool_type(Ast::PrimitiveType::Kind::BOOL);
+		if (cond->type() != bool_type) {
+			errors->add(make_unique<Ast::UnexpectedType>(
+					bool_type.to_string(), cond->type().to_string(), cond->loc()));
+			cond = make_unique<Ast::BooleanConst>(true);
+		}
+
+		block_stack.push_block();
+		stmt.then_branch().accept(*this);
+		auto then_branch = block_stack.pop_block();
+
+		block_stack.push_block();
+		stmt.else_branch().accept(*this);
+		auto else_branch = block_stack.pop_block();
+
+		block_stack.add_stmt(make_unique<Ast::IfStmt>(
+				std::move(cond),
+				std::move(then_branch),
+				std::move(else_branch)));
+	}
+
+	void visit(const Cst::WhileStmt& stmt) override
+	{
+		stmt.cond().accept(*this);
+		auto cond = std::move(result_expr);
+		if (cond == nullptr) {
+			cond = make_unique<Ast::BooleanConst>(true);
+		}
+
+		Ast::PrimitiveType bool_type(Ast::PrimitiveType::Kind::BOOL);
+		if (cond->type() != bool_type) {
+			errors->add(make_unique<Ast::UnexpectedType>(
+					bool_type.to_string(), cond->type().to_string(), cond->loc()));
+			cond = make_unique<Ast::BooleanConst>(true);
+		}
+
+		block_stack.push_block();
+
+		loop_nesting++;
+		stmt.body().accept(*this);
+		loop_nesting--;
+
+		auto body = block_stack.pop_block();
+
+		block_stack.add_stmt(make_unique<Ast::WhileStmt>(
+				std::move(cond),
+				std::move(body)));
+	}
+
+	void visit(const Cst::ForeachRangeStmt& stmt) override
 	{
 	}
 
-	void visit(const Cst::IfStmt&) override
+	void visit(const Cst::ForeachPoolStmt& stmt) override
 	{
 	}
 
-	void visit(const Cst::WhileStmt&) override
+	void visit(const Cst::BlockStmt& stmt) override
+	{
+		table->push_scope();
+		visitPtrIter(stmt.begin(), stmt.end());
+		table->pop_scope();
+	}
+
+	void visit(const Cst::ExprStmt& stmt) override
+	{
+		stmt.expr().accept(*this);
+		if (result_expr == nullptr) {
+			return;
+		}
+
+		block_stack.add_stmt(make_unique<Ast::ExprStmt>(std::move(result_expr)));
+	}
+
+	void visit(const Cst::BreakStmt& stmt) override
+	{
+		if (loop_nesting == 0) {
+			errors->add(make_unique<Ast::NotInsideLoop>(stmt.loc()));
+			return;
+		}
+		block_stack.add_stmt(make_unique<Ast::BreakStmt>());
+	}
+
+	void visit(const Cst::ContinueStmt& stmt) override
+	{
+		if (loop_nesting == 0) {
+			errors->add(make_unique<Ast::NotInsideLoop>(stmt.loc()));
+			return;
+		}
+		block_stack.add_stmt(make_unique<Ast::ContinueStmt>());
+	}
+
+	void visit(const Cst::ReturnStmt& stmt) override
+	{
+		stmt.expr().accept(*this);
+		if (result_expr == nullptr) {
+			return;
+		}
+
+		if (curr_method->return_type() == nullptr) {
+			errors->add(make_unique<Ast::NoReturnType>(
+					curr_method->name(), Location()));
+			return;
+		}
+
+		if (*curr_method->return_type() != result_expr->type()) {
+			errors->add(make_unique<Ast::UnexpectedType>(
+					*curr_method->return_type(), result_expr->type(), Location()));
+			return;
+		}
+		block_stack.add_stmt(make_unique<Ast::ReturnStmt>(std::move(result_expr)));
+	}
+
+	void visit(const Cst::ReturnVoidStmt& stmt) override
+	{
+		if (curr_method->return_type() == nullptr) {
+			errors->add(make_unique<Ast::ExpectedReturnType>(
+					curr_method->name(), Location()));
+			return;
+		}
+		block_stack.add_stmt(make_unique<Ast::ReturnStmt>());
+	}
+
+	void visit(const Cst::IntegerConst& expr) override
 	{
 	}
 
-	void visit(const Cst::ForeachRangeStmt&) override
+	void visit(const Cst::BooleanConst& expr) override
+	{
+		result_expr = make_unique<Ast::BooleanConst>(expr.value(), expr.loc());
+	}
+
+	void visit(const Cst::NullExpr& expr) override
+	{
+		result_expr = make_unique<Ast::NullExpr>(expr.loc());
+	}
+
+	void visit(const Cst::ThisExpr& expr) override
+	{
+		std::vector<const Ast::Pool*> params(curr_class->pools_begin(), curr_class->pools_end());
+		Ast::ClassType type(curr_class, std::move(params));
+		result_expr = make_unique<Ast::ThisExpr>(std::move(type), expr.loc());
+	}
+
+	void visit(const Cst::BinaryExpr& expr) override
 	{
 	}
 
-	void visit(const Cst::ForeachPoolStmt&) override
+	void visit(const Cst::UnaryExpr& expr) override
 	{
 	}
 
-	void visit(const Cst::BlockStmt&) override
+	void visit(const Cst::IndexExpr& expr) override
 	{
 	}
 
-	void visit(const Cst::ExprStmt&) override
+	void visit(const Cst::IdentifierExpr& expr) override
 	{
 	}
 
-	void visit(const Cst::BreakStmt&) override
+	void visit(const Cst::MethodCall& expr) override
 	{
 	}
 
-	void visit(const Cst::ContinueStmt&) override
+	void visit(const Cst::MemberMethodCall& expr) override
 	{
 	}
 
-	void visit(const Cst::ReturnStmt&) override
+	void visit(const Cst::FieldAccess& expr) override
 	{
 	}
 
-	void visit(const Cst::ReturnVoidStmt&) override
-	{
-	}
-
-	void visit(const Cst::IntegerConst&) override
-	{
-	}
-
-	void visit(const Cst::BooleanConst&) override
-	{
-	}
-
-	void visit(const Cst::NullExpr&) override
-	{
-	}
-
-	void visit(const Cst::ThisExpr&) override
-	{
-	}
-
-	void visit(const Cst::BinaryExpr&) override
-	{
-	}
-
-	void visit(const Cst::UnaryExpr&) override
-	{
-	}
-
-	void visit(const Cst::IndexExpr&) override
-	{
-	}
-
-	void visit(const Cst::IdentifierExpr&) override
-	{
-	}
-
-	void visit(const Cst::MethodCall&) override
-	{
-	}
-
-	void visit(const Cst::MemberMethodCall&) override
-	{
-	}
-
-	void visit(const Cst::FieldAccess&) override
-	{
-	}
-
-	void visit(const Cst::NewExpr&) override
+	void visit(const Cst::NewExpr& expr) override
 	{
 	}
 };
@@ -840,3 +1637,5 @@ void Ast::run_semantic_analysis(const Cst::Program& cst, Ast::SemanticErrorList*
 
 	*ast = std::move(program);
 }
+
+#endif

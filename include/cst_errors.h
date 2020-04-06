@@ -25,8 +25,11 @@ class SyntaxErrorList
 	std::vector<SyntaxError> m_list;
 
 public:
-	decltype(m_list)::const_iterator begin() const { return m_list.cbegin(); }
-	decltype(m_list)::const_iterator end()   const { return m_list.cend();   }
+	decltype(m_list)::const_iterator begin() const { return m_list.begin(); }
+	decltype(m_list)::const_iterator end()   const { return m_list.end();   }
+
+	decltype(m_list)::iterator begin() { return m_list.begin(); }
+	decltype(m_list)::iterator end()   { return m_list.end();   }
 
 	void add(Location loc, std::string msg)
 	{

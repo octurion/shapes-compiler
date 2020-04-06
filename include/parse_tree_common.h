@@ -1,5 +1,29 @@
 #pragma once
 
+template <class Visitable>
+class BaseVisitable
+{
+public:
+	template <typename T>
+	void accept(T& visitor) const
+	{
+		visitor.visit(static_cast<const Visitable&>(*this));
+	}
+};
+
+class BaseVisitor
+{
+public:
+	virtual ~BaseVisitor() {}
+};
+
+template <class T>
+class Visitor
+{
+public:
+	virtual void visit(const T&) = 0;
+};
+
 struct Location {
 	int first_line   = 1;
 	int first_column = 1;

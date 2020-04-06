@@ -4,19 +4,21 @@
 #include "cst.h"
 #include "cst_errors.h"
 
-#include "ast.h"
-#include "ast_errors.h"
+// #include "ast.h"
+// #include "ast_errors.h"
 
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 
+#if 0
 class SemanticErrorPrinter: public Ast::SemanticErrorVisitor
 {
 	void visit(const Ast::NotLvalue& e)                  override {}
 	void visit(const Ast::MissingDefinition& e)          override {}
 	void visit(const Ast::DuplicateDefinition& e)        override {}
 	void visit(const Ast::UnexpectedTypeKind& e)         override {}
+	void visit(const Ast::UnexpectedType& e)             override {}
 	void visit(const Ast::MissingBound& e)               override {}
 	void visit(const Ast::NoPoolParameters& e)           override {}
 	void visit(const Ast::PoolParameterCountMismatch& e) override {}
@@ -27,7 +29,11 @@ class SemanticErrorPrinter: public Ast::SemanticErrorVisitor
 	void visit(const Ast::ClassPoolParameterNoNone& e)   override {}
 	void visit(const Ast::ClassTypeMismatch& e)          override {}
 	void visit(const Ast::PoolParameterMismatch& e)      override {}
+	void visit(const Ast::NotInsideLoop& e)              override {}
+	void visit(const Ast::NoReturnType& e)               override {}
+	void visit(const Ast::ExpectedReturnType& e)         override {}
 };
+#endif
 
 int main(int argc, char** argv)
 {
@@ -67,6 +73,7 @@ int main(int argc, char** argv)
 		return EXIT_SUCCESS;
 	}
 
+#if 0
 	Ast::Program ast;
 	Ast::SemanticErrorList errors;
 
@@ -84,6 +91,7 @@ int main(int argc, char** argv)
 		return EXIT_SUCCESS;
 	}
 
+#endif
 	fclose(in);
 	return EXIT_SUCCESS;
 }
