@@ -55,7 +55,17 @@ public:
 		const Location& loc() const { return m_name.loc(); }
 	};
 
-	class None: public BaseVisitable<None> {};
+	class None: public BaseVisitable<None>
+	{
+		Location m_loc;
+
+	public:
+		explicit None(const Location& loc)
+			: m_loc(loc)
+		{}
+
+		const Location& loc() const { return m_loc; }
+	};
 
 private:
 	void destroy_variant();
@@ -119,27 +129,33 @@ public:
 	class PrimitiveType: public BaseVisitable<PrimitiveType>
 	{
 		PrimitiveKind m_kind;
+		Location m_loc;
 
 	public:
-		explicit PrimitiveType(PrimitiveKind kind)
+		explicit PrimitiveType(PrimitiveKind kind, const Location& loc)
 			: m_kind(kind)
+			, m_loc(loc)
 		{}
 
 		PrimitiveKind kind() const { return m_kind; }
+		const Location& loc() const { return m_loc; }
 	};
 
 	class ObjectType: public BaseVisitable<ObjectType>
 	{
 		Identifier m_class_name;
 		std::vector<PoolParameter> m_params;
+		Location m_loc;
 
 	public:
-		ObjectType(Identifier class_name, std::vector<PoolParameter> params)
+		ObjectType(Identifier class_name, std::vector<PoolParameter> params, const Location& loc)
 			: m_class_name(std::move(class_name))
 			, m_params(std::move(params))
+			, m_loc(loc)
 		{}
 
 		const Identifier& class_name() const { return m_class_name; }
+		const Location& loc() const { return m_loc; }
 
 		decltype(m_params)::const_iterator begin() const { return m_params.begin(); }
 		decltype(m_params)::const_iterator end()   const { return m_params.end();   }
@@ -166,24 +182,18 @@ private:
 		ObjectType m_object_type;
 	};
 
-	Location m_loc;
-
 	void destroy_variant();
 	void construct_variant_from_other(Type& other);
 
-	Type() = default;
-
 public:
-	Type(PrimitiveType primitive_type, const Location& loc)
+	Type(PrimitiveType primitive_type)
 		: m_tag(Tag::PRIMITIVE)
 		, m_primitive_type(std::move(primitive_type))
-		, m_loc(loc)
 	{}
 
-	Type(ObjectType object_type, const Location& loc)
+	Type(ObjectType object_type)
 		: m_tag(Tag::OBJECT)
 		, m_object_type(std::move(object_type))
-		, m_loc(loc)
 	{}
 
 	template<typename T>
@@ -228,22 +238,22 @@ public:
 
 class LayoutType: public BaseVisitable<LayoutType>
 {
-	Identifier m_class_name;
+	Identifier m_layout_name;
 	std::vector<PoolParameter> m_params;
 
 	Location m_loc;
 
 public:
 	LayoutType() = default;
-	LayoutType(Identifier class_name,
+	LayoutType(Identifier layout_name,
 			   std::vector<PoolParameter> params,
 			   const Location& loc)
-		: m_class_name(std::move(class_name))
+		: m_layout_name(std::move(layout_name))
 		, m_params(std::move(params))
 		, m_loc(loc)
 	{}
 
-	const Identifier& class_name() const { return m_class_name; }
+	const Identifier& layout_name() const { return m_layout_name; }
 
 	decltype(m_params)::const_iterator begin() const { return m_params.begin(); }
 	decltype(m_params)::const_iterator end()   const { return m_params.end();   }
@@ -287,7 +297,7 @@ public:
 		, m_loc(loc)
 	{}
 
-	const Identifier& name() const { return m_name;  }
+	const Identifier& name() const { return m_name; }
 	const Type& type() const { return m_type; }
 	const Location& loc() const { return m_loc; }
 };
@@ -306,7 +316,7 @@ public:
 		, m_loc(loc)
 	{}
 
-	const Identifier& name() const { return m_name;  }
+	const Identifier& name() const { return m_name; }
 	const LayoutType& type() const { return m_type; }
 	const Location& loc() const { return m_loc; }
 };
@@ -324,112 +334,172 @@ public:
 	class IntegerConst: public BaseVisitable<IntegerConst>
 	{
 		std::string m_value;
+		Location m_loc;
 
 	public:
-		explicit IntegerConst(std::string value)
+		explicit IntegerConst(std::string value, const Location& loc)
 			: m_value(std::move(value))
+			, m_loc(loc)
 		{}
 
 		const std::string& value() const { return m_value; }
+		const Location& loc() const { return m_loc; }
 	};
 
 	class BooleanConst: public BaseVisitable<BooleanConst>
 	{
 		bool m_value;
+		Location m_loc;
 
 	public:
-		explicit BooleanConst(bool value)
+		explicit BooleanConst(bool value, const Location& loc)
 			: m_value(std::move(value))
+			, m_loc(loc)
 		{}
 
 		bool value() const { return m_value; }
+		const Location& loc() const { return m_loc; }
 	};
 
-	class Null: public BaseVisitable<Null> {};
+	class Null: public BaseVisitable<Null>
+	{
+		Location m_loc;
 
-	class This: public BaseVisitable<This> {};
+	public:
+		explicit Null(const Location& loc)
+			: m_loc(loc)
+		{}
+
+		const Location& loc() const { return m_loc; }
+	};
+
+	class This: public BaseVisitable<This>
+	{
+		Location m_loc;
+
+	public:
+		explicit This(const Location& loc)
+			: m_loc(loc)
+		{}
+
+		const Location& loc() const { return m_loc; }
+	};
+
+	class Cast: public BaseVisitable<Cast>
+	{
+		std::unique_ptr<Expr> m_expr;
+		Type::PrimitiveType m_type;
+
+		Location m_loc;
+
+	public:
+		Cast(Expr expr, Type::PrimitiveType type, const Location& loc)
+			: m_expr(std::unique_ptr<Expr>(new Expr(std::move(expr))))
+			, m_type(std::move(type))
+			, m_loc(loc)
+		{}
+
+		const Expr& expr() const { return *m_expr; }
+		const Location& loc() const { return m_loc; }
+		const Type::PrimitiveType& type() const { return m_type; }
+	};
 
 	class Binary: public BaseVisitable<Binary>
 	{
 		std::unique_ptr<Expr> m_lhs;
 		std::unique_ptr<Expr> m_rhs;
 		BinOp m_op;
+		Location m_loc;
 
 	public:
-		explicit Binary(Expr lhs, BinOp op, Expr rhs)
+		explicit Binary(Expr lhs, BinOp op, Expr rhs, const Location& loc)
 			: m_lhs(std::unique_ptr<Expr>(new Expr(std::move(lhs))))
 			, m_rhs(std::unique_ptr<Expr>(new Expr(std::move(rhs))))
 			, m_op(op)
+			, m_loc(loc)
 		{}
 
 		const Expr& lhs() const { return *m_lhs; }
 		const Expr& rhs() const { return *m_rhs; }
 
 		BinOp op() const { return m_op; }
+		const Location& loc() const { return m_loc; }
 	};
 
 	class VariableExpr: public BaseVisitable<VariableExpr>
 	{
 		Identifier m_name;
+		Location m_loc;
 
 	public:
-		explicit VariableExpr(Identifier name)
+		explicit VariableExpr(Identifier name, const Location& loc)
 			: m_name(std::move(name))
+			, m_loc(loc)
 		{}
 
 		const Identifier& name() const { return m_name; }
-
-		const Location& loc() const { return m_name.loc(); }
+		const Location& loc() const { return m_loc; }
 	};
 
 	class Unary: public BaseVisitable<Unary>
 	{
 		UnOp m_op;
 		std::unique_ptr<Expr> m_expr;
+		Location m_loc;
 
 	public:
-		explicit Unary(UnOp op, Expr expr)
+		explicit Unary(UnOp op, Expr expr, const Location& loc)
 			: m_op(op)
 			, m_expr(std::unique_ptr<Expr>(new Expr(std::move(expr))))
+			, m_loc(loc)
 		{}
 
 		const Expr& expr() const { return *m_expr; }
 		UnOp op() const { return m_op; }
+		const Location& loc() const { return m_loc; }
 	};
 
 	class IndexExpr: public BaseVisitable<IndexExpr>
 	{
 		PoolParameter::Pool m_pool;
 		std::unique_ptr<Expr> m_idx;
+		Location m_loc;
 
 	public:
-		IndexExpr(PoolParameter::Pool pool, Expr idx)
+		explicit IndexExpr(PoolParameter::Pool pool, Expr idx, const Location& loc)
 			: m_pool(std::move(pool))
 			, m_idx(std::unique_ptr<Expr>(new Expr(std::move(idx))))
+			, m_loc(loc)
 		{}
 
 		const PoolParameter::Pool& pool() const { return m_pool; }
 		const Expr& idx()  const { return *m_idx; }
+		const Location& loc() const { return m_loc; }
 	};
 
 	class MethodCall: public BaseVisitable<MethodCall>
 	{
 		Identifier m_name;
 		std::vector<Expr> m_params;
+		Location m_loc;
 
 	public:
 		using iterator = decltype(m_params)::iterator;
 		using const_iterator = decltype(m_params)::const_iterator;
 
-		explicit MethodCall(Identifier name, std::vector<Expr> params)
+		explicit MethodCall(Identifier name, std::vector<Expr> params, const Location& loc)
 			: m_name(std::move(name))
 			, m_params(std::move(params))
+			, m_loc(loc)
 		{}
 
 		const Identifier& name() const { return m_name; }
+		const Location& loc() const { return m_loc; }
 
 		const_iterator begin() const { return m_params.begin(); }
 		const_iterator end()   const { return m_params.end();   }
+		
+		size_t num_args() const { return m_params.size(); }
 
 		iterator begin() { return m_params.begin(); }
 		iterator end()   { return m_params.end();   }
@@ -440,22 +510,27 @@ public:
 		std::unique_ptr<Expr> m_this_expr;
 		Identifier m_name;
 		std::vector<Expr> m_args;
+		Location m_loc;
 
 	public:
 		using iterator = decltype(m_args)::iterator;
 		using const_iterator = decltype(m_args)::const_iterator;
 
-		MemberMethodCall(Expr this_expr, Identifier name, std::vector<Expr> args)
+		explicit MemberMethodCall(Expr this_expr, Identifier name, std::vector<Expr> args, const Location& loc)
 			: m_this_expr(std::unique_ptr<Expr>(new Expr(std::move(this_expr))))
 			, m_name(std::move(name))
 			, m_args(std::move(args))
+			, m_loc(loc)
 		{}
 
 		const Expr& this_expr() const { return *m_this_expr; }
 		const Identifier& method_name() const { return m_name; }
+		const Location& loc() const { return m_loc; }
 
 		const_iterator begin() const { return m_args.begin(); }
 		const_iterator end()   const { return m_args.end();   }
+
+		size_t num_args() const { return m_args.size(); }
 
 		iterator begin() { return m_args.begin(); }
 		iterator end()   { return m_args.end();   }
@@ -465,27 +540,33 @@ public:
 	{
 		std::unique_ptr<Expr> m_expr;
 		Identifier m_field;
+		Location m_loc;
 
 	public:
-		FieldAccess(Expr expr, Identifier field)
+		explicit FieldAccess(Expr expr, Identifier field, const Location& loc)
 			: m_expr(std::unique_ptr<Expr>(new Expr(std::move(expr))))
 			, m_field(std::move(field))
+			, m_loc(loc)
 		{}
 
 		const Expr& expr() const { return *m_expr; }
 		const Identifier& field() const { return m_field; }
+		const Location& loc() const { return m_loc; }
 	};
 
 	class New: public BaseVisitable<New>
 	{
 		Type::ObjectType m_type;
+		Location m_loc;
 
 	public:
-		New(Type::ObjectType type)
+		explicit New(Type::ObjectType type, const Location& loc)
 			: m_type(std::move(type))
+			, m_loc(loc)
 		{}
 
 		const Type::ObjectType& type() const { return m_type; }
+		const Location& loc() const { return m_loc; }
 	};
 
 	Expr(const Expr&) = delete;
@@ -497,11 +578,13 @@ public:
 	~Expr();
 
 private:
-	enum class Tag {
+	enum class Tag
+	{
 		INTEGER_CONST,
 		BOOLEAN_CONST,
 		NULL_EXPR,
 		THIS,
+		CAST,
 		UNARY,
 		BINARY,
 		INDEX,
@@ -519,6 +602,7 @@ private:
 		BooleanConst m_boolean_const;
 		Null m_null_expr;
 		This m_this_expr;
+		Cast m_cast;
 		Unary m_unary;
 		Binary m_binary;
 		IndexExpr m_index_expr;
@@ -528,84 +612,77 @@ private:
 		FieldAccess m_field_access;
 		New m_new_expr;
 	};
-	Location m_loc;
 
 	void destroy_variant();
 	void construct_variant_from_other(Expr& other);
 
 public:
-
-	explicit Expr(IntegerConst integer_const, const Location& loc)
+	Expr(IntegerConst integer_const)
 		: m_tag(Tag::INTEGER_CONST)
 		, m_integer_const(std::move(integer_const))
-		, m_loc(loc)
 	{}
 
-	explicit Expr(BooleanConst boolean_const, const Location& loc)
+	Expr(BooleanConst boolean_const)
 		: m_tag(Tag::BOOLEAN_CONST)
 		, m_boolean_const(std::move(boolean_const))
-		, m_loc(loc)
 	{}
 
-	explicit Expr(Null null_expr, const Location& loc)
+	Expr(Null null_expr)
 		: m_tag(Tag::NULL_EXPR)
 		, m_null_expr(std::move(null_expr))
-		, m_loc(loc)
 	{}
 
-	explicit Expr(This this_expr, const Location& loc)
+	Expr(This this_expr)
 		: m_tag(Tag::THIS)
 		, m_this_expr(std::move(this_expr))
-		, m_loc(loc)
 	{}
 
-	explicit Expr(Unary unary, const Location& loc)
+	Expr(Cast cast)
+		: m_tag(Tag::CAST)
+		, m_cast(std::move(cast))
+	{}
+
+	Expr(Unary unary)
 		: m_tag(Tag::UNARY)
 		, m_unary(std::move(unary))
-		, m_loc(loc)
 	{}
 
-	explicit Expr(Binary binary, const Location& loc)
+	Expr(Binary binary)
 		: m_tag(Tag::BINARY)
 		, m_binary(std::move(binary))
-		, m_loc(loc)
 	{}
 
-	explicit Expr(IndexExpr index_expr, const Location& loc)
+	Expr(IndexExpr index_expr)
 		: m_tag(Tag::INDEX)
 		, m_index_expr(std::move(index_expr))
-		, m_loc(loc)
 	{}
 
-	explicit Expr(VariableExpr variable_expr, const Location& loc)
+	Expr(VariableExpr variable_expr)
 		: m_tag(Tag::VARIABLE_EXPR)
 		, m_variable_expr(std::move(variable_expr))
-		, m_loc(loc)
 	{}
 
-	explicit Expr(MethodCall method_call, const Location& loc)
+	Expr(MethodCall method_call)
 		: m_tag(Tag::METHOD_CALL)
 		, m_method_call(std::move(method_call))
-		, m_loc(loc)
 	{}
 
-	explicit Expr(MemberMethodCall member_method_call, const Location& loc)
+	Expr(MemberMethodCall member_method_call)
 		: m_tag(Tag::MEMBER_METHOD_CALL)
 		, m_member_method_call(std::move(member_method_call))
-		, m_loc(loc)
 	{}
 
-	explicit Expr(FieldAccess field_access, const Location& loc)
+	Expr(FieldAccess field_access)
 		: m_tag(Tag::FIELD_ACCESS)
 		, m_field_access(std::move(field_access))
-		, m_loc(loc)
 	{}
 
-	explicit Expr(New new_expr, const Location& loc)
+	Expr(New new_expr)
 		: m_tag(Tag::NEW)
 		, m_new_expr(std::move(new_expr))
-		, m_loc(loc)
 	{}
+
+	const Location& loc() const;
 
 	template<typename T>
 	void accept(T& visitor) const
@@ -625,6 +702,10 @@ public:
 
 		case Tag::THIS:
 			visitor.visit(m_this_expr);
+			break;
+
+		case Tag::CAST:
+			visitor.visit(m_cast);
 			break;
 
 		case Tag::UNARY:
@@ -660,7 +741,6 @@ public:
 			break;
 		}
 	}
-
 };
 
 class Stmt
@@ -850,9 +930,29 @@ public:
 		const Expr& expr() const { return m_expr; }
 	};
 
-	class Break: public BaseVisitable<Break> {};
+	class Break: public BaseVisitable<Break>
+	{
+		Location m_loc;
 
-	class Continue: public BaseVisitable<Continue> {};
+	public:
+		explicit Break(const Location& loc)
+			: m_loc(loc)
+		{}
+
+		const Location& loc() const { return m_loc; }
+	};
+
+	class Continue: public BaseVisitable<Continue>
+	{
+		Location m_loc;
+
+	public:
+		explicit Continue(const Location& loc)
+			: m_loc(loc)
+		{}
+
+		const Location& loc() const { return m_loc; }
+	};
 
 	class Return: public BaseVisitable<Return>
 	{
@@ -866,7 +966,17 @@ public:
 		const Expr& expr() const { return m_expr; }
 	};
 
-	class ReturnVoid: public BaseVisitable<ReturnVoid> {};
+	class ReturnVoid: public BaseVisitable<ReturnVoid>
+	{
+		Location m_loc;
+
+	public:
+		explicit ReturnVoid(const Location& loc)
+			: m_loc(loc)
+		{}
+
+		const Location& loc() const { return m_loc; }
+	};
 
 	Stmt(const Stmt&) = delete;
 	Stmt& operator=(const Stmt&) = delete;
@@ -877,7 +987,8 @@ public:
 	~Stmt();
 
 private:
-	enum class Tag {
+	enum class Tag
+	{
 		NOOP,
 		VARIABLE_DECLARATIONS,
 		POOL_DECLARATIONS,
@@ -1106,7 +1217,7 @@ public:
 		, m_loc(loc)
 	{}
 
-	const Identifier& name() const { return m_name;  }
+	const Identifier& name() const { return m_name; }
 	const Type& type() const { return m_type; }
 	const Location& loc() const { return m_loc; }
 };
@@ -1338,6 +1449,7 @@ class CstVisitor: public BaseVisitor
 	, public Visitor<Expr::BooleanConst>
 	, public Visitor<Expr::Null>
 	, public Visitor<Expr::This>
+	, public Visitor<Expr::Cast>
 	, public Visitor<Expr::Binary>
 	, public Visitor<Expr::VariableExpr>
 	, public Visitor<Expr::Unary>
@@ -1397,6 +1509,7 @@ public:
 	void visit(const Expr::BooleanConst& e)         override;
 	void visit(const Expr::Null& e)                 override;
 	void visit(const Expr::This& e)                 override;
+	void visit(const Expr::Cast& e)                 override;
 	void visit(const Expr::Binary& e)               override;
 	void visit(const Expr::VariableExpr& e)         override;
 	void visit(const Expr::Unary& e)                override;

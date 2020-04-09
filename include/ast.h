@@ -2,6 +2,7 @@
 
 #include "parse_tree_common.h"
 
+#include <cassert>
 #include <cstdint>
 #include <deque>
 #include <memory>
@@ -16,116 +17,7 @@ class Class;
 class Field;
 class Method;
 class Layout;
-
-class PoolParameter;
 class Pool;
-class Type;
-
-class PoolType
-{
-public:
-	class BoundType: public BaseVisitable<BoundType>
-	{
-		const Class& m_class;
-		std::vector<std::reference_wrapper<const Pool>> m_params;
-
-	public:
-		explicit BoundType(const Class& of_class,
-						   std::vector<std::reference_wrapper<const Pool>> params)
-			: m_class(of_class)
-			, m_params(std::move(params))
-		{}
-
-		const Class& of_class() const { return m_class; }
-
-		decltype(m_params)::iterator begin() { return m_params.begin(); }
-		decltype(m_params)::iterator end()   { return m_params.end();   }
-
-		decltype(m_params)::const_iterator begin() const { return m_params.begin(); }
-		decltype(m_params)::const_iterator end()   const { return m_params.end();   }
-	};
-
-	class LayoutType: public BaseVisitable<LayoutType>
-	{
-		const Layout& m_layout;
-		std::vector<std::reference_wrapper<const PoolParameter>> m_params;
-
-	public:
-		explicit LayoutType(const Layout& layout,
-							std::vector<std::reference_wrapper<const PoolParameter>> params)
-			: m_layout(layout)
-			, m_params(std::move(params))
-		{}
-
-		const Layout& layout() const { return m_layout; }
-		const Class& of_class() const;
-
-		decltype(m_params)::iterator begin() { return m_params.begin(); }
-		decltype(m_params)::iterator end()   { return m_params.end();   }
-
-		decltype(m_params)::const_iterator begin() const { return m_params.begin(); }
-		decltype(m_params)::const_iterator end()   const { return m_params.end();   }
-
-		bool is_compatible_with(const LayoutType& type) const;
-	};
-
-private:
-	enum class Tag { BOUND, LAYOUT };
-
-	Tag m_tag;
-	union
-	{
-		BoundType m_bound;
-		LayoutType m_layout;
-	};
-
-	Location m_loc;
-
-	void destroy_variant();
-	void construct_variant_from_other(PoolType& other);
-
-public:
-	explicit PoolType(BoundType bound, const Location& loc)
-		: m_tag(Tag::BOUND)
-		, m_bound(bound)
-		, m_loc(loc)
-	{}
-
-	explicit PoolType(LayoutType layout, const Location& loc)
-		: m_tag(Tag::LAYOUT)
-		, m_layout(layout)
-		, m_loc(loc)
-	{}
-
-	PoolType(const PoolType&) = delete;
-	PoolType& operator=(const PoolType&) = delete;
-
-	PoolType(PoolType&&);
-	PoolType& operator=(PoolType&&);
-
-	~PoolType();
-
-	const Location& loc() const { return m_loc; }
-};
-
-class Pool: public BaseVisitable<Pool>
-{
-	std::string m_name;
-	PoolType m_type;
-
-	Location m_loc;
-
-public:
-	explicit Pool(std::string name, PoolType type, const Location& loc)
-		: m_name(std::move(name))
-		, m_type(std::move(type))
-		, m_loc(loc)
-	{}
-
-	const std::string& name() const { return m_name; }
-	const PoolType& type() const { return m_type; }
-	const Location& loc() const { return m_loc; }
-};
 
 class PoolParameter
 {
@@ -174,8 +66,8 @@ public:
 		, m_loc(loc)
 	{}
 
-	PoolParameter(const PoolParameter&) = delete;
-	PoolParameter& operator=(const PoolParameter&) = delete;
+	PoolParameter(const PoolParameter&);
+	PoolParameter& operator=(const PoolParameter&);
 
 	PoolParameter(PoolParameter&&);
 	PoolParameter& operator=(PoolParameter&&);
@@ -184,8 +76,19 @@ public:
 
 	const Location& loc() const { return m_loc; }
 
-	const PoolRef* as_pool() const;
-	const None* as_none() const;
+	const PoolRef* as_pool() const
+	{
+		return (m_tag == Tag::POOL)
+			? &m_pool
+			: nullptr;
+	}
+
+	const None* as_none() const
+	{
+		return (m_tag == Tag::NONE)
+			? &m_none
+			: nullptr;
+	}
 
 	bool operator==(const PoolParameter& rhs) const;
 	bool operator!=(const PoolParameter& rhs) const { return !(*this == rhs); }
@@ -201,6 +104,221 @@ public:
 			m_none.accept(visitor);
 			break;
 		}
+	}
+};
+
+class PoolType
+{
+public:
+	class BoundType: public BaseVisitable<BoundType>
+	{
+		const Class& m_class;
+		std::vector<PoolParameter> m_params;
+
+		Location m_loc;
+
+	public:
+		using iterator = decltype(m_params)::iterator;
+		using const_iterator = decltype(m_params)::const_iterator;
+
+		explicit BoundType(const Class& of_class, std::vector<PoolParameter> params, const Location& loc)
+			: m_class(of_class)
+			, m_params(std::move(params))
+			, m_loc(loc)
+		{}
+
+		const Class& of_class() const { return m_class; }
+
+		iterator begin() { return m_params.begin(); }
+		iterator end()   { return m_params.end();   }
+
+		const_iterator begin() const { return m_params.begin(); }
+		const_iterator end()   const { return m_params.end();   }
+
+		size_t num_params() const { return m_params.size(); }
+
+		const Location& loc() const { return m_loc; }
+
+		bool operator==(const BoundType& rhs) const
+		{
+			if (&m_class != &rhs.m_class) {
+				return false;
+			}
+
+			if (num_params() != rhs.num_params()) {
+				return false;
+			}
+
+			return std::equal(begin(), end(), rhs.begin());
+		}
+
+		bool operator!=(const BoundType& rhs) const { return !(*this == rhs); }
+
+		bool compatible_with_bound(const BoundType& bound) const
+		{
+			if (&m_class != &bound.m_class) {
+				return false;
+			}
+
+			if (num_params() != bound.num_params()) {
+				return false;
+			}
+
+			return std::equal(begin(), end(), bound.begin());
+		}
+	};
+
+	class LayoutType: public BaseVisitable<LayoutType>
+	{
+		const Layout& m_layout;
+		std::vector<PoolParameter> m_params;
+
+		Location m_loc;
+
+	public:
+		using iterator = decltype(m_params)::iterator;
+		using const_iterator = decltype(m_params)::const_iterator;
+
+		explicit LayoutType(const Layout& layout,
+							std::vector<PoolParameter> params,
+							const Location& loc)
+			: m_layout(layout)
+			, m_params(std::move(params))
+			, m_loc(loc)
+		{}
+
+		const Layout& layout() const { return m_layout; }
+		const Class& of_class() const;
+
+		const_iterator begin() const { return m_params.begin(); }
+		const_iterator end()   const { return m_params.end();   }
+
+		size_t num_params() const { return m_params.size(); }
+
+		iterator begin() { return m_params.begin(); }
+		iterator end()   { return m_params.end();   }
+
+		const Location& loc() const { return m_loc; }
+
+		bool compatible_with_bound(const BoundType& bound) const
+		{
+			if (&of_class() != &bound.of_class()) {
+				return false;
+			}
+
+			if (num_params() != bound.num_params()) {
+				return false;
+			}
+
+			return std::equal(begin(), end(), bound.begin());
+		}
+	};
+
+private:
+	enum class Tag { INVALID, BOUND, LAYOUT };
+
+	Tag m_tag;
+	union
+	{
+		BoundType m_bound;
+		LayoutType m_layout;
+	};
+
+	Location m_loc;
+
+	void destroy_variant();
+	void construct_variant_from_other(PoolType& other);
+
+public:
+	PoolType()
+		: m_tag(Tag::INVALID)
+	{}
+
+	explicit PoolType(BoundType bound, const Location& loc)
+		: m_tag(Tag::BOUND)
+		, m_bound(std::move(bound))
+		, m_loc(loc)
+	{}
+
+	explicit PoolType(LayoutType layout, const Location& loc)
+		: m_tag(Tag::LAYOUT)
+		, m_layout(std::move(layout))
+		, m_loc(loc)
+	{}
+
+	PoolType(const PoolType&) = delete;
+	PoolType& operator=(const PoolType&) = delete;
+
+	PoolType(PoolType&&);
+	PoolType& operator=(PoolType&&);
+
+	~PoolType();
+
+	bool valid() const { return m_tag != Tag::INVALID; }
+
+	bool compatible_with_bound(const BoundType& bound) const;
+
+	const BoundType* as_bound_type() const
+	{
+		return (m_tag == Tag::BOUND)
+			? &m_bound
+			: nullptr;
+	}
+
+	const LayoutType* as_layout_type() const
+	{
+		return (m_tag == Tag::LAYOUT)
+			? &m_layout
+			: nullptr;
+	}
+
+	const Location& loc() const { return m_loc; }
+
+	template <typename T>
+	void accept(T& visitor) const {
+		switch (m_tag) {
+		case Tag::INVALID:
+			assert(false && "Type is in an invalid state");
+			break;
+
+		case Tag::BOUND:
+			m_bound.accept(visitor);
+			break;
+
+		case Tag::LAYOUT:
+			m_layout.accept(visitor);
+			break;
+		}
+	}
+};
+
+class Pool: public BaseVisitable<Pool>
+{
+	std::string m_name;
+	PoolType m_type;
+
+	Location m_loc;
+
+public:
+	explicit Pool(std::string name, const Location& loc)
+		: m_name(std::move(name))
+		, m_loc(loc)
+	{}
+
+	explicit Pool(std::string name, PoolType type, const Location& loc)
+		: m_name(std::move(name))
+		, m_type(std::move(type))
+		, m_loc(loc)
+	{}
+
+	const std::string& name() const { return m_name; }
+	const PoolType& type() const { return m_type; }
+	const Location& loc() const { return m_loc; }
+
+	void set_type(PoolType type)
+	{
+		assert(type.valid());
+		m_type = std::move(type);
 	}
 };
 
@@ -266,13 +384,14 @@ public:
 		{
 			return is_signed_integer() || is_unsigned_integer();
 		}
-
-		const char* to_string() const;
 	};
 
 	class NullType: public BaseVisitable<NullType>
 	{
-		const char* to_string() const;
+	};
+
+	class VoidType: public BaseVisitable<VoidType>
+	{
 	};
 
 	class ObjectType: public BaseVisitable<ObjectType>
@@ -280,26 +399,36 @@ public:
 		const Class& m_class;
 		std::vector<PoolParameter> m_params;
 
+		Location m_loc;
+
 	public:
-		explicit ObjectType(const Class& of_class, std::vector<PoolParameter> params)
+		using iterator = decltype(m_params)::iterator;
+		using const_iterator = decltype(m_params)::const_iterator;
+
+		explicit ObjectType(const Class& of_class, std::vector<PoolParameter> params, const Location& loc)
 			: m_class(of_class)
 			, m_params(std::move(params))
+			, m_loc(loc)
 		{}
 
 		const Class& of_class() const { return m_class; }
 
-		decltype(m_params)::iterator begin() { return m_params.begin(); }
-		decltype(m_params)::iterator end()   { return m_params.end();   }
+		size_t num_params() const { return m_params.size(); }
 
-		decltype(m_params)::const_iterator begin() const { return m_params.begin(); }
-		decltype(m_params)::const_iterator end()   const { return m_params.end();   }
+		const Location& loc() const { return m_loc; }
+
+		iterator begin() { return m_params.begin(); }
+		iterator end()   { return m_params.end();   }
+
+		const_iterator begin() const { return m_params.begin(); }
+		const_iterator end()   const { return m_params.end();   }
 
 		bool operator==(const ObjectType& rhs) const;
 		bool operator!=(const ObjectType& rhs) const { return !(*this == rhs); }
 	};
 
 private:
-	enum class Tag { PRIMITIVE, OBJECT, NULLPTR };
+	enum class Tag { INVALID, PRIMITIVE, OBJECT, NULLPTR, VOID };
 
 	Tag m_tag;
 	union
@@ -307,6 +436,7 @@ private:
 		PrimitiveType m_primitive_type;
 		ObjectType m_object_type;
 		NullType m_null_type;
+		VoidType m_void_type;
 	};
 
 	Location m_loc;
@@ -315,6 +445,10 @@ private:
 	void construct_variant_from_other(Type& other);
 
 public:
+	Type()
+		: m_tag(Tag::INVALID)
+	{}
+
 	explicit Type(PrimitiveType primitive_type, const Location& loc)
 		: m_tag(Tag::PRIMITIVE)
 		, m_primitive_type(std::move(primitive_type))
@@ -333,8 +467,14 @@ public:
 		, m_loc(loc)
 	{}
 
-	Type(const Type&) = delete;
-	Type& operator=(const Type&) = delete;
+	explicit Type(VoidType void_type)
+		: m_tag(Tag::VOID)
+		, m_void_type(std::move(void_type))
+		, m_loc(Location())
+	{}
+
+	Type(const Type&);
+	Type& operator=(const Type&);
 
 	Type(Type&&);
 	Type& operator=(Type&&);
@@ -345,7 +485,33 @@ public:
 	const ObjectType* as_object_type() const;
 	const NullType* as_null_type() const;
 
+	bool valid() const { return m_tag != Tag::INVALID; }
 	const Location& loc() const { return m_loc; }
+
+	bool assignable_to(const Type& assigned_to) const
+	{
+		switch (m_tag) {
+		case Tag::INVALID:
+			assert(false);
+			break;
+
+		case Tag::PRIMITIVE: {
+			const auto* primitive_type = assigned_to.as_primitive_type();
+			return primitive_type != nullptr && this->m_primitive_type == *primitive_type;
+		}
+
+		case Tag::OBJECT: {
+			const auto* object_type = assigned_to.as_object_type();
+			return object_type != nullptr && this->m_object_type == *object_type;
+		}
+
+		case Tag::NULLPTR:
+			return assigned_to.as_object_type() != nullptr;
+
+		default:
+			return false;
+		}
+	}
 
 	bool operator==(const Type& rhs) const;
 	bool operator!=(const Type& rhs) const { return !(*this == rhs); }
@@ -353,6 +519,10 @@ public:
 	template <typename T>
 	void accept(T& visitor) const {
 		switch (m_tag) {
+		case Tag::INVALID:
+			assert(false);
+			break;
+
 		case Tag::PRIMITIVE:
 			m_primitive_type.accept(visitor);
 			break;
@@ -363,6 +533,10 @@ public:
 
 		case Tag::NULLPTR:
 			m_null_type.accept(visitor);
+			break;
+
+		case Tag::VOID:
+			m_void_type.accept(visitor);
 			break;
 		}
 	}
@@ -437,6 +611,23 @@ public:
 		const Type::ObjectType& type() const { return m_type; }
 	};
 
+	class Cast: public BaseVisitable<Cast>
+	{
+		std::unique_ptr<Expr> m_expr;
+		Type::PrimitiveType m_type;
+
+		Location m_loc;
+
+	public:
+		explicit Cast(Expr expr, Type::PrimitiveType type)
+			: m_expr(std::unique_ptr<Expr>(new Expr(std::move(expr))))
+			, m_type(std::move(type))
+		{}
+
+		const Expr& expr() const { return *m_expr; }
+		const Type::PrimitiveType& type() const { return m_type; }
+	};
+
 	class Unary: public BaseVisitable<Unary>
 	{
 		std::unique_ptr<Expr> m_expr;
@@ -500,15 +691,22 @@ public:
 	class MethodCall: public BaseVisitable<MethodCall>
 	{
 		const Method& m_method;
+		std::unique_ptr<Expr> m_this_expr;
 		std::vector<Expr> m_args;
 
 	public:
 		using iterator = decltype(m_args)::iterator;
 		using const_iterator = decltype(m_args)::const_iterator;
 
-		explicit MethodCall(const Method& method, std::vector<Expr> args);
+		explicit MethodCall(const Method& method, Expr this_expr, std::vector<Expr> args)
+			: m_method(method)
+			, m_this_expr(std::unique_ptr<Expr>(new Expr(std::move(this_expr))))
+			, m_args(std::move(args))
+		{}
 
 		const Method& method() const { return m_method; }
+
+		const Expr& this_expr() const { return *m_this_expr; }
 
 		iterator begin() { return m_args.begin(); }
 		iterator end()   { return m_args.end();   }
@@ -547,11 +745,14 @@ public:
 	};
 
 private:
-	enum class Tag {
+	enum class Tag
+	{
+		INVALID,
 		INTEGER_CONST,
 		BOOLEAN_CONST,
 		NULL_EXPR,
 		THIS,
+		CAST,
 		UNARY,
 		BINARY,
 		INDEX,
@@ -568,6 +769,7 @@ private:
 		BooleanConst m_boolean_const;
 		Null m_null_expr;
 		This m_this_expr;
+		Cast m_cast;
 		Unary m_unary;
 		Binary m_binary;
 		IndexExpr m_index_expr;
@@ -576,75 +778,98 @@ private:
 		FieldAccess m_field_access;
 		New m_new_expr;
 	};
+	Type m_type;
 	Location m_loc;
 
 	void destroy_variant();
 	void construct_variant_from_other(Expr& other);
 
 public:
-	explicit Expr(IntegerConst integer_const, const Location& loc)
+	Expr()
+		: m_tag(Tag::INVALID)
+	{}
+
+	explicit Expr(IntegerConst integer_const, Type type, const Location& loc)
 		: m_tag(Tag::INTEGER_CONST)
 		, m_integer_const(std::move(integer_const))
+		, m_type(std::move(type))
 		, m_loc(loc)
 	{}
 
-	explicit Expr(BooleanConst boolean_const, const Location& loc)
+	explicit Expr(BooleanConst boolean_const, Type type, const Location& loc)
 		: m_tag(Tag::BOOLEAN_CONST)
 		, m_boolean_const(std::move(boolean_const))
+		, m_type(std::move(type))
 		, m_loc(loc)
 	{}
 
-	explicit Expr(Null null_expr, const Location& loc)
+	explicit Expr(Null null_expr, Type type, const Location& loc)
 		: m_tag(Tag::NULL_EXPR)
 		, m_null_expr(std::move(null_expr))
+		, m_type(std::move(type))
 		, m_loc(loc)
 	{}
 
-	explicit Expr(This this_expr, const Location& loc)
+	explicit Expr(This this_expr, Type type, const Location& loc)
 		: m_tag(Tag::THIS)
 		, m_this_expr(std::move(this_expr))
+		, m_type(std::move(type))
 		, m_loc(loc)
 	{}
 
-	explicit Expr(Unary unary, const Location& loc)
+	explicit Expr(Cast cast, Type type, const Location& loc)
+		: m_tag(Tag::CAST)
+		, m_cast(std::move(cast))
+		, m_type(std::move(type))
+		, m_loc(loc)
+	{}
+
+	explicit Expr(Unary unary, Type type, const Location& loc)
 		: m_tag(Tag::UNARY)
 		, m_unary(std::move(unary))
+		, m_type(std::move(type))
 		, m_loc(loc)
 	{}
 
-	explicit Expr(Binary binary, const Location& loc)
+	explicit Expr(Binary binary, Type type, const Location& loc)
 		: m_tag(Tag::BINARY)
 		, m_binary(std::move(binary))
+		, m_type(std::move(type))
 		, m_loc(loc)
 	{}
 
-	explicit Expr(IndexExpr index_expr, const Location& loc)
+	explicit Expr(IndexExpr index_expr, Type type, const Location& loc)
 		: m_tag(Tag::INDEX)
 		, m_index_expr(std::move(index_expr))
+		, m_type(std::move(type))
 		, m_loc(loc)
 	{}
 
-	explicit Expr(VariableExpr variable_expr, const Location& loc)
+	explicit Expr(VariableExpr variable_expr, Type type, const Location& loc)
 		: m_tag(Tag::VARIABLE)
 		, m_variable_expr(std::move(variable_expr))
+		, m_type(std::move(type))
 		, m_loc(loc)
 	{}
 
-	explicit Expr(MethodCall method_call, const Location& loc)
+	explicit Expr(MethodCall method_call, Type type, const Location& loc)
 		: m_tag(Tag::METHOD_CALL)
 		, m_method_call(std::move(method_call))
+		, m_type(std::move(type))
 		, m_loc(loc)
 	{}
 
-	explicit Expr(FieldAccess field_access, const Location& loc)
+	explicit Expr(FieldAccess field_access, Type type, const Location& loc)
 		: m_tag(Tag::FIELD_ACCESS)
 		, m_field_access(std::move(field_access))
+		, m_type(std::move(type))
 		, m_loc(loc)
 	{}
 
-	explicit Expr(New new_expr, const Location& loc)
+	explicit Expr(New new_expr, Type type, const Location& loc)
 		: m_tag(Tag::NEW)
 		, m_new_expr(std::move(new_expr))
+		, m_type(std::move(type))
 		, m_loc(loc)
 	{}
 
@@ -656,8 +881,10 @@ public:
 
 	~Expr();
 
+	bool valid() const { return m_tag != Tag::INVALID; }
+
 	bool is_lvalue() const;
-	Type type() const;
+	const Type& type() const { return m_type; }
 	const Location& loc() const { return m_loc; }
 
 	const IntegerConst* as_integer_const() const;
@@ -675,6 +902,10 @@ public:
 	template <typename T>
 	void accept(T& visitor) const {
 		switch (m_tag) {
+		case Tag::INVALID:
+			assert(false && "Expression is in an invalid state");
+			break;
+
 		case Tag::INTEGER_CONST:
 			m_integer_const.accept(visitor);
 			break;
@@ -689,6 +920,10 @@ public:
 
 		case Tag::THIS:
 			m_this_expr.accept(visitor);
+			break;
+
+		case Tag::CAST:
+			m_cast.accept(visitor);
 			break;
 
 		case Tag::UNARY:
@@ -730,27 +965,29 @@ class Field: public BaseVisitable<Field>
 	Location m_loc;
 
 public:
-	explicit Field(std::string name, Type type, const Location& loc)
+	explicit Field(std::string name, const Location& loc)
 		: m_name(std::move(name))
-		, m_type(std::move(type))
 		, m_loc(loc)
 	{}
 
 	const std::string& name() const { return m_name; }
 	const Type& type() const { return m_type; }
 	const Location& loc() const { return m_loc; }
+
+	void set_type(Type type) { m_type = std::move(type); }
 };
 
 class Cluster: public BaseVisitable<Cluster>
 {
 	std::vector<std::reference_wrapper<const Field>> m_fields;
+	Location m_loc;
 
 public:
 	using const_iterator = decltype(m_fields)::const_iterator;
 	using iterator = decltype(m_fields)::iterator;
 
-	explicit Cluster(std::vector<std::reference_wrapper<const Field>> fields)
-		: m_fields(std::move(fields))
+	explicit Cluster(const Location& loc)
+		: m_loc(loc)
 	{}
 
 	const_iterator begin() const { return m_fields.begin(); }
@@ -758,6 +995,8 @@ public:
 
 	iterator begin() { return m_fields.begin(); }
 	iterator end()   { return m_fields.end();   }
+
+	void add_field(const Field& field) { m_fields.emplace_back(field); }
 };
 
 class Layout: public BaseVisitable<Layout>
@@ -773,11 +1012,9 @@ public:
 
 	explicit Layout(std::string name,
 					const Class& for_class,
-					std::vector<Cluster> clusters,
 					const Location& loc)
 		: m_name(std::move(name))
 		, m_class(for_class)
-		, m_clusters(std::move(clusters))
 		, m_loc(loc)
 	{}
 
@@ -791,6 +1028,12 @@ public:
 	iterator end()   { return m_clusters.end();   }
 
 	const Location& loc() const { return m_loc; }
+
+	Cluster& add_cluster(const Location& loc)
+	{
+		m_clusters.emplace_back(loc);
+		return m_clusters.back();
+	}
 };
 
 class Stmt
@@ -976,7 +1219,8 @@ public:
 	~Stmt();
 
 private:
-	enum class Tag {
+	enum class Tag
+	{
 		ASSIGNMENT,
 		OP_ASSIGNMENT,
 		IF,
@@ -1003,70 +1247,59 @@ private:
 		Continue m_continue;
 		Return m_return;
 	};
-	Location m_loc;
 
 	void destroy_variant();
 	void construct_variant_from_other(Stmt& other);
 
 public:
-	explicit Stmt(Assignment assignment, const Location& loc)
+	explicit Stmt(Assignment assignment)
 		: m_tag(Tag::ASSIGNMENT)
 		, m_assignment(std::move(assignment))
-		, m_loc(loc)
 	{}
 
-	explicit Stmt(OpAssignment op_assignment, const Location& loc)
+	explicit Stmt(OpAssignment op_assignment)
 		: m_tag(Tag::OP_ASSIGNMENT)
 		, m_op_assignment(std::move(op_assignment))
-		, m_loc(loc)
 	{}
 
-	explicit Stmt(If if_stmt, const Location& loc)
+	explicit Stmt(If if_stmt)
 		: m_tag(Tag::IF)
 		, m_if(std::move(if_stmt))
-		, m_loc(loc)
 	{}
 
-	explicit Stmt(While while_stmt, const Location& loc)
+	explicit Stmt(While while_stmt)
 		: m_tag(Tag::WHILE)
 		, m_while(std::move(while_stmt))
-		, m_loc(loc)
 	{}
 
-	explicit Stmt(ForeachRange foreach_range, const Location& loc)
+	explicit Stmt(ForeachRange foreach_range)
 		: m_tag(Tag::FOREACH_RANGE)
 		, m_foreach_range(std::move(foreach_range))
-		, m_loc(loc)
 	{}
 
-	explicit Stmt(ForeachPool foreach_pool, const Location& loc)
+	explicit Stmt(ForeachPool foreach_pool)
 		: m_tag(Tag::FOREACH_POOL)
 		, m_foreach_pool(std::move(foreach_pool))
-		, m_loc(loc)
 	{}
 
-	explicit Stmt(ExprStmt expr_stmt, const Location& loc)
+	explicit Stmt(ExprStmt expr_stmt)
 		: m_tag(Tag::EXPR_STMT)
 		, m_expr_stmt(std::move(expr_stmt))
-		, m_loc(loc)
 	{}
 
-	explicit Stmt(Break break_stmt, const Location& loc)
+	explicit Stmt(Break break_stmt)
 		: m_tag(Tag::BREAK)
 		, m_break(std::move(break_stmt))
-		, m_loc(loc)
 	{}
 
-	explicit Stmt(Continue continue_stmt, const Location& loc)
+	explicit Stmt(Continue continue_stmt)
 		: m_tag(Tag::CONTINUE)
 		, m_continue(std::move(continue_stmt))
-		, m_loc(loc)
 	{}
 
-	explicit Stmt(Return return_stmt, const Location& loc)
+	explicit Stmt(Return return_stmt)
 		: m_tag(Tag::RETURN)
 		, m_return(std::move(return_stmt))
-		, m_loc(loc)
 	{}
 
 	template<typename T>
@@ -1122,7 +1355,7 @@ class Method: public BaseVisitable<Method>
 
 	std::string m_name;
 
-	std::vector<Pool> m_pools;
+	std::deque<Pool> m_pools;
 	std::deque<Variable> m_vars;
 
 	size_t m_param_count = 0;
@@ -1133,12 +1366,6 @@ class Method: public BaseVisitable<Method>
 	Location m_loc;
 
 public:
-	explicit Method(std::string name, Type return_type, const Location& loc)
-		: m_name(std::move(name))
-		, m_return_type(std::move(return_type))
-		, m_loc(loc)
-	{}
-
 	explicit Method(std::string name, const Location& loc)
 		: m_name(std::move(name))
 		, m_loc(loc)
@@ -1149,6 +1376,9 @@ public:
 	decltype(m_vars)::const_iterator vars_begin() const { return m_vars.begin(); }
 	decltype(m_vars)::const_iterator vars_end()   const { return m_vars.end();   }
 
+	decltype(m_pools)::iterator pools_begin() { return m_pools.begin(); }
+	decltype(m_pools)::iterator pools_end()   { return m_pools.end();   }
+
 	decltype(m_pools)::const_iterator pools_begin() const { return m_pools.begin(); }
 	decltype(m_pools)::const_iterator pools_end()   const { return m_pools.end();   }
 
@@ -1157,6 +1387,16 @@ public:
 
 	size_t num_params() const { return m_param_count; }
 
+	void set_return_type(Type type)
+	{
+		m_return_type = std::move(type);
+	}
+
+	void set_body(std::vector<Stmt> body)
+	{
+		m_body = std::move(body);
+	}
+
 	const Type* return_type() const { return m_return_type.get(); }
 
 	decltype(m_body)::const_iterator body_begin() const { return m_body.begin(); }
@@ -1164,15 +1404,23 @@ public:
 
 	const Location& loc() const { return m_loc; }
 
-	void add_parameter(Variable param)
+	const Variable& add_parameter(std::string name, Type type, const Location& loc)
 	{
-		m_vars.emplace_back(std::move(param));
+		m_vars.emplace_back(std::move(name), std::move(type), loc);
 		m_param_count++;
+		return m_vars.back();
 	}
 
-	void add_variable(Variable var)
+	const Variable& add_variable(std::string name, Type type, const Location& loc)
 	{
-		m_vars.emplace_back(std::move(var));
+		m_vars.emplace_back(std::move(name), std::move(type), loc);
+		return m_vars.back();
+	}
+
+	Pool& add_pool(std::string name, const Location& loc)
+	{
+		m_pools.emplace_back(std::move(name), loc);
+		return m_pools.back();
 	}
 };
 
@@ -1181,42 +1429,30 @@ class Class: public BaseVisitable<Class>
 	std::string m_name;
 
 	std::unordered_map<std::string, Pool> m_pool_map;
-	std::vector<std::reference_wrapper<const Pool>> m_pools;
+	std::vector<std::reference_wrapper<Pool>> m_pools;
 
 	std::unordered_map<std::string, Field> m_field_map;
-	std::vector<std::reference_wrapper<const Field>> m_fields;
+	std::vector<std::reference_wrapper<Field>> m_fields;
 
 	std::unordered_map<std::string, Method> m_method_map;
-	std::vector<std::reference_wrapper<const Method>> m_methods;
+	std::vector<std::reference_wrapper<Method>> m_methods;
 
 	Location m_loc;
 
 public:
+	using pools_iterator = decltype(m_pools)::iterator;
+	using pools_const_iterator = decltype(m_pools)::const_iterator;
+
+	Class(const Class&) = delete;
+	Class& operator=(const Class&) = delete;
+
+	Class(Class&&) = default;
+	Class& operator=(Class&&) = default;
+
 	explicit Class(std::string name, const Location& loc)
 		: m_name(std::move(name))
 		, m_loc(loc)
 	{}
-
-	void set_pools(std::unordered_map<std::string, Pool> pool_map,
-				   std::vector<std::reference_wrapper<const Pool>> pools)
-	{
-		m_pool_map = std::move(pool_map);
-		m_pools    = std::move(pools);
-	}
-
-	void set_methods(std::unordered_map<std::string, Method> method_map,
-					 std::vector<std::reference_wrapper<const Method>> methods)
-	{
-		m_method_map = std::move(method_map);
-		m_methods    = std::move(methods);
-	}
-
-	void set_fields(std::unordered_map<std::string, Field> field_map,
-					std::vector<std::reference_wrapper<const Field>> fields)
-	{
-		m_field_map = std::move(field_map);
-		m_fields    = std::move(fields);
-	}
 
 	size_t num_pools() const { return m_pools.size(); }
 
@@ -1247,6 +1483,15 @@ public:
 		return &it->second;
 	}
 
+	Field* find_field(const std::string& name)
+	{
+		auto it = m_field_map.find(name);
+		if (it == m_field_map.end()) {
+			return nullptr;
+		}
+		return &it->second;
+	}
+
 	const Method* find_method(const std::string& name) const
 	{
 		auto it = m_method_map.find(name);
@@ -1265,8 +1510,50 @@ public:
 		return &it->second;
 	}
 
-	decltype(m_pools)::const_iterator pools_begin() const { return m_pools.begin(); }
-	decltype(m_pools)::const_iterator pools_end()   const { return m_pools.end();   }
+	std::pair<Pool*, bool> add_pool(std::string name, const Location& loc)
+	{
+		auto name_copy = name;
+		auto res = m_pool_map.emplace(
+			std::move(name_copy),
+			Pool(std::move(name), loc)
+		);
+		if (res.second) {
+			m_pools.emplace_back(res.first->second);
+		}
+		return std::make_pair(&res.first->second, res.second);
+	}
+
+	std::pair<Field*, bool> add_field(std::string name, const Location& loc)
+	{
+		auto name_copy = name;
+		auto res = m_field_map.emplace(
+			std::move(name_copy),
+			Field(std::move(name), loc)
+		);
+		if (res.second) {
+			m_fields.emplace_back(res.first->second);
+		}
+		return std::make_pair(&res.first->second, res.second);
+	}
+
+	std::pair<Method*, bool> add_method(std::string name, const Location& loc)
+	{
+		auto name_copy = name;
+		auto res = m_method_map.emplace(
+			std::move(name_copy),
+			Method(std::move(name), loc)
+		);
+		if (res.second) {
+			m_methods.emplace_back(res.first->second);
+		}
+		return std::make_pair(&res.first->second, res.second);
+	}
+
+	pools_const_iterator pools_begin() const { return m_pools.begin(); }
+	pools_const_iterator pools_end()   const { return m_pools.end();   }
+
+	pools_iterator pools_begin() { return m_pools.begin(); }
+	pools_iterator pools_end()   { return m_pools.end();   }
 
 	decltype(m_fields)::const_iterator fields_begin() const { return m_fields.begin(); }
 	decltype(m_fields)::const_iterator fields_end()   const { return m_fields.end();   }
@@ -1320,18 +1607,30 @@ public:
 		return &it->second;
 	}
 
-	void set_classes(std::unordered_map<std::string, Class> class_map,
-					 std::vector<std::reference_wrapper<const Class>> classes)
+	std::pair<Class*, bool> add_class(std::string name, const Location& loc)
 	{
-		m_class_map = std::move(class_map);
-		m_classes = std::move(classes);
+		auto name_copy = name;
+		auto res = m_class_map.emplace(
+			std::move(name_copy),
+			Class(std::move(name), loc));
+		if (res.second) {
+			m_classes.emplace_back(res.first->second);
+		}
+		return std::make_pair(&res.first->second, res.second);
 	}
 
-	void set_layouts(std::unordered_map<std::string, Layout> layout_map,
-					 std::vector<std::reference_wrapper<const Layout>> layouts)
+	std::pair<Layout*, bool> add_layout(
+		std::string name, const Class& for_class, const Location& loc)
 	{
-		m_layout_map = std::move(layout_map);
-		m_layouts = std::move(layouts);
+		auto name_copy = name;
+		auto res = m_layout_map.emplace(
+			std::move(name_copy),
+			Layout(std::move(name), for_class, loc)
+		);
+		if (res.second) {
+			m_layouts.emplace_back(res.first->second);
+		}
+		return std::make_pair(&res.first->second, res.second);
 	}
 };
 
@@ -1344,11 +1643,13 @@ class AstVisitor: public BaseVisitor
 	, public Visitor<Type::PrimitiveType>
 	, public Visitor<Type::NullType>
 	, public Visitor<Type::ObjectType>
+	, public Visitor<Type::VoidType>
 	, public Visitor<Variable>
 	, public Visitor<Expr::IntegerConst>
 	, public Visitor<Expr::BooleanConst>
 	, public Visitor<Expr::Null>
 	, public Visitor<Expr::This>
+	, public Visitor<Expr::Cast>
 	, public Visitor<Expr::Unary>
 	, public Visitor<Expr::Binary>
 	, public Visitor<Expr::IndexExpr>
@@ -1402,11 +1703,13 @@ public:
 	void visit(const Type::PrimitiveType& e)    override;
 	void visit(const Type::NullType& e)         override;
 	void visit(const Type::ObjectType& e)       override;
+	void visit(const Type::VoidType& e)         override;
 	void visit(const Variable& e)               override;
 	void visit(const Expr::IntegerConst& e)     override;
 	void visit(const Expr::BooleanConst& e)     override;
 	void visit(const Expr::Null& e)             override;
 	void visit(const Expr::This& e)             override;
+	void visit(const Expr::Cast& e)             override;
 	void visit(const Expr::Unary& e)            override;
 	void visit(const Expr::Binary& e)           override;
 	void visit(const Expr::IndexExpr& e)        override;

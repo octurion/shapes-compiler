@@ -141,6 +141,8 @@ T move_and_delete(T* ptr) {
 %token T_THIS "this"
 %token T_NONE "none"
 
+%token T_AS "as"
+
 %token T_UNIFORM "uniform"
 %token T_VARYING "varying"
 
@@ -416,172 +418,159 @@ layout_type
 
 object_type
 	: identifier pool_parameters {
-		$$ = new Cst::Type::ObjectType(move_and_delete($1), move_and_delete($2));
+		$$ = new Cst::Type::ObjectType(move_and_delete($1), move_and_delete($2), make_loc(@$));
 	}
 
 primitive_type
-	: T_BOOL { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::BOOL); }
-	| T_I8   { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::I8);   }
-	| T_U8   { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::U8);   }
-	| T_I16  { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::I16);  }
-	| T_U16  { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::U16);  }
-	| T_I32  { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::I32);  }
-	| T_U32  { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::U32);  }
-	| T_I64  { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::I64);  }
-	| T_U64  { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::U64);  }
-	| T_F32  { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::F32);  }
-	| T_F64  { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::F64);  }
+	: T_BOOL { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::BOOL, make_loc(@$)); }
+	| T_I8   { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::I8,   make_loc(@$)); }
+	| T_U8   { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::U8,   make_loc(@$)); }
+	| T_I16  { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::I16,  make_loc(@$)); }
+	| T_U16  { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::U16,  make_loc(@$)); }
+	| T_I32  { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::I32,  make_loc(@$)); }
+	| T_U32  { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::U32,  make_loc(@$)); }
+	| T_I64  { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::I64,  make_loc(@$)); }
+	| T_U64  { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::U64,  make_loc(@$)); }
+	| T_F32  { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::F32,  make_loc(@$)); }
+	| T_F64  { $$ = new Cst::Type::PrimitiveType(Cst::Type::PrimitiveKind::F64,  make_loc(@$)); }
 
 type
-	: object_type    { $$ = new Cst::Type(move_and_delete($1), make_loc(@$)); }
-	| primitive_type { $$ = new Cst::Type(move_and_delete($1), make_loc(@$)); }
+	: object_type    { $$ = new Cst::Type(move_and_delete($1)); }
+	| primitive_type { $$ = new Cst::Type(move_and_delete($1)); }
 
 expr
 	: T_LPAREN expr T_RPAREN { $$ = $2; }
 
 	/* Unary expressions; must be inline for Bison to do its precedence magic */
-	| T_PLUS  expr { $$ = new Cst::Expr(Cst::Expr::Unary(Cst::UnOp::PLUS,  move_and_delete($2)), make_loc(@$)); }
-	| T_MINUS expr { $$ = new Cst::Expr(Cst::Expr::Unary(Cst::UnOp::MINUS, move_and_delete($2)), make_loc(@$)); }
-	| T_NOT   expr { $$ = new Cst::Expr(Cst::Expr::Unary(Cst::UnOp::NOT,   move_and_delete($2)), make_loc(@$)); }
+	| T_PLUS  expr { $$ = new Cst::Expr(Cst::Expr::Unary(Cst::UnOp::PLUS,  move_and_delete($2), make_loc(@$))); }
+	| T_MINUS expr { $$ = new Cst::Expr(Cst::Expr::Unary(Cst::UnOp::MINUS, move_and_delete($2), make_loc(@$))); }
+	| T_NOT   expr { $$ = new Cst::Expr(Cst::Expr::Unary(Cst::UnOp::NOT,   move_and_delete($2), make_loc(@$))); }
 
 	/* Binary expressions; must be inline for Bison to do its precedence magic */
 	| expr T_PLUS   expr {
 		$$ = new Cst::Expr(
-			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::PLUS, move_and_delete($3)),
-			make_loc(@$)
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::PLUS, move_and_delete($3), make_loc(@$))
 		);
 	}
 	| expr T_MINUS  expr {
 		$$ = new Cst::Expr(
-			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::MINUS, move_and_delete($3)),
-			make_loc(@$)
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::MINUS, move_and_delete($3), make_loc(@$))
 		);
 	}
 	| expr T_TIMES expr {
 		$$ = new Cst::Expr(
-			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::TIMES, move_and_delete($3)),
-			make_loc(@$)
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::TIMES, move_and_delete($3), make_loc(@$))
 		);
 	}
 	| expr T_DIV expr {
 		$$ = new Cst::Expr(
-			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::DIV, move_and_delete($3)),
-			make_loc(@$)
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::DIV, move_and_delete($3), make_loc(@$))
 		);
 	}
 	| expr T_SHL expr {
 		$$ = new Cst::Expr(
-			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::SHL, move_and_delete($3)),
-			make_loc(@$)
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::SHL, move_and_delete($3), make_loc(@$))
 		);
 	}
 	| expr T_SHR expr {
 		$$ = new Cst::Expr(
-			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::SHR, move_and_delete($3)),
-			make_loc(@$)
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::SHR, move_and_delete($3), make_loc(@$))
 		);
 	}
 	| expr T_AND expr {
 		$$ = new Cst::Expr(
-			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::AND, move_and_delete($3)),
-			make_loc(@$)
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::AND, move_and_delete($3), make_loc(@$))
 		);
 	}
 	| expr T_OR expr {
 		$$ = new Cst::Expr(
-			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::OR, move_and_delete($3)),
-			make_loc(@$)
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::OR, move_and_delete($3), make_loc(@$))
 		);
 	}
 	| expr T_XOR expr {
 		$$ = new Cst::Expr(
-			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::XOR, move_and_delete($3)),
-			make_loc(@$)
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::XOR, move_and_delete($3), make_loc(@$))
 		);
 	}
 	| expr T_LAND expr {
 		$$ = new Cst::Expr(
-			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::LAND, move_and_delete($3)),
-			make_loc(@$)
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::LAND, move_and_delete($3), make_loc(@$))
 		);
 	}
 	| expr T_LOR expr {
 		$$ = new Cst::Expr(
-			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::LOR, move_and_delete($3)),
-			make_loc(@$)
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::LOR, move_and_delete($3), make_loc(@$))
 		);
 	}
 	| expr T_LANGLE expr {
 		$$ = new Cst::Expr(
-			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::LT, move_and_delete($3)),
-			make_loc(@$)
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::LT, move_and_delete($3), make_loc(@$))
 		);
 	}
 	| expr T_RANGLE expr {
 		$$ = new Cst::Expr(
-			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::GT, move_and_delete($3)),
-			make_loc(@$)
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::GT, move_and_delete($3), make_loc(@$))
 		);
 	}
 	| expr T_LE expr {
 		$$ = new Cst::Expr(
-			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::LE, move_and_delete($3)),
-			make_loc(@$)
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::LE, move_and_delete($3), make_loc(@$))
 		);
 	}
 	| expr T_GE expr {
 		$$ = new Cst::Expr(
-			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::GE, move_and_delete($3)),
-			make_loc(@$)
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::GE, move_and_delete($3), make_loc(@$))
 		);
 	}
 	| expr T_EQ expr {
 		$$ = new Cst::Expr(
-			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::EQ, move_and_delete($3)),
-			make_loc(@$)
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::EQ, move_and_delete($3), make_loc(@$))
 		);
 	}
 	| expr T_NE expr {
 		$$ = new Cst::Expr(
-			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::NE, move_and_delete($3)),
-			make_loc(@$)
+			Cst::Expr::Binary(move_and_delete($1), Cst::BinOp::NE, move_and_delete($3), make_loc(@$))
 		);
 	}
 
 	| expr T_DOT identifier {
 		$$ = new Cst::Expr(
-			Cst::Expr::FieldAccess(move_and_delete($1), move_and_delete($3)),
-			make_loc(@$)
+			Cst::Expr::FieldAccess(move_and_delete($1), move_and_delete($3), make_loc(@$))
 		);
 	}
 	| expr T_DOT identifier method_call_args {
 		$$ = new Cst::Expr(
 			Cst::Expr::MemberMethodCall(
-				move_and_delete($1), move_and_delete($3), move_and_delete($4)
-			),
-			make_loc(@$)
+				move_and_delete($1), move_and_delete($3), move_and_delete($4), make_loc(@$)
+			)
 		);
 	}
 	| identifier method_call_args {
 		$$ = new Cst::Expr(
-			Cst::Expr::MethodCall(move_and_delete($1), move_and_delete($2)),
-			make_loc(@$)
+			Cst::Expr::MethodCall(move_and_delete($1), move_and_delete($2), make_loc(@$))
 		);
 	}
 	| identifier {
-		$$ = new Cst::Expr(Cst::Expr::VariableExpr(move_and_delete($1)), make_loc(@$));
-	}
+		$$ = new Cst::Expr(Cst::Expr::VariableExpr(move_and_delete($1), make_loc(@$))); }
 	| T_NEW object_type {
-		$$ = new Cst::Expr(Cst::Expr::New(move_and_delete($2)), make_loc(@$));
+		$$ = new Cst::Expr(Cst::Expr::New(move_and_delete($2), make_loc(@$)));
 	}
 	| T_INT_CONST {
-		$$ = new Cst::Expr(Cst::Expr::IntegerConst(move_and_delete($1)), make_loc(@$));
+		$$ = new Cst::Expr(Cst::Expr::IntegerConst(move_and_delete($1), make_loc(@$)));
 	}
-	| T_THIS  { $$ = new Cst::Expr(Cst::Expr::This(), make_loc(@$)); }
-	| T_NULL  { $$ = new Cst::Expr(Cst::Expr::Null(), make_loc(@$)); }
+	| T_THIS  { $$ = new Cst::Expr(Cst::Expr::This(make_loc(@$))); }
+	| T_NULL  { $$ = new Cst::Expr(Cst::Expr::Null(make_loc(@$))); }
 
-	| T_TRUE  { $$ = new Cst::Expr(Cst::Expr::BooleanConst(true),  make_loc(@$)); }
-	| T_FALSE { $$ = new Cst::Expr(Cst::Expr::BooleanConst(false), make_loc(@$)); }
+	| T_TRUE  { $$ = new Cst::Expr(Cst::Expr::BooleanConst(true,  make_loc(@$))); }
+	| T_FALSE { $$ = new Cst::Expr(Cst::Expr::BooleanConst(false, make_loc(@$))); }
+
+	| expr T_AS primitive_type {
+		$$ = new Cst::Expr(
+			Cst::Expr::Cast(
+				move_and_delete($1), move_and_delete($3), make_loc(@$)
+			)
+		);
+	}
 
 method_call_args
 	: T_LPAREN T_RPAREN { $$ = new std::vector<Cst::Expr>; }
@@ -677,13 +666,13 @@ stmt
 		);
 	}
 	| T_BREAK T_SEMICOLON {
-		$$ = new Cst::Stmt(Cst::Stmt::Break(), make_loc(@$));
+		$$ = new Cst::Stmt(Cst::Stmt::Break(make_loc(@$)), make_loc(@$));
 	}
 	| T_CONTINUE T_SEMICOLON {
-		$$ = new Cst::Stmt(Cst::Stmt::Continue(), make_loc(@$));
+		$$ = new Cst::Stmt(Cst::Stmt::Continue(make_loc(@$)), make_loc(@$));
 	}
 	| T_RETURN T_SEMICOLON {
-		$$ = new Cst::Stmt(Cst::Stmt::ReturnVoid(), make_loc(@$));
+		$$ = new Cst::Stmt(Cst::Stmt::ReturnVoid(make_loc(@$)), make_loc(@$));
 	}
 	| T_RETURN expr T_SEMICOLON {
 		$$ = new Cst::Stmt(Cst::Stmt::Return(move_and_delete($2)), make_loc(@$));
@@ -766,7 +755,7 @@ pool_parameter_list
 	}
 	| T_NONE {
 		$$ = new std::vector<Cst::PoolParameter>;
-		$$->emplace_back(Cst::PoolParameter::None(), make_loc(@1));
+		$$->emplace_back(Cst::PoolParameter::None(make_loc(@1)), make_loc(@1));
 	}
 	| pool_parameter_list T_COMMA identifier {
 		$$ = $1;
@@ -774,7 +763,7 @@ pool_parameter_list
 	}
 	| pool_parameter_list T_COMMA T_NONE {
 		$$ = $1;
-		$$->emplace_back(Cst::PoolParameter::None(), make_loc(@3));
+		$$->emplace_back(Cst::PoolParameter::None(make_loc(@3)), make_loc(@3));
 	}
 
 formal_pool_parameters
@@ -865,8 +854,7 @@ layout_definition
 	}
 
 clusters
-	: T_SEMICOLON { $$ = new std::vector<Cst::Cluster>; }
-	| cluster_list T_SEMICOLON { $$ = $1; }
+	: cluster_list T_SEMICOLON { $$ = $1; }
 	/* Just make up one for error recovery */
 	| error T_SEMICOLON { $$ = new std::vector<Cst::Cluster>; }
 

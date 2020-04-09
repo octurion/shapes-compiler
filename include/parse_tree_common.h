@@ -69,6 +69,18 @@ public:
 		return *this;
 	}
 
+	Optional& operator=(T item)
+	{
+		if (m_present) {
+			m_item.~T();
+		}
+
+		m_present = true;
+		new (&m_item) T(std::move(item));
+
+		return *this;
+	}
+
 	~Optional()
 	{
 		if (m_present) {

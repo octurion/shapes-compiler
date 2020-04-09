@@ -32,6 +32,9 @@ PoolType::~PoolType()
 void PoolType::destroy_variant()
 {
 	switch (m_tag) {
+	case Tag::INVALID:
+		break;
+
 	case Tag::LAYOUT:
 		m_layout.~LayoutType();
 		break;
@@ -45,6 +48,9 @@ void PoolType::destroy_variant()
 void PoolType::construct_variant_from_other(PoolType& other)
 {
 	switch (other.m_tag) {
+	case Tag::INVALID:
+		break;
+
 	case Tag::LAYOUT:
 		new (&m_layout) LayoutType(std::move(other.m_layout));
 		break;
@@ -53,6 +59,42 @@ void PoolType::construct_variant_from_other(PoolType& other)
 		new (&m_bound) BoundType(std::move(other.m_bound));
 		break;
 	}
+}
+
+const Class& PoolType::LayoutType::of_class() const
+{
+	return m_layout.for_class();
+}
+
+PoolParameter::PoolParameter(const PoolParameter& other)
+	: m_tag(other.m_tag)
+	, m_loc(other.m_loc)
+{
+	switch (m_tag) {
+	case Tag::POOL:
+		new (&m_pool) PoolRef(other.m_pool);
+
+	case Tag::NONE:
+		new (&m_none) None(other.m_none);
+	}
+}
+
+PoolParameter& PoolParameter::operator=(const PoolParameter& other)
+{
+	destroy_variant();
+
+	m_tag = other.m_tag;
+	m_loc = other.m_loc;
+
+	switch (m_tag) {
+	case Tag::POOL:
+		new (&m_pool) PoolRef(other.m_pool);
+
+	case Tag::NONE:
+		new (&m_none) None(other.m_none);
+	}
+
+	return *this;
 }
 
 PoolParameter::PoolParameter(PoolParameter&& other)
@@ -122,6 +164,77 @@ bool PoolParameter::operator==(const PoolParameter& rhs) const
 	return false;
 }
 
+bool PoolType::compatible_with_bound(const BoundType& bound) const
+{
+	switch (m_tag) {
+	case Tag::INVALID:
+		return false;
+
+	case Tag::LAYOUT:
+		return m_layout.compatible_with_bound(bound);
+
+	case Tag::BOUND:
+		return m_bound.compatible_with_bound(bound);
+	}
+}
+
+Type::Type(const Type& other)
+	: m_tag(other.m_tag)
+	, m_loc(other.m_loc)
+{
+	switch (m_tag) {
+	case Tag::INVALID:
+		break;
+
+	case Tag::OBJECT:
+		new (&m_object_type) ObjectType(other.m_object_type);
+		break;
+
+	case Tag::PRIMITIVE:
+		new (&m_primitive_type) PrimitiveType(other.m_primitive_type);
+		break;
+
+	case Tag::NULLPTR:
+		new (&m_null_type) NullType(other.m_null_type);
+		break;
+
+	case Tag::VOID:
+		new (&m_void_type) VoidType(other.m_void_type);
+		break;
+	}
+}
+
+Type& Type::operator=(const Type& other)
+{
+	destroy_variant();
+
+	m_tag = other.m_tag;
+	m_loc = other.m_loc;
+
+	switch (m_tag) {
+	case Tag::INVALID:
+		break;
+
+	case Tag::OBJECT:
+		new (&m_object_type) ObjectType(other.m_object_type);
+		break;
+
+	case Tag::PRIMITIVE:
+		new (&m_primitive_type) PrimitiveType(other.m_primitive_type);
+		break;
+
+	case Tag::NULLPTR:
+		new (&m_null_type) NullType(other.m_null_type);
+		break;
+
+	case Tag::VOID:
+		new (&m_void_type) VoidType(other.m_void_type);
+		break;
+	}
+
+	return *this;
+}
+
 Type::Type(Type&& other)
 	: m_tag(other.m_tag)
 	, m_loc(other.m_loc)
@@ -148,6 +261,9 @@ Type::~Type()
 void Type::destroy_variant()
 {
 	switch (m_tag) {
+	case Tag::INVALID:
+		break;
+
 	case Tag::PRIMITIVE:
 		m_primitive_type.~PrimitiveType();
 		break;
@@ -159,12 +275,19 @@ void Type::destroy_variant()
 	case Tag::OBJECT:
 		m_object_type.~ObjectType();
 		break;
+
+	case Tag::VOID:
+		m_void_type.~VoidType();
+		break;
 	}
 }
 
 void Type::construct_variant_from_other(Type& other)
 {
 	switch (other.m_tag) {
+	case Tag::INVALID:
+		break;
+
 	case Tag::PRIMITIVE:
 		new (&m_primitive_type) PrimitiveType(std::move(other.m_primitive_type));
 		break;
@@ -175,6 +298,10 @@ void Type::construct_variant_from_other(Type& other)
 
 	case Tag::OBJECT:
 		new (&m_object_type) ObjectType(std::move(other.m_object_type));
+		break;
+
+	case Tag::VOID:
+		new (&m_void_type) VoidType(std::move(other.m_void_type));
 		break;
 	}
 }
@@ -223,16 +350,20 @@ bool Type::operator==(const Type& rhs) const
 	}
 
 	switch (m_tag) {
+	case Tag::INVALID:
+		return true;
+
 	case Tag::PRIMITIVE:
 		return m_primitive_type.kind() == rhs.m_primitive_type.kind();
 
 	case Tag::NULLPTR:
 		return true;
-		break;
 
 	case Tag::OBJECT:
 		return m_object_type == rhs.m_object_type;
-		break;
+
+	default:
+		return false;
 	}
 
 	// Silence gcc
@@ -265,6 +396,9 @@ Expr::~Expr()
 void Expr::destroy_variant()
 {
 	switch (m_tag) {
+	case Tag::INVALID:
+		break;
+
 	case Tag::INTEGER_CONST:
 		m_integer_const.~IntegerConst();
 		break;
@@ -279,6 +413,10 @@ void Expr::destroy_variant()
 
 	case Tag::THIS:
 		m_this_expr.~This();
+		break;
+
+	case Tag::CAST:
+		m_cast.~Cast();
 		break;
 
 	case Tag::UNARY:
@@ -314,6 +452,9 @@ void Expr::destroy_variant()
 void Expr::construct_variant_from_other(Expr& other)
 {
 	switch (other.m_tag) {
+	case Tag::INVALID:
+		break;
+
 	case Tag::INTEGER_CONST:
 		new (&m_integer_const) IntegerConst(std::move(other.m_integer_const));
 		break;
@@ -328,6 +469,10 @@ void Expr::construct_variant_from_other(Expr& other)
 
 	case Tag::THIS:
 		new (&m_this_expr) This(std::move(other.m_this_expr));
+		break;
+
+	case Tag::CAST:
+		new (&m_cast) Cast(std::move(other.m_cast));
 		break;
 
 	case Tag::UNARY:
@@ -448,9 +593,28 @@ const Expr::New* Expr::as_new_expr() const
 	return nullptr;
 }
 
+bool Expr::is_lvalue() const
+{
+	switch (m_tag) {
+	case Tag::THIS:
+	case Tag::INDEX:
+	case Tag::VARIABLE:
+	case Tag::FIELD_ACCESS:
+	case Tag::NEW:
+		return true;
+
+	case Tag::METHOD_CALL: {
+		const auto* type = m_method_call.method().return_type();
+		return type != nullptr && type->as_object_type() != nullptr;
+	}
+
+	default:
+		return false;
+	}
+}
+
 Stmt::Stmt(Stmt&& other)
 	: m_tag(other.m_tag)
-	, m_loc(other.m_loc)
 {
 	construct_variant_from_other(other);
 }
@@ -460,7 +624,6 @@ Stmt& Stmt::operator=(Stmt&& other)
 	destroy_variant();
 
 	m_tag = other.m_tag;
-	m_loc = other.m_loc;
 	construct_variant_from_other(other);
 
 	return *this;
@@ -590,6 +753,10 @@ void DefaultVisitor::visit(const Type::NullType&)
 {
 }
 
+void DefaultVisitor::visit(const Type::VoidType&)
+{
+}
+
 void DefaultVisitor::visit(const Type::ObjectType& e)
 {
 	visit(e.begin(), e.end());
@@ -614,6 +781,12 @@ void DefaultVisitor::visit(const Expr::Null&)
 
 void DefaultVisitor::visit(const Expr::This& e)
 {
+	e.type().accept(*this);
+}
+
+void DefaultVisitor::visit(const Expr::Cast& e)
+{
+	e.expr().accept(*this);
 	e.type().accept(*this);
 }
 

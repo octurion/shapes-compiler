@@ -5,7 +5,6 @@ namespace Cst
 
 Type::Type(Type&& other)
 	: m_tag(other.m_tag)
-	, m_loc(other.m_loc)
 {
 	construct_variant_from_other(other);
 }
@@ -15,7 +14,6 @@ Type& Type::operator=(Type&& other)
 	destroy_variant();
 
 	m_tag = other.m_tag;
-	m_loc = other.m_loc;
 	construct_variant_from_other(other);
 
 	return *this;
@@ -54,7 +52,6 @@ void Type::construct_variant_from_other(Type& other)
 
 Expr::Expr(Expr&& other)
 	: m_tag(other.m_tag)
-	, m_loc(other.m_loc)
 {
 	construct_variant_from_other(other);
 }
@@ -64,7 +61,6 @@ Expr& Expr::operator=(Expr&& other)
 	destroy_variant();
 
 	m_tag = other.m_tag;
-	m_loc = other.m_loc;
 	construct_variant_from_other(other);
 
 	return *this;
@@ -96,6 +92,10 @@ void Expr::destroy_variant()
 
 	case Tag::UNARY:
 		m_unary.~Unary();
+		break;
+
+	case Tag::CAST:
+		m_cast.~Cast();
 		break;
 
 	case Tag::BINARY:
@@ -147,6 +147,10 @@ void Expr::construct_variant_from_other(Expr& other)
 		new (&m_this_expr) This(std::move(other.m_this_expr));
 		break;
 
+	case Tag::CAST:
+		new (&m_cast) Cast(std::move(other.m_cast));
+		break;
+
 	case Tag::UNARY:
 		new (&m_unary) Unary(std::move(other.m_unary));
 		break;
@@ -177,6 +181,63 @@ void Expr::construct_variant_from_other(Expr& other)
 
 	case Tag::NEW:
 		new (&m_new_expr) New(std::move(other.m_new_expr));
+		break;
+	}
+}
+
+const Location& Expr::loc() const
+{
+	switch (m_tag) {
+	case Tag::INTEGER_CONST:
+		return m_integer_const.loc();
+		break;
+
+	case Tag::BOOLEAN_CONST:
+		return m_boolean_const.loc();
+		break;
+
+	case Tag::NULL_EXPR:
+		return m_null_expr.loc();
+		break;
+
+	case Tag::THIS:
+		return m_this_expr.loc();
+		break;
+
+	case Tag::CAST:
+		return m_cast.loc();
+		break;
+
+	case Tag::UNARY:
+		return m_unary.loc();
+		break;
+
+	case Tag::BINARY:
+		return m_binary.loc();
+		break;
+
+	case Tag::INDEX:
+		return m_index_expr.loc();
+		break;
+
+	case Tag::VARIABLE_EXPR:
+		return m_variable_expr.loc();
+		break;
+
+	case Tag::METHOD_CALL:
+		return m_method_call.loc();
+		break;
+
+	case Tag::MEMBER_METHOD_CALL:
+		return m_member_method_call.loc();
+		break;
+
+	case Tag::FIELD_ACCESS:
+		return m_field_access.loc();
+		break;
+
+	case Tag::NEW:
+		return m_new_expr.loc();
 		break;
 	}
 }
@@ -445,6 +506,12 @@ void DefaultVisitor::visit(const Expr::This&)
 {
 }
 
+void DefaultVisitor::visit(const Expr::Cast& e)
+{
+	e.expr().accept(*this);
+	e.type().accept(*this);
+}
+
 void DefaultVisitor::visit(const Expr::Binary& e)
 {
 	e.lhs().accept(*this);
@@ -605,6 +672,7 @@ void DefaultVisitor::visit(const Layout& e)
 void DefaultVisitor::visit(const Program& e)
 {
 	visit(e.classes_begin(), e.classes_end());
+	visit(e.layouts_begin(), e.layouts_end());
 }
 
 } // namespace Cst

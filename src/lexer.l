@@ -55,6 +55,8 @@ NON_PRINT_ASCII [\x00-\x1F\x7F]
 "null" { return T_NULL; }
 "this" { return T_THIS; }
 
+"as" { return T_AS; }
+
 "uniform" { return T_UNIFORM; }
 "varying" { return T_VARYING; }
 
