@@ -89,6 +89,10 @@ void Ast::SemanticError::destroy_variant()
 		m_expected_primitive_type.~ExpectedPrimitiveType();
 		break;
 
+	case Tag::EXPECTED_BOOLEAN_TYPE:
+		m_expected_integer_type.~ExpectedIntegerType();
+		break;
+
 	case Tag::EXPECTED_INTEGER_TYPE:
 		m_expected_integer_type.~ExpectedIntegerType();
 		break;
@@ -180,6 +184,10 @@ void Ast::SemanticError::construct_variant_from_other(Ast::SemanticError& other)
 
 	case Tag::EXPECTED_PRIMITIVE_TYPE:
 		new (&m_expected_primitive_type) ExpectedPrimitiveType(std::move(other.m_expected_primitive_type));
+		break;
+
+	case Tag::EXPECTED_BOOLEAN_TYPE:
+		new (&m_expected_boolean_type) ExpectedBooleanType(std::move(other.m_expected_boolean_type));
 		break;
 
 	case Tag::EXPECTED_INTEGER_TYPE:
@@ -1580,6 +1588,8 @@ public:
 
 		auto op = to_ast_binop(e.op());
 
+		auto type = lhs.type();
+
 		switch (op) {
 		case Ast::Expr::BinOp::PLUS:
 		case Ast::Expr::BinOp::MINUS:
@@ -1608,7 +1618,24 @@ public:
 		}
 
 		case Ast::Expr::BinOp::LAND:
-		case Ast::Expr::BinOp::LOR:
+		case Ast::Expr::BinOp::LOR: {
+			if (lhs.type() != rhs.type()) {
+				m_errors.add<Ast::SemanticError::IncorrectType>(
+					rhs.loc(),
+					TypePrinter::to_string(lhs.type()),
+					TypePrinter::to_string(rhs.type())
+				);
+				return;
+			}
+
+			if (!lhs_primitive_type->is_boolean()) {
+				m_errors.add<SemanticError::ExpectedBooleanType>(
+					e.loc(), TypePrinter::to_string(lhs.type())
+				);
+				return;
+			}
+			break;
+		}
 		case Ast::Expr::BinOp::AND:
 		case Ast::Expr::BinOp::OR:
 		case Ast::Expr::BinOp::XOR: {
@@ -1632,6 +1659,22 @@ public:
 
 		case Ast::Expr::BinOp::EQ:
 		case Ast::Expr::BinOp::NE: {
+			type = Ast::Type(
+				Ast::Type::PrimitiveType(Ast::Type::PrimitiveKind::BOOL), e.loc()
+			);
+			auto lhs_is_null = lhs.type().as_null_type() != nullptr;
+			auto rhs_is_null = rhs.type().as_null_type() != nullptr;
+
+			auto lhs_is_object = lhs.type().as_object_type() != nullptr;
+			auto rhs_is_object = rhs.type().as_object_type() != nullptr;
+
+			if (lhs_is_null || rhs_is_null || lhs_is_object || rhs_is_object) {
+				if (lhs_is_null || rhs_is_null) {
+					// Allow all kinds of comparisons with the null pointer constant
+					break;
+				}
+			}
+
 			if (lhs.type() != rhs.type()) {
 				m_errors.add<Ast::SemanticError::IncorrectType>(
 					rhs.loc(),
@@ -1662,8 +1705,6 @@ public:
 		}
 
 		}
-
-		auto type = lhs.type();
 
 		m_res_expr = Ast::Expr(
 			Ast::Expr::Binary(std::move(lhs), op, std::move(rhs)),
@@ -2056,8 +2097,6 @@ public:
 			break;
 		}
 
-		case Ast::Expr::BinOp::LAND:
-		case Ast::Expr::BinOp::LOR:
 		case Ast::Expr::BinOp::AND:
 		case Ast::Expr::BinOp::OR:
 		case Ast::Expr::BinOp::XOR: {

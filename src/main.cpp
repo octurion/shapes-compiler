@@ -178,6 +178,14 @@ public:
 		);
 	}
 
+	void visit(const Ast::SemanticError::ExpectedBooleanType& e) override
+	{
+		print_loc(e.loc());
+		fprintf(stderr, ": Expected a boolean type, but got '%s'.",
+			e.type_got().c_str()
+		);
+	}
+
 	void visit(const Ast::SemanticError::ExpectedIntegerType& e) override
 	{
 		print_loc(e.loc());
@@ -189,7 +197,7 @@ public:
 	void visit(const Ast::SemanticError::ExpectedNumericType& e) override
 	{
 		print_loc(e.loc());
-		fprintf(stderr, ": Expected an integer type, but got '%s'.",
+		fprintf(stderr, ": Expected an integer or floating-point type, but got '%s'.",
 			e.type_got().c_str()
 		);
 	}

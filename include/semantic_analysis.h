@@ -297,6 +297,22 @@ public:
 		const std::string& type_got() const { return m_type_got; }
 	};
 
+	class ExpectedBooleanType: public BaseVisitable<ExpectedBooleanType>
+	{
+		Location m_loc;
+
+		std::string m_type_got;
+
+	public:
+		explicit ExpectedBooleanType(const Location& loc, std::string type_got)
+			: m_loc(loc)
+			, m_type_got(type_got)
+		{}
+
+		const Location& loc() const { return m_loc; }
+		const std::string& type_got() const { return m_type_got; }
+	};
+
 	class ExpectedIntegerType: public BaseVisitable<ExpectedIntegerType>
 	{
 		Location m_loc;
@@ -434,6 +450,7 @@ private:
 		INCORRECT_POOLS_NUMBER,
 		EXPECTED_OBJECT_TYPE,
 		EXPECTED_PRIMITIVE_TYPE,
+		EXPECTED_BOOLEAN_TYPE,
 		EXPECTED_INTEGER_TYPE,
 		EXPECTED_NUMERIC_TYPE,
 		RETURN_WITH_EXPRESSION,
@@ -461,6 +478,7 @@ private:
 		IncorrectPoolsNumber m_incorrect_pools_number;
 		ExpectedObjectType m_expected_object_type;
 		ExpectedPrimitiveType m_expected_primitive_type;
+		ExpectedBooleanType m_expected_boolean_type;
 		ExpectedIntegerType m_expected_integer_type;
 		ExpectedNumericType m_expected_numeric_type;
 		ReturnWithExpression m_return_with_expression;
@@ -552,6 +570,11 @@ public:
 	SemanticError(ExpectedNumericType expected_numeric_type)
 		: m_tag(Tag::EXPECTED_NUMERIC_TYPE)
 		, m_expected_numeric_type(std::move(expected_numeric_type))
+	{}
+
+	SemanticError(ExpectedBooleanType expected_boolean_type)
+		: m_tag(Tag::EXPECTED_BOOLEAN_TYPE)
+		, m_expected_boolean_type(std::move(expected_boolean_type))
 	{}
 
 	SemanticError(ExpectedIntegerType expected_integer_type)
@@ -648,6 +671,10 @@ public:
 			visitor.visit(m_expected_primitive_type);
 			break;
 
+		case Tag::EXPECTED_BOOLEAN_TYPE:
+			visitor.visit(m_expected_boolean_type);
+			break;
+
 		case Tag::EXPECTED_INTEGER_TYPE:
 			visitor.visit(m_expected_integer_type);
 			break;
@@ -720,6 +747,7 @@ class SemanticErrorVisitor: public BaseVisitor
 	, public Visitor<SemanticError::IncompatibleBound>
 	, public Visitor<SemanticError::IncorrectPoolsNumber>
 	, public Visitor<SemanticError::ExpectedObjectType>
+	, public Visitor<SemanticError::ExpectedBooleanType>
 	, public Visitor<SemanticError::ExpectedPrimitiveType>
 	, public Visitor<SemanticError::ExpectedIntegerType>
 	, public Visitor<SemanticError::ExpectedNumericType>
