@@ -622,7 +622,7 @@ public:
 		m_used_fields.clear();
 
 		const auto& class_name = e.for_class();
-		const auto* for_class = m_ast.find_class(class_name.ident());
+		auto* for_class = m_ast.find_class(class_name.ident());
 		if (for_class == nullptr) {
 			m_errors.add<SemanticError::MissingDefinition>(
 				class_name.ident(),
@@ -648,6 +648,7 @@ public:
 
 		visit(e.begin(), e.end());
 
+		bool errors = false;
 		for (auto it = for_class->fields_begin(); it != for_class->fields_end(); it++) {
 			const auto& field = it->get();
 			if (m_used_fields.find(field.name()) == m_used_fields.end()) {
@@ -656,7 +657,12 @@ public:
 					field.name(),
 					m_curr_layout->loc()
 				);
+				errors = true;
 			}
+		}
+
+		if (!errors) {
+			for_class->add_layout(*m_curr_layout);
 		}
 	}
 

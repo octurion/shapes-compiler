@@ -35,6 +35,7 @@ add_executable(shapes
     src/cst.cpp
     src/ast.cpp
     src/semantic_analysis.cpp
+    src/ir.cpp
 )
 
 target_compile_options(shapes PRIVATE -Wall -Wextra -Wpedantic -fdiagnostics-color=always)

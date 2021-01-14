@@ -1437,6 +1437,8 @@ class Class: public BaseVisitable<Class>
 	std::unordered_map<std::string, Method> m_method_map;
 	std::vector<std::reference_wrapper<Method>> m_methods;
 
+	std::vector<std::reference_wrapper<const Layout>> m_layouts;
+
 	Location m_loc;
 
 public:
@@ -1560,6 +1562,11 @@ public:
 
 	decltype(m_methods)::const_iterator methods_begin() const { return m_methods.begin(); }
 	decltype(m_methods)::const_iterator methods_end()   const { return m_methods.end();   }
+
+	decltype(m_layouts)::const_iterator layouts_begin() const { return m_layouts.begin(); }
+	decltype(m_layouts)::const_iterator layouts_end()   const { return m_layouts.end();   }
+
+	void add_layout(const Layout& layout) { m_layouts.emplace_back(layout); }
 
 	const std::string& name() const { return m_name; }
 	const Location& loc()     const { return m_loc;  }

@@ -1,3 +1,5 @@
+#include "ir.h"
+
 #include <llvm/ADT/None.h>
 
 #include <llvm/IR/AssemblyAnnotationWriter.h>
@@ -20,43 +22,75 @@
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/Target/TargetOptions.h>
 
+#include <unordered_map>
+
 #include <cstdlib>
 
 using namespace llvm;
 
-int ir()
+class LLVMState
 {
-	LLVMContext ctx;
+	LLVMContext m_ctx;
+	const Target* m_target = nullptr;
+	TargetMachine* m_target_machine = nullptr;
 
+	Type* m_i8 = nullptr;
+	Type* m_i16 = nullptr;
+	Type* m_i32 = nullptr;
+	Type* m_i64 = nullptr;
+
+	Type* m_f32 = nullptr;
+	Type* m_f64 = nullptr;
+
+public:
+	bool init();
+
+	LLVMContext& ctx() { return m_ctx; }
+
+	Type* i8()  { return m_i8;  }
+	Type* i16() { return m_i16; }
+	Type* i32() { return m_i32; }
+	Type* i64() { return m_i64; }
+
+	Type* f32() { return m_f32; }
+	Type* f64() { return m_f64; }
+
+	const Target* target() { return m_target; }
+	TargetMachine* target_machine() { return m_target_machine; }
+};
+
+class BitcodeGenerator: public Ast::DefaultVisitor {
+	void visit(const Ast::Class& e) override
+	{
+	}
+};
+
+void init_llvm()
+{
 	LLVMInitializeX86TargetInfo();
 	LLVMInitializeX86Target();
 	LLVMInitializeX86TargetMC();
 	LLVMInitializeX86AsmParser();
 	LLVMInitializeX86AsmPrinter();
+};
 
-	std::string error;
-	const auto* target = TargetRegistry::lookupTarget("x86_64-unknown-linux-gnu", error);
+bool ir(const Ast::Program& ast)
+{
+	LLVMState state;
+	if (!state.init()) {
+		return false;
+	}
 
-	auto target_machine = target->createTargetMachine(
-		"x86_64-unknown-linux-gnu",
-		"generic",
-		"",
-		TargetOptions(),
-		None,
-		None,
-		CodeGenOpt::Aggressive);
+	auto& ctx = state.ctx();
+	auto* target_machine = state.target_machine();
 
-	Module mod("hello", ctx);
+	Module mod("hello", state.ctx());
 	mod.setDataLayout(target_machine->createDataLayout());
 
-	auto* int_type = Type::getInt32Ty(ctx);
-	auto* idx_type = Type::getInt64Ty(ctx);
-	auto* float_type = Type::getFloatTy(ctx);
-
-	auto* struct_type = StructType::create(ctx, {int_type, float_type}, "struct.Meme");
+	auto* struct_type = StructType::create(ctx, {state.i32(), state.f32()}, "struct.Meme");
 	auto* struct_ptr_type = struct_type->getPointerTo();
 
-	auto* func_type = FunctionType::get(float_type, {struct_ptr_type, idx_type}, false);
+	auto* func_type = FunctionType::get(state.f32(), {struct_ptr_type, state.i64()}, false);
 	auto* func = Function::Create(func_type, Function::ExternalLinkage, "hello", &mod);
 
 	auto* bb = BasicBlock::Create(ctx, "entry", func);
@@ -69,7 +103,7 @@ int ir()
 		auto* record_split_ptr = builder.CreateInBoundsGEP(struct_type, param0, param1);
 		auto* field = builder.CreateStructGEP(struct_type, record_split_ptr, 1);
 
-		auto* val = builder.CreateLoad(float_type, field);
+		auto* val = builder.CreateLoad(state.f32(), field);
 
 		builder.CreateRet(val);
 	}
@@ -101,5 +135,35 @@ int ir()
 	target_machine->addPassesToEmitFile(old_pm, dest, nullptr, TargetMachine::CGFT_ObjectFile);
 	old_pm.run(mod);
 
-	return EXIT_SUCCESS;
+	return true;
+}
+
+bool LLVMState::init()
+{
+	std::string error;
+	m_target = TargetRegistry::lookupTarget("x86_64-unknown-linux-gnu", error);
+
+	if (m_target == nullptr) {
+		fprintf(stderr, "Error while creating LLVM target machine: %s", error.c_str());
+		return false;
+	}
+
+	m_target_machine = m_target->createTargetMachine(
+		"x86_64-unknown-linux-gnu",
+		"generic",
+		"",
+		TargetOptions(),
+		None,
+		None,
+		CodeGenOpt::Aggressive);
+
+	m_i8 = Type::getInt8Ty(m_ctx);
+	m_i16 = Type::getInt16Ty(m_ctx);
+	m_i32 = Type::getInt32Ty(m_ctx);
+	m_i64 = Type::getInt64Ty(m_ctx);
+
+	m_f32 = Type::getFloatTy(m_ctx);
+	m_f64 = Type::getDoubleTy(m_ctx);
+
+	return true;
 }
