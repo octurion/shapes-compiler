@@ -58,10 +58,9 @@ const char* kind_str(Ast::ErrorKind kind)
 	}
 }
 
-class SemanticErrorPrinter: public Ast::SemanticErrorVisitor
+struct SemanticErrorPrinter
 {
-public:
-	void visit(const Ast::SemanticError::DuplicateDefinition& e) override
+	void operator()(const Ast::DuplicateDefinition& e)
 	{
 		print_loc(e.loc());
 		fprintf(stderr, ": %s '%s' is already defined in ",
@@ -71,7 +70,7 @@ public:
 		fprintf(stderr, ".");
 	}
 
-	void visit(const Ast::SemanticError::MissingDefinition& e) override
+	void operator()(const Ast::MissingDefinition& e)
 	{
 		print_loc(e.loc());
 		fprintf(stderr, ": %s '%s' has not been defined.",
@@ -79,7 +78,7 @@ public:
 		);
 	}
 
-	void visit(const Ast::SemanticError::MissingBound& e) override
+	void operator()(const Ast::MissingBound& e)
 	{
 		print_loc(e.loc());
 		fprintf(stderr, ": No bound has been defined for pool '%s'.",
@@ -87,7 +86,7 @@ public:
 		);
 	}
 
-	void visit(const Ast::SemanticError::LayoutMissingField& e) override
+	void operator()(const Ast::LayoutMissingField& e)
 	{
 		print_loc(e.layout_loc());
 		fprintf(stderr, ": Missing field '%s' in layout '%s'.",
@@ -95,7 +94,16 @@ public:
 		);
 	}
 
-	void visit(const Ast::SemanticError::LayoutDuplicateField& e) override
+	void operator()(const Ast::LayoutNameClash& e)
+	{
+		print_loc(e.layout_loc());
+		fprintf(stderr, ": Layout name '%s' clashes with class of the same name defined in ",
+			e.layout_name().c_str()
+		);
+		print_loc(e.class_loc());
+	}
+
+	void operator()(const Ast::LayoutDuplicateField& e)
 	{
 		print_loc(e.field_loc());
 		fprintf(stderr, ": Field '%s' is layout '%s' is already defined in ",
@@ -104,7 +112,7 @@ public:
 		print_loc(e.existing_field_loc());
 	}
 
-	void visit(const Ast::SemanticError::NoPoolParameters& e) override
+	void operator()(const Ast::NoPoolParameters& e)
 	{
 		print_loc(e.loc());
 		fprintf(stderr, ": No pool parameters defined for class '%s'.",
@@ -112,25 +120,25 @@ public:
 		);
 	}
 
-	void visit(const Ast::SemanticError::EmptyCluster& e) override
+	void operator()(const Ast::EmptyCluster& e)
 	{
 		print_loc(e.loc());
 		fprintf(stderr, ": Cluster is empty.");
 	}
 
-	void visit(const Ast::SemanticError::NotInsideLoop& e) override
+	void operator()(const Ast::NotInsideLoop& e)
 	{
 		print_loc(e.loc());
 		fprintf(stderr, ": Statement is not inside loop.");
 	}
 
-	void visit(const Ast::SemanticError::IntegerOutOfBounds& e) override
+	void operator()(const Ast::IntegerOutOfBounds& e)
 	{
 		print_loc(e.loc());
 		fprintf(stderr, ": Integer constant can't fit into a 64-bit unsigned integer.");
 	}
 
-	void visit(const Ast::SemanticError::IncorrectFirstPoolParameter& e) override
+	void operator()(const Ast::IncorrectFirstPoolParameter& e)
 	{
 		print_loc(e.loc());
 		fprintf(stderr, ": Expected pool parameter '%s', but got '%s'.",
@@ -138,7 +146,7 @@ public:
 		);
 	}
 
-	void visit(const Ast::SemanticError::IncorrectType& e) override
+	void operator()(const Ast::IncorrectType& e)
 	{
 		print_loc(e.loc());
 		fprintf(stderr, ": Expected type '%s', but got '%s'.",
@@ -146,7 +154,7 @@ public:
 		);
 	}
 
-	void visit(const Ast::SemanticError::IncompatibleBound& e) override
+	void operator()(const Ast::IncompatibleBound& e)
 	{
 		print_loc(e.loc());
 		fprintf(stderr, ": Type '%s' is not compatible with bound '%s'.",
@@ -154,7 +162,7 @@ public:
 		);
 	}
 
-	void visit(const Ast::SemanticError::IncorrectPoolsNumber& e) override
+	void operator()(const Ast::IncorrectPoolsNumber& e)
 	{
 		print_loc(e.loc());
 		fprintf(stderr, ": Expected %zu pool parameters, but got %zu.",
@@ -162,7 +170,7 @@ public:
 		);
 	}
 
-	void visit(const Ast::SemanticError::ExpectedObjectType& e) override
+	void operator()(const Ast::ExpectedObjectType& e)
 	{
 		print_loc(e.loc());
 		fprintf(stderr, ": Expected an object type, but got '%s'.",
@@ -170,7 +178,7 @@ public:
 		);
 	}
 
-	void visit(const Ast::SemanticError::ExpectedPrimitiveType& e) override
+	void operator()(const Ast::ExpectedPrimitiveType& e)
 	{
 		print_loc(e.loc());
 		fprintf(stderr, ": Expected a primitive type, but got '%s'.",
@@ -178,7 +186,7 @@ public:
 		);
 	}
 
-	void visit(const Ast::SemanticError::ExpectedBooleanType& e) override
+	void operator()(const Ast::ExpectedBooleanType& e)
 	{
 		print_loc(e.loc());
 		fprintf(stderr, ": Expected a boolean type, but got '%s'.",
@@ -186,7 +194,7 @@ public:
 		);
 	}
 
-	void visit(const Ast::SemanticError::ExpectedIntegerType& e) override
+	void operator()(const Ast::ExpectedIntegerType& e)
 	{
 		print_loc(e.loc());
 		fprintf(stderr, ": Expected an integer type, but got '%s'.",
@@ -194,7 +202,7 @@ public:
 		);
 	}
 
-	void visit(const Ast::SemanticError::ExpectedNumericType& e) override
+	void operator()(const Ast::ExpectedNumericType& e)
 	{
 		print_loc(e.loc());
 		fprintf(stderr, ": Expected an integer or floating-point type, but got '%s'.",
@@ -202,19 +210,19 @@ public:
 		);
 	}
 
-	void visit(const Ast::SemanticError::ReturnWithExpression& e) override
+	void operator()(const Ast::ReturnWithExpression& e)
 	{
 		print_loc(e.loc());
 		fprintf(stderr, ": Return statement with an expression.");
 	}
 
-	void visit(const Ast::SemanticError::ReturnWithoutExpression& e) override
+	void operator()(const Ast::ReturnWithoutExpression& e)
 	{
 		print_loc(e.loc());
 		fprintf(stderr, ": Return statement without an expression.");
 	}
 
-	void visit(const Ast::SemanticError::NonAssignableType& e) override
+	void operator()(const Ast::NonAssignableType& e)
 	{
 		print_loc(e.loc());
 		fprintf(stderr, ": Cannot assign expression of type '%s' into type '%s'.",
@@ -222,13 +230,13 @@ public:
 		);
 	}
 
-	void visit(const Ast::SemanticError::NotLvalue& e) override
+	void operator()(const Ast::NotLvalue& e)
 	{
 		print_loc(e.loc());
 		fprintf(stderr, ": Expression is not an lvalue.");
 	}
 
-	void visit(const Ast::SemanticError::IncorrectArgsNumber& e) override
+	void operator()(const Ast::IncorrectArgsNumber& e)
 	{
 		print_loc(e.loc());
 		fprintf(stderr, ": Expected %zu method arguments, but got %zu.",
@@ -282,8 +290,8 @@ int main(int argc, char** argv)
 
 	if (errors.has_errors()) {
 		SemanticErrorPrinter printer;
-		for (const auto& e: errors) {
-			e.accept(printer);
+		for (const auto& e: errors.errors()) {
+			mpark::visit(printer, e);
 			fprintf(stderr, "\n");
 		}
 

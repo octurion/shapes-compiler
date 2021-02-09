@@ -1,6 +1,6 @@
 #pragma once
 
-#include "parse_tree_common.h"
+#include "common.h"
 
 namespace Cst
 {

@@ -3,742 +3,261 @@
 #include <cstdint>
 #include <sstream>
 
-using Ast::SemanticError;
+namespace Ast {
 
-Ast::SemanticError::SemanticError(SemanticError&& other)
-	: m_tag(other.m_tag)
+static PrimitiveType get_primitive_type(Cst::PrimitiveType type)
 {
-	construct_variant_from_other(other);
+	switch (type.kind()) {
+	case Cst::PrimitiveKind::BOOL:
+		return PrimitiveType::BOOL;
+	case Cst::PrimitiveKind::U8:
+		return PrimitiveType::U8;
+	case Cst::PrimitiveKind::U16:
+		return PrimitiveType::U16;
+	case Cst::PrimitiveKind::U32:
+		return PrimitiveType::U32;
+	case Cst::PrimitiveKind::U64:
+		return PrimitiveType::U64;
+	case Cst::PrimitiveKind::I8:
+		return PrimitiveType::I8;
+	case Cst::PrimitiveKind::I16:
+		return PrimitiveType::I16;
+	case Cst::PrimitiveKind::I32:
+		return PrimitiveType::I32;
+	case Cst::PrimitiveKind::I64:
+		return PrimitiveType::I64;
+	case Cst::PrimitiveKind::F32:
+		return PrimitiveType::F32;
+	case Cst::PrimitiveKind::F64:
+		return PrimitiveType::F64;
+	}
+
+	unreachable("Unknown primitive type?");
 }
 
-Ast::SemanticError& Ast::SemanticError::operator=(SemanticError&& other)
-{
-	destroy_variant();
-
-	m_tag = other.m_tag;
-	construct_variant_from_other(other);
-
-	return *this;
-}
-
-Ast::SemanticError::~SemanticError()
-{
-	destroy_variant();
-}
-
-void Ast::SemanticError::destroy_variant()
-{
-	switch (m_tag) {
-	case Tag::DUPLICATE_DEFINITION:
-		m_duplicate_definition.~DuplicateDefinition();
-		break;
-
-	case Tag::MISSING_DEFINITION:
-		m_missing_definition.~MissingDefinition();
-		break;
-
-	case Tag::MISSING_BOUND:
-		m_missing_bound.~MissingBound();
-		break;
-
-	case Tag::LAYOUT_MISSING_FIELD:
-		m_layout_missing_field.~LayoutMissingField();
-		break;
-
-	case Tag::LAYOUT_DUPLICATE_FIELD:
-		m_layout_duplicate_field.~LayoutDuplicateField();
-		break;
-
-	case Tag::NO_POOL_PARAMETERS:
-		m_no_pool_parameters.~NoPoolParameters();
-		break;
-
-	case Tag::EMPTY_CLUSTER:
-		m_empty_cluster.~EmptyCluster();
-		break;
-
-	case Tag::NOT_INSIDE_LOOP:
-		m_not_inside_loop.~NotInsideLoop();
-		break;
-
-	case Tag::INTEGER_OUT_OF_BOUNDS:
-		m_integer_out_of_bounds.~IntegerOutOfBounds();
-		break;
-
-	case Tag::INCORRECT_FIRST_POOL_PARAMETER:
-		m_incorrect_first_pool_parameter.~IncorrectFirstPoolParameter();
-		break;
-
-	case Tag::INCORRECT_TYPE:
-		m_incorrect_type.~IncorrectType();
-		break;
-
-	case Tag::INCOMPATIBLE_BOUND:
-		m_incompatible_bound.~IncompatibleBound();
-		break;
-
-	case Tag::INCORRECT_POOLS_NUMBER:
-		m_incorrect_pools_number.~IncorrectPoolsNumber();
-		break;
-
-	case Tag::EXPECTED_OBJECT_TYPE:
-		m_expected_object_type.~ExpectedObjectType();
-		break;
-
-	case Tag::EXPECTED_PRIMITIVE_TYPE:
-		m_expected_primitive_type.~ExpectedPrimitiveType();
-		break;
-
-	case Tag::EXPECTED_BOOLEAN_TYPE:
-		m_expected_integer_type.~ExpectedIntegerType();
-		break;
-
-	case Tag::EXPECTED_INTEGER_TYPE:
-		m_expected_integer_type.~ExpectedIntegerType();
-		break;
-
-	case Tag::EXPECTED_NUMERIC_TYPE:
-		m_expected_numeric_type.~ExpectedNumericType();
-		break;
-
-	case Tag::RETURN_WITH_EXPRESSION:
-		m_return_with_expression.~ReturnWithExpression();
-		break;
-
-	case Tag::RETURN_WITHOUT_EXPRESSION:
-		m_return_without_expression.~ReturnWithoutExpression();
-		break;
-
-	case Tag::NON_ASSIGNABLE_TYPE:
-		m_non_assignable_type.~NonAssignableType();
-		break;
-
-	case Tag::NOT_LVALUE:
-		m_not_lvalue.~NotLvalue();
-		break;
-
-	case Tag::INCORRECT_ARGS_NUMBER:
-		m_incorrect_args_number.~IncorrectArgsNumber();
-		break;
-	}
-}
-
-void Ast::SemanticError::construct_variant_from_other(Ast::SemanticError& other)
-{
-	switch (other.m_tag) {
-	case Tag::DUPLICATE_DEFINITION:
-		new (&m_duplicate_definition) DuplicateDefinition(std::move(other.m_duplicate_definition));
-		break;
-
-	case Tag::MISSING_DEFINITION:
-		new (&m_missing_definition) MissingDefinition(std::move(other.m_missing_definition));
-		break;
-
-	case Tag::MISSING_BOUND:
-		new (&m_missing_bound) MissingBound(std::move(other.m_missing_bound));
-		break;
-
-	case Tag::LAYOUT_MISSING_FIELD:
-		new (&m_layout_missing_field) LayoutMissingField(std::move(other.m_layout_missing_field));
-		break;
-
-	case Tag::LAYOUT_DUPLICATE_FIELD:
-		new (&m_layout_duplicate_field) LayoutDuplicateField(std::move(other.m_layout_duplicate_field));
-		break;
-
-	case Tag::NO_POOL_PARAMETERS:
-		new (&m_no_pool_parameters) NoPoolParameters(std::move(other.m_no_pool_parameters));
-		break;
-
-	case Tag::EMPTY_CLUSTER:
-		new (&m_empty_cluster) EmptyCluster(std::move(other.m_empty_cluster));
-		break;
-
-	case Tag::NOT_INSIDE_LOOP:
-		new (&m_not_inside_loop) NotInsideLoop(std::move(other.m_not_inside_loop));
-		break;
-
-	case Tag::INTEGER_OUT_OF_BOUNDS:
-		new (&m_integer_out_of_bounds) IntegerOutOfBounds(std::move(other.m_integer_out_of_bounds));
-		break;
-
-	case Tag::INCORRECT_FIRST_POOL_PARAMETER:
-		new (&m_incorrect_first_pool_parameter) IncorrectFirstPoolParameter(std::move(other.m_incorrect_first_pool_parameter));
-		break;
-
-	case Tag::INCORRECT_TYPE:
-		new (&m_incorrect_type) IncorrectType(std::move(other.m_incorrect_type));
-		break;
-
-	case Tag::INCOMPATIBLE_BOUND:
-		new (&m_incompatible_bound) IncompatibleBound(std::move(other.m_incompatible_bound));
-		break;
-
-	case Tag::INCORRECT_POOLS_NUMBER:
-		new (&m_incorrect_pools_number) IncorrectPoolsNumber(std::move(other.m_incorrect_pools_number));
-		break;
-
-	case Tag::EXPECTED_OBJECT_TYPE:
-		new (&m_expected_object_type) ExpectedObjectType(std::move(other.m_expected_object_type));
-		break;
-
-	case Tag::EXPECTED_PRIMITIVE_TYPE:
-		new (&m_expected_primitive_type) ExpectedPrimitiveType(std::move(other.m_expected_primitive_type));
-		break;
-
-	case Tag::EXPECTED_BOOLEAN_TYPE:
-		new (&m_expected_boolean_type) ExpectedBooleanType(std::move(other.m_expected_boolean_type));
-		break;
-
-	case Tag::EXPECTED_INTEGER_TYPE:
-		new (&m_expected_integer_type) ExpectedIntegerType(std::move(other.m_expected_integer_type));
-		break;
-
-	case Tag::EXPECTED_NUMERIC_TYPE:
-		new (&m_expected_numeric_type) ExpectedNumericType(std::move(other.m_expected_numeric_type));
-		break;
-
-	case Tag::RETURN_WITH_EXPRESSION:
-		new (&m_return_with_expression) ReturnWithExpression(std::move(other.m_return_with_expression));
-		break;
-
-	case Tag::RETURN_WITHOUT_EXPRESSION:
-		new (&m_return_without_expression) ReturnWithoutExpression(std::move(other.m_return_without_expression));
-		break;
-
-	case Tag::NON_ASSIGNABLE_TYPE:
-		new (&m_non_assignable_type) NonAssignableType(std::move(other.m_non_assignable_type));
-		break;
-
-	case Tag::NOT_LVALUE:
-		new (&m_not_lvalue) NotLvalue(std::move(other.m_not_lvalue));
-		break;
-
-	case Tag::INCORRECT_ARGS_NUMBER:
-		new (&m_incorrect_args_number) IncorrectArgsNumber(std::move(other.m_incorrect_args_number));
-		break;
-	}
-}
-
-class TypePrinter final: public Ast::DefaultVisitor
-{
-	std::ostringstream m_os;
-
-	TypePrinter() = default;
-
-public:
-	template<typename Iter>
-	void print_args(Iter begin, Iter end)
-	{
-		auto it = begin;
-		if (it != end) {
-			it->accept(*this);
-			it++;
-		}
-
-		for (; it != end; it++) {
-			m_os << ", ";
-			it->accept(*this);
-		}
-	}
-
-	void visit(const Ast::Type::PrimitiveType& e) override
-	{
-		switch (e.kind()) {
-		case Ast::Type::PrimitiveKind::BOOL:
-			m_os << "bool";
-			break;
-
-		case Ast::Type::PrimitiveKind::U8:
-			m_os << "u8";
-			break;
-
-		case Ast::Type::PrimitiveKind::U16:
-			m_os << "u16";
-			break;
-
-		case Ast::Type::PrimitiveKind::U32:
-			m_os << "u32";
-			break;
-
-		case Ast::Type::PrimitiveKind::U64:
-			m_os << "u64";
-			break;
-
-		case Ast::Type::PrimitiveKind::I8:
-			m_os << "i8";
-			break;
-
-		case Ast::Type::PrimitiveKind::I16:
-			m_os << "i16";
-			break;
-
-		case Ast::Type::PrimitiveKind::I32:
-			m_os << "i32";
-			break;
-
-		case Ast::Type::PrimitiveKind::I64:
-			m_os << "i64";
-			break;
-
-		case Ast::Type::PrimitiveKind::F32:
-			m_os << "f32";
-			break;
-
-		case Ast::Type::PrimitiveKind::F64:
-			m_os << "f64";
-			break;
-		}
-	}
-
-	void visit(const Ast::Type::NullType&) override
-	{
-		m_os << "nullptr";
-	}
-
-	void visit(const Ast::Type::ObjectType& e) override
-	{
-		m_os << e.of_class().name() << "<";
-		print_args(e.begin(), e.end());
-		m_os << ">";
-	}
-
-	void visit(const Ast::PoolType::BoundType& e) override
-	{
-		m_os << "[" << e.of_class().name() << "<";
-		print_args(e.begin(), e.end());
-		m_os << ">]";
-	}
-
-	void visit(const Ast::PoolType::LayoutType& e) override
-	{
-		m_os << e.of_class().name() << "<";
-		print_args(e.begin(), e.end());
-		m_os << ">";
-	}
-
-	void visit(const Ast::PoolParameter::PoolRef& e) override
-	{
-		m_os << e.pool().name();
-	}
-
-	void visit(const Ast::PoolParameter::None&) override
-	{
-		m_os << "none";
-	}
-
-	void visit(const Ast::Type::VoidType&) override
-	{
-		m_os << "void";
-	}
-
-	static std::string to_string(const Ast::Type& type)
-	{
-		TypePrinter printer;
-		type.accept(printer);
-		return printer.m_os.str();
-	}
-
-	static std::string to_string(const Ast::Type::PrimitiveType& type)
-	{
-		TypePrinter printer;
-		type.accept(printer);
-		return printer.m_os.str();
-	}
-
-	static std::string to_string(const Ast::PoolType& type)
-	{
-		TypePrinter printer;
-		type.accept(printer);
-		return printer.m_os.str();
-	}
-
-	static std::string to_string(const Ast::PoolType::BoundType& type)
-	{
-		TypePrinter printer;
-		type.accept(printer);
-		return printer.m_os.str();
-	}
-};
-
-Ast::Type::PrimitiveKind to_kind(Cst::Type::PrimitiveKind kind)
-{
-	switch (kind) {
-	case Cst::Type::PrimitiveKind::BOOL:
-		return Ast::Type::PrimitiveKind::BOOL;
-
-	case Cst::Type::PrimitiveKind::U8:
-		return Ast::Type::PrimitiveKind::U8;
-
-	case Cst::Type::PrimitiveKind::U16:
-		return Ast::Type::PrimitiveKind::U16;
-
-	case Cst::Type::PrimitiveKind::U32:
-		return Ast::Type::PrimitiveKind::U32;
-
-	case Cst::Type::PrimitiveKind::U64:
-		return Ast::Type::PrimitiveKind::U64;
-
-	case Cst::Type::PrimitiveKind::I8:
-		return Ast::Type::PrimitiveKind::I8;
-
-	case Cst::Type::PrimitiveKind::I16:
-		return Ast::Type::PrimitiveKind::I16;
-
-	case Cst::Type::PrimitiveKind::I32:
-		return Ast::Type::PrimitiveKind::I32;
-
-	case Cst::Type::PrimitiveKind::I64:
-		return Ast::Type::PrimitiveKind::I64;
-
-	case Cst::Type::PrimitiveKind::F32:
-		return Ast::Type::PrimitiveKind::F32;
-
-	case Cst::Type::PrimitiveKind::F64:
-		return Ast::Type::PrimitiveKind::F64;
-	}
-
-	// Dead code, but it silences gcc
-	return Ast::Type::PrimitiveKind::U8;
-}
-
-Ast::Expr::BinOp to_ast_binop(Cst::BinOp op) {
+static BinOp to_ast_binop(Cst::BinOp op) {
 	switch (op) {
 	case Cst::BinOp::PLUS:
-		return Ast::Expr::BinOp::PLUS;
+		return BinOp::PLUS;
 	case Cst::BinOp::MINUS:
-		return Ast::Expr::BinOp::MINUS;
+		return BinOp::MINUS;
 	case Cst::BinOp::TIMES:
-		return Ast::Expr::BinOp::TIMES;
+		return BinOp::TIMES;
 	case Cst::BinOp::DIV:
-		return Ast::Expr::BinOp::DIV;
+		return BinOp::DIV;
 	case Cst::BinOp::LAND:
-		return Ast::Expr::BinOp::LAND;
+		return BinOp::LAND;
 	case Cst::BinOp::LOR:
-		return Ast::Expr::BinOp::LOR;
+		return BinOp::LOR;
 	case Cst::BinOp::AND:
-		return Ast::Expr::BinOp::AND;
+		return BinOp::AND;
 	case Cst::BinOp::OR:
-		return Ast::Expr::BinOp::OR;
+		return BinOp::OR;
 	case Cst::BinOp::XOR:
-		return Ast::Expr::BinOp::XOR;
+		return BinOp::XOR;
 	case Cst::BinOp::SHL:
-		return Ast::Expr::BinOp::SHL;
+		return BinOp::SHL;
 	case Cst::BinOp::SHR:
-		return Ast::Expr::BinOp::SHR;
+		return BinOp::SHR;
 	case Cst::BinOp::EQ:
-		return Ast::Expr::BinOp::EQ;
+		return BinOp::EQ;
 	case Cst::BinOp::NE:
-		return Ast::Expr::BinOp::NE;
+		return BinOp::NE;
 	case Cst::BinOp::LT:
-		return Ast::Expr::BinOp::LT;
+		return BinOp::LT;
 	case Cst::BinOp::LE:
-		return Ast::Expr::BinOp::LE;
+		return BinOp::LE;
 	case Cst::BinOp::GT:
-		return Ast::Expr::BinOp::GT;
+		return BinOp::GT;
 	case Cst::BinOp::GE:
-		return Ast::Expr::BinOp::GE;
+		return BinOp::GE;
+	}
+
+	unreachable("Unknown binary operator?");
+}
+
+static UnOp to_ast_unop(Cst::UnOp op) {
+	switch (op) {
+	case Cst::UnOp::PLUS:
+		return UnOp::PLUS;
+	case Cst::UnOp::MINUS:
+		return UnOp::MINUS;
+	case Cst::UnOp::NOT:
+		return UnOp::NOT;
+	}
+
+	unreachable("Unknown unary operator?");
+}
+
+template<typename T>
+static std::string to_string(const T& value) {
+	std::ostringstream os;
+	os << value;
+	return os.str();
+}
+
+static void collect_classes_fields_pool_params(
+	const Cst::Program& cst, Program& ast, SemanticErrorList& errors)
+{
+	for (const auto& clazz: cst.classes()) {
+		const auto& name = clazz.name();
+		auto res = ast.add_class(name.ident(), name.loc());
+
+		auto* new_class = res.first;
+		bool inserted = res.second;
+		if (!inserted) {
+			errors.add<DuplicateDefinition>(
+				name.ident(),
+				ErrorKind::CLASS,
+				name.loc(),
+				new_class->loc()
+			);
+			continue;
+		}
+
+		for (const auto& pool_param: clazz.pool_params()) {
+			auto res = new_class->add_pool(
+				pool_param.ident(), pool_param.loc());
+			auto* new_param = res.first;
+			bool inserted = res.second;
+
+			if (!inserted) {
+				errors.add<DuplicateDefinition>(
+					pool_param.ident(),
+					ErrorKind::POOL,
+					pool_param.loc(),
+					new_param->loc());
+			}
+		}
+		if (new_class->num_pools() == 0) {
+			errors.add<NoPoolParameters>(
+				clazz.name().ident(), clazz.name().loc());
+		}
+
+		for (const auto& field: clazz.fields()) {
+			const auto& name = field.name();
+			auto res = new_class->add_field(name.ident(), name.loc());
+			auto* new_field = res.first;
+			bool inserted = res.second;
+
+			if (!inserted) {
+				errors.add<DuplicateDefinition>(
+					name.ident(),
+					ErrorKind::FIELD,
+					name.loc(),
+					new_field->loc());
+			}
+		}
 	}
 }
 
-class ClassLayoutMembersCollector final: public Cst::DefaultVisitor
+static void collect_layouts(
+	const Cst::Program& cst, Program& ast, SemanticErrorList& errors)
 {
-	Ast::Program& m_ast;
-	Ast::SemanticErrorList& m_errors;
-
-	Ast::Class* m_curr_class = nullptr;
-
-	Ast::Layout* m_curr_layout = nullptr;
-	Ast::Cluster* m_curr_cluster = nullptr;
-
-	Ast::PoolType m_res_pool_type;
-
-	std::vector<Ast::PoolParameter> m_pool_params;
-
-	std::unordered_map<std::string, const Location&> m_used_fields;
-
-public:
-	using Cst::DefaultVisitor::visit;
-
-	explicit ClassLayoutMembersCollector(Ast::Program& ast, Ast::SemanticErrorList& errors)
-		: m_ast(ast)
-		, m_errors(errors)
-	{}
-
-	void visit(const Cst::Class& e) override
-	{
-		const auto& name = e.name();
-		auto res = m_ast.add_class(name.ident(), name.loc());
-
-		if (!res.second) {
-			m_errors.add<SemanticError::DuplicateDefinition>(
+	for (const auto& layout: cst.layouts()) {
+		const auto& name = layout.name();
+		const auto* same_name_class = ast.find_class(name.ident());
+		if (same_name_class != nullptr) {
+			errors.add<LayoutNameClash>(
 				name.ident(),
-				Ast::ErrorKind::CLASS,
 				name.loc(),
-				res.first->loc()
-			);
-			return;
+				same_name_class->loc());
+			continue;
 		}
 
-		m_curr_class = res.first;
+		const auto& for_class_name = layout.for_class();
+		auto* for_class = ast.find_class(for_class_name.ident());
+		if (for_class == nullptr) {
+			errors.add<MissingDefinition>(
+				for_class_name.ident(),
+				ErrorKind::CLASS,
+				for_class_name.loc());
+			continue;
+		}
 
-		Cst::DefaultVisitor::visit(e);
+		auto res = ast.add_layout(name.ident(), *for_class, name.loc());
+		auto* new_layout = res.first;
+		bool inserted = res.second;
+		if (!inserted) {
+			errors.add<DuplicateDefinition>(
+				name.ident(),
+				ErrorKind::LAYOUT,
+				name.loc(),
+				new_layout->loc());
+			continue;
+		}
 
-		m_curr_class = nullptr;
-
-		for (auto it = res.first->pools_begin(); it != res.first->pools_end(); it++) {
-			const auto& pool = it->get();
-			if (!pool.type().valid()) {
-				m_errors.add<SemanticError::MissingBound>(
-					pool.name(), pool.loc()
-				);
+		std::unordered_map<const Field*, const Location&> fields_added;
+		for (const auto& cluster: layout.clusters()) {
+			if (cluster.fields().empty()) {
+				errors.add<EmptyCluster>(cluster.loc());
+				continue;
 			}
-		}
-	}
 
-	void visit(const Cst::FormalPoolParameter& e) override
-	{
-		auto res = m_curr_class->add_pool(e.ident(), e.loc());
-		if (!res.second) {
-			m_errors.add<SemanticError::DuplicateDefinition>(
-				e.ident(),
-				Ast::ErrorKind::POOL,
-				e.loc(),
-				res.first->loc()
-			);
-			return;
-		}
-	}
+			auto& new_cluster = new_layout->add_cluster(cluster.loc());
+			for (const auto& field: cluster.fields()) {
+				const auto* class_field = for_class->find_field(field.ident());
+				if (class_field == nullptr) {
+					errors.add<MissingDefinition>(
+						field.ident(), ErrorKind::FIELD, field.loc());
+					continue;
+				}
 
-	void visit(const Cst::FormalPoolBound& e) override
-	{
-		m_pool_params.clear();
-		e.type().accept(*this);
-		auto* pool = m_curr_class->find_pool(e.pool().ident());
-		if (pool == nullptr) {
-			m_errors.add<SemanticError::MissingDefinition>(
-				e.pool().ident(),
-				Ast::ErrorKind::POOL,
-				e.pool().loc()
-			);
-			return;
-		}
+				auto it = fields_added.find(class_field);
+				if (it != fields_added.end()) {
+					errors.add<DuplicateDefinition>(
+						field.ident(),
+						ErrorKind::LAYOUT,
+						field.loc(),
+						it->second);
+					continue;
+				}
 
-		if (pool->type().valid()) {
-			m_errors.add<SemanticError::DuplicateDefinition>(
-				e.pool().ident(),
-				Ast::ErrorKind::POOL_BOUND,
-				e.type().loc(),
-				pool->type().loc()
-			);
-			return;
-		}
-
-		pool->set_type(std::move(m_res_pool_type));
-	}
-
-	void visit(const Cst::PoolParameter::Pool& e) override
-	{
-		auto* pool = m_curr_class->find_pool(e.ident());
-		if (pool == nullptr) {
-			m_errors.add<SemanticError::MissingDefinition>(
-				e.ident(),
-				Ast::ErrorKind::POOL,
-				e.loc()
-			);
-			return;
-		}
-
-		m_pool_params.emplace_back(
-			Ast::PoolParameter::PoolRef(*pool), e.loc()
-		);
-	}
-
-	void visit(const Cst::BoundType& e) override
-	{
-		m_pool_params.clear();
-
-		const auto& name = e.class_name();
-		auto* for_class = m_ast.find_class(name.ident());
-		if (for_class == nullptr) {
-			m_errors.add<SemanticError::MissingDefinition>(
-				name.ident(),
-				Ast::ErrorKind::CLASS,
-				name.loc()
-			);
-			return;
-		}
-
-		visit(e.begin(), e.end());
-		m_res_pool_type = Ast::PoolType(
-			Ast::PoolType::BoundType(*for_class, std::move(m_pool_params), e.loc()),
-			e.loc()
-		);
-	}
-
-
-	void visit(const Cst::Field& e) override
-	{
-		const auto& name = e.name();
-		auto res = m_curr_class->add_field(name.ident(), name.loc());
-		if (!res.second) {
-			m_errors.add<SemanticError::DuplicateDefinition>(
-				name.ident(),
-				Ast::ErrorKind::FIELD,
-				name.loc(),
-				res.first->loc()
-			);
-			return;
-		}
-
-		if (m_curr_class->pools_begin() == m_curr_class->pools_end()) {
-			m_errors.add<SemanticError::NoPoolParameters>(
-				m_curr_class->name(),
-				m_curr_class->loc()
-			);
-			return;
-		}
-	}
-
-	void visit(const Cst::Method& e) override
-	{
-		const auto& name = e.name();
-		auto res = m_curr_class->add_method(name.ident(), name.loc());
-		if (!res.second) {
-			m_errors.add<SemanticError::DuplicateDefinition>(
-				name.ident(),
-				Ast::ErrorKind::METHOD,
-				name.loc(),
-				res.first->loc()
-			);
-			return;
-		}
-	}
-
-	void visit(const Cst::Layout& e) override
-	{
-		m_curr_layout = nullptr;
-		m_curr_cluster = nullptr;
-		m_used_fields.clear();
-
-		const auto& class_name = e.for_class();
-		auto* for_class = m_ast.find_class(class_name.ident());
-		if (for_class == nullptr) {
-			m_errors.add<SemanticError::MissingDefinition>(
-				class_name.ident(),
-				Ast::ErrorKind::CLASS,
-				class_name.loc()
-			);
-			return;
-		}
-
-		const auto& name = e.name();
-		auto res = m_ast.add_layout(name.ident(), *for_class, name.loc());
-		if (!res.second) {
-			m_errors.add<SemanticError::DuplicateDefinition>(
-				name.ident(),
-				Ast::ErrorKind::LAYOUT,
-				name.loc(),
-				res.first->loc()
-			);
-			return;
-		}
-
-		m_curr_layout = res.first;
-
-		visit(e.begin(), e.end());
-
-		bool errors = false;
-		for (auto it = for_class->fields_begin(); it != for_class->fields_end(); it++) {
-			const auto& field = it->get();
-			if (m_used_fields.find(field.name()) == m_used_fields.end()) {
-				m_errors.add<SemanticError::LayoutMissingField>(
-					m_curr_layout->name(),
-					field.name(),
-					m_curr_layout->loc()
-				);
-				errors = true;
+				new_cluster.add_field(*class_field);
+				fields_added.emplace(class_field, field.loc());
 			}
 		}
 
-		if (!errors) {
-			for_class->add_layout(*m_curr_layout);
-		}
+		for_class->add_layout(*new_layout);
 	}
+}
 
-	void visit(const Cst::Cluster& e) override
-	{
-		m_curr_cluster = &m_curr_layout->add_cluster(e.loc());
-
-		visit(e.begin(), e.end());
-
-		if (m_curr_cluster->begin() == m_curr_cluster->end()) {
-			m_errors.add<SemanticError::EmptyCluster>(e.loc());
-		}
-	}
-
-	void visit(const Cst::ClusterField& e) override
-	{
-		auto it = m_curr_layout->for_class().find_field(e.ident());
-		if (it == nullptr) {
-			m_errors.add<SemanticError::MissingDefinition>(
-				e.ident(),
-				Ast::ErrorKind::FIELD,
-				e.loc()
-			);
-			return;
-		}
-
-		auto res = m_used_fields.emplace(e.ident(), e.loc());
-		if (!res.second) {
-			m_errors.add<SemanticError::LayoutDuplicateField>(
-				m_curr_layout->name(),
-				m_curr_layout->loc(),
-				e.ident(),
-				e.loc(),
-				res.first->second
-			);
-			return;
-		}
-
-		m_curr_cluster->add_field(*it);
-	}
-
-	void visit(const Cst::Program& e) override
-	{
-		// Default visitor implementation classes first, so that we collect the
-		// classes and class fields before we traverse the layouts
-		Cst::DefaultVisitor::visit(e);
-	}
-
-	static void collect(const Cst::Program& cst, Ast::Program& ast, Ast::SemanticErrorList& errors)
-	{
-		ClassLayoutMembersCollector collector(ast, errors);
-		cst.accept(collector);
-	}
-};
-
-class SymbolTable
+class ScopeStack
 {
-	struct SymbolTableEntry
+	struct Entry
 	{
-		std::vector<std::string> m_vars_declared;
-		std::vector<std::string> m_pools_declared;
+		std::unordered_map<std::string, const Variable*> m_vars;
+		std::unordered_map<std::string, Pool*> m_pools;
 	};
 
-	std::unordered_map<std::string, std::reference_wrapper<Ast::Pool>> m_pools;
-	std::unordered_map<std::string, std::vector<std::reference_wrapper<const Ast::Variable>>> m_vars;
+	std::vector<Entry> m_entries;
 
-	const Ast::Class* m_class = nullptr;
-	std::vector<SymbolTableEntry> m_entries;
+	Class* m_class = nullptr;
 
 public:
-	void set_class(const Ast::Class& new_class)
+	ScopeStack(Class& class_scope)
+		: m_class(&class_scope)
 	{
-		m_class = &new_class;
+		push_scope();
+		for (const auto& e: class_scope.pools()) {
+			Pool& pool = e;
+			add_pool(pool.name(), pool);
+		}
+	}
 
-		m_pools.clear();
-		m_vars.clear();
+	ScopeStack(Class& class_scope, Method& method_scope)
+		: m_class(&class_scope)
+	{
+		push_scope();
+		for (const auto& e: class_scope.pools()) {
+			Pool& pool = e;
+			add_pool(pool.name(), pool);
+		}
+
+		for (const auto& e: method_scope.params()) {
+			const Variable& var = e;
+			add_variable(var.name(), var);
+		}
 	}
 
 	void push_scope()
@@ -748,454 +267,436 @@ public:
 
 	void pop_scope()
 	{
-		auto& top = m_entries.back();
-		for (auto& e: top.m_pools_declared) {
-			m_pools.erase(e);
-		}
-
-		for (auto& e: top.m_vars_declared) {
-			m_vars[e].pop_back();
-		}
-
+		assert_msg(!m_entries.empty(), "No entry scope");
 		m_entries.pop_back();
 	}
 
-	bool add_pool(const std::string& name, Ast::Pool& pool)
+	bool add_pool(const std::string& name, Pool& pool)
 	{
-		auto it = m_pools.emplace(name, pool);
-		if (!it.second) {
+		if (find_pool(name) != nullptr) {
 			return false;
 		}
 
-		m_entries.back().m_pools_declared.push_back(name);
+		assert_msg(!m_entries.empty(), "No entry scope");
+		m_entries.back().m_pools.emplace(name, &pool);
+
 		return true;
 	}
 
-	void add_variable(const std::string& name, const Ast::Variable& var)
+	void add_variable(const std::string& name, const Variable& var)
 	{
-		m_vars[name].emplace_back(var);
-		m_entries.back().m_vars_declared.push_back(name);
-	}
-
-	const Ast::Pool* find_pool(const std::string& name) const
-	{
-		auto it = m_pools.find(name);
-		if (it == m_pools.end()) {
-			return nullptr;
-		}
-
-		return &it->second.get();
-	}
-
-	Ast::Pool* find_pool(const std::string& name)
-	{
-		auto it = m_pools.find(name);
-		if (it == m_pools.end()) {
-			return nullptr;
-		}
-
-		return &it->second.get();
-	}
-
-	const Ast::Variable* find_variable(const std::string& name) const
-	{
-		auto it = m_vars.find(name);
-		if (it == m_vars.end()) {
-			return nullptr;
-		}
-
-		return &it->second.back().get();
-	}
-};
-
-class PoolMapper: public Ast::DefaultVisitor
-{
-	std::unordered_map<const Ast::Pool*, const Ast::PoolParameter*> m_pool_map;
-
-	PoolMapper() = default;
-
-public:
-	using Ast::DefaultVisitor::visit;
-
-	void visit(const Ast::Type::ObjectType& e) override
-	{
-		auto pool_it = e.of_class().pools_begin();
-		for (auto it = e.begin(); it != e.end(); it++, pool_it++) {
-			m_pool_map[&pool_it->get()] = &*it;
+		assert_msg(!m_entries.empty(), "No entry scope");
+		auto res = m_entries.back().m_vars.emplace(name, &var);
+		if (!res.second) {
+			res.first->second = &var;
 		}
 	}
 
-	void visit(const Ast::PoolType::LayoutType& e) override
+	const Pool* find_pool(const std::string& name) const
 	{
-		auto pool_it = e.of_class().pools_begin();
-		for (auto it = e.begin(); it != e.end(); it++, pool_it++) {
-			m_pool_map[&pool_it->get()] = &*it;
-		}
-	}
-
-	void visit(const Ast::PoolType::BoundType& e) override
-	{
-		auto pool_it = e.of_class().pools_begin();
-		for (auto it = e.begin(); it != e.end(); it++, pool_it++) {
-			m_pool_map[&pool_it->get()] = &*it;
-		}
-	}
-
-	static std::unordered_map<const Ast::Pool*, const Ast::PoolParameter*>
-	make_pool_map(const Ast::Type& type)
-	{
-		PoolMapper mapper;
-		type.accept(mapper);
-
-		return std::move(mapper.m_pool_map);
-	}
-
-	static std::unordered_map<const Ast::Pool*, const Ast::PoolParameter*>
-	make_pool_map(const Ast::PoolType& type)
-	{
-		PoolMapper mapper;
-		type.accept(mapper);
-
-		return std::move(mapper.m_pool_map);
-	}
-};
-
-class TypeValidator: public Ast::DefaultVisitor
-{
-	Ast::SemanticErrorList& m_errors;
-
-	std::unordered_map<const Ast::Pool*, const Ast::PoolParameter*> m_pool_map;
-
-	const Ast::Class* m_curr_class = nullptr;
-	Ast::Class::pools_const_iterator m_class_pool_iter;
-
-	bool m_valid = true;
-
-public:
-	explicit TypeValidator(Ast::SemanticErrorList& errors)
-		: m_errors(errors)
-	{}
-
-	using Ast::DefaultVisitor::visit;
-
-	void visit(const Ast::PoolType::BoundType& e) override
-	{
-		m_curr_class = &e.of_class();
-		if (e.num_params() != m_curr_class->num_pools()) {
-			m_errors.add<Ast::SemanticError::IncorrectPoolsNumber>(
-				e.loc(), m_curr_class->num_pools(), e.num_params()
-			);
-			m_valid = false;
-			return;
-		}
-
-		m_class_pool_iter = m_curr_class->pools_begin();
-		visit(e.begin(), e.end());
-	}
-
-	void visit(const Ast::PoolType::LayoutType& e) override
-	{
-		m_curr_class = &e.of_class();
-		if (e.num_params() != m_curr_class->num_pools()) {
-			m_errors.add<Ast::SemanticError::IncorrectPoolsNumber>(
-				e.loc(), m_curr_class->num_pools(), e.num_params()
-			);
-			m_valid = false;
-			return;
-		}
-
-		m_class_pool_iter = m_curr_class->pools_begin();
-		visit(e.begin(), e.end());
-	}
-
-	void visit(const Ast::Type::ObjectType& e) override
-	{
-		m_curr_class = &e.of_class();
-		if (e.num_params() != m_curr_class->num_pools()) {
-			m_errors.add<Ast::SemanticError::IncorrectPoolsNumber>(
-				e.loc(), m_curr_class->num_pools(), e.num_params()
-			);
-			m_valid = false;
-			return;
-		}
-
-		m_class_pool_iter = m_curr_class->pools_begin();
-		visit(e.begin(), e.end());
-	}
-
-	void visit(const Ast::PoolParameter::PoolRef& e) override
-	{
-		const auto& pool = m_class_pool_iter->get();
-		const auto* bound_type = pool.type().as_bound_type();
-		assert(bound_type != nullptr);
-
-		std::vector<Ast::PoolParameter> params;
-
-		for (auto it = bound_type->begin(); it != bound_type->end(); it++) {
-			auto* substituted_pool = it->as_pool();
-			const auto* substitute = m_pool_map[&substituted_pool->pool()];
-
-			if (substitute != nullptr) {
-				params.emplace_back(
-					Ast::PoolParameter::PoolRef(*substitute->as_pool()),
-					substituted_pool->pool().loc()
-				);
-			} else {
-				params.emplace_back(
-					Ast::PoolParameter::None(),
-					Location()
-				);
+		for (auto it = m_entries.rbegin(); it != m_entries.rend(); it++) {
+			auto pool_it = it->m_pools.find(name);
+			if (pool_it != it->m_pools.end()) {
+				return pool_it->second;
 			}
 		}
 
-		Ast::PoolType::BoundType substituted_bound(
-			*m_curr_class, std::move(params), Location()
-		);
+		return nullptr;
+	}
 
-		if (!e.pool().type().compatible_with_bound(substituted_bound)) {
-			m_errors.add<Ast::SemanticError::IncompatibleBound>(
-				e.pool().loc(),
-				TypePrinter::to_string(e.pool().type()),
-				TypePrinter::to_string(substituted_bound)
-			);
-			m_valid = false;
+	Pool* find_pool(const std::string& name)
+	{
+		for (auto it = m_entries.rbegin(); it != m_entries.rend(); it++) {
+			auto pool_it = it->m_pools.find(name);
+			if (pool_it != it->m_pools.end()) {
+				return pool_it->second;
+			}
 		}
 
-		m_class_pool_iter++;
+		return nullptr;
 	}
 
-	void visit(const Ast::PoolParameter::None&) override
+	const Variable* find_variable(const std::string& name) const
 	{
-		m_class_pool_iter++;
+		for (auto it = m_entries.rbegin(); it != m_entries.rend(); it++) {
+			auto var_it = it->m_vars.find(name);
+			if (var_it != it->m_vars.end()) {
+				return var_it->second;
+			}
+		}
+
+		return nullptr;
 	}
 
-	static bool validate(const Ast::Type& type, Ast::SemanticErrorList& errors)
-	{
-		TypeValidator validator(errors);
-		validator.m_pool_map = PoolMapper::make_pool_map(type);
-		type.accept(validator);
-
-		return validator.m_valid;
-	}
-
-	static bool validate(const Ast::PoolType& type, Ast::SemanticErrorList& errors)
-	{
-		TypeValidator validator(errors);
-		validator.m_pool_map = PoolMapper::make_pool_map(type);
-		type.accept(validator);
-
-		return validator.m_valid;
+	const Field* find_field(const std::string& name) const {
+		return m_class->find_field(name);
 	}
 };
 
-class MemberTypesCollector: public Cst::DefaultVisitor
-{
-	Ast::Program& m_ast;
-	Ast::SemanticErrorList& m_errors;
+class TypeConstructor {
+	const Program& m_ast;
+	const ScopeStack& m_stack;
+	SemanticErrorList& m_errors;
 
-	SymbolTable m_symtab;
-	Ast::Class* m_curr_class = nullptr;
-	bool m_pool_param_errors = false;
+	std::vector<PoolParameter> extract_params(
+		const std::vector<Cst::Pool>& params)
+	{
+		std::vector<PoolParameter> ast_params;
+		for (const auto& e: params) {
+			const auto* found_pool = m_stack.find_pool(e.ident());
+			if (found_pool == nullptr) {
+				m_errors.add<MissingDefinition>(
+					e.ident(), ErrorKind::POOL, e.loc());
+				return std::vector<PoolParameter>();
+			}
+		}
 
-	Ast::Method* m_curr_method = nullptr;
+		return ast_params;
+	}
 
-	Ast::Type m_res_type;
-	Ast::PoolType m_res_pool_type;
+	std::vector<PoolParameter> extract_params(
+		const std::vector<Cst::PoolParameter>& params)
+	{
+		std::vector<PoolParameter> ast_params;
+		for (const auto& e: params) {
+			const auto* none = mpark::get_if<Cst::None>(&e);
+			if (none != nullptr) {
+				ast_params.emplace_back(None());
+				continue;
+			}
 
-	std::vector<Ast::PoolParameter> m_pool_params;
+			const auto* pool = mpark::get_if<Cst::Pool>(&e);
+			if (pool != nullptr) {
+				const auto* found_pool = m_stack.find_pool(pool->ident());
+				if (found_pool == nullptr) {
+					m_errors.add<MissingDefinition>(
+						pool->ident(), ErrorKind::POOL, pool->loc());
+					return std::vector<PoolParameter>();
+				}
+			}
+		}
 
-	std::unordered_map<std::string, Location> m_method_params;
+		return ast_params;
+	}
 
-	explicit MemberTypesCollector(Ast::Program& ast, Ast::SemanticErrorList& errors)
+public:
+	TypeConstructor(const Program& ast, const ScopeStack& stack, SemanticErrorList& errors)
 		: m_ast(ast)
+		, m_stack(stack)
 		, m_errors(errors)
 	{}
 
-public:
-	using Cst::DefaultVisitor::visit;
-
-	void visit(const Cst::FormalPoolParameter& e) override
-	{
-		const auto* pool = m_curr_class->find_pool(e.ident());
-		const auto* bound_type = pool->type().as_bound_type();
-		assert(bound_type != nullptr);
-
-		const auto* first_pool_param = bound_type->begin()->as_pool();
-		assert(first_pool_param != nullptr);
-
-		if (pool != &first_pool_param->pool()) {
-			m_errors.add<Ast::SemanticError::IncorrectFirstPoolParameter>(
-				bound_type->begin()->loc(),
-				pool->name(),
-				first_pool_param->pool().name()
-			);
-			m_pool_param_errors = true;
-			return;
+	mpark::variant<mpark::monostate, ObjectType, PrimitiveType>
+	operator()(const Cst::ObjectType& type) {
+		const auto* of_class = m_ast.find_class(type.class_name().ident());
+		if (of_class == nullptr) {
+			m_errors.add<MissingDefinition>(
+				type.class_name().ident(),
+				ErrorKind::CLASS,
+				type.class_name().loc());
+			return mpark::monostate();
 		}
 
-		if (!TypeValidator::validate(pool->type(), m_errors)) {
-			m_pool_param_errors = true;
+		if (type.params().empty()) {
+			m_errors.add<NoPoolParameters>(to_string(type), type.loc());
+			return mpark::monostate();
 		}
+
+		auto params = extract_params(type.params());
+		if (params.empty()) {
+			return mpark::monostate();
+		}
+
+		return ObjectType(*of_class, std::move(params), type.loc());
 	}
 
-	void visit(const Cst::PoolParameter::Pool& e) override
-	{
-		auto* pool = m_symtab.find_pool(e.ident());
-		if (pool == nullptr) {
-			m_errors.add<SemanticError::MissingDefinition>(
-				e.ident(),
-				Ast::ErrorKind::POOL,
-				e.loc()
-			);
-			m_pool_params.emplace_back(
-				Ast::PoolParameter(Ast::PoolParameter::None(), e.loc())
-			);
-			return;
-		}
-
-		m_pool_params.emplace_back(
-			Ast::PoolParameter(Ast::PoolParameter::PoolRef(*pool), e.loc())
-		);
+	mpark::variant<mpark::monostate, ObjectType, PrimitiveType>
+	operator()(const Cst::PrimitiveType& type) {
+		return get_primitive_type(type);
 	}
 
-	void visit(const Cst::PoolParameter::None& e) override
-	{
-		m_pool_params.emplace_back(
-			Ast::PoolParameter(Ast::PoolParameter::None(), e.loc())
-		);
+	mpark::variant<mpark::monostate, LayoutType, BoundType>
+	operator()(const Cst::BoundType& type) {
+		const auto* of_class = m_ast.find_class(type.class_name().ident());
+		if (of_class == nullptr) {
+			m_errors.add<MissingDefinition>(
+				type.class_name().ident(),
+				ErrorKind::CLASS,
+				type.loc());
+			return mpark::monostate();
+		}
+
+		if (type.params().empty()) {
+			m_errors.add<NoPoolParameters>(to_string(type), type.loc());
+			return mpark::monostate();
+		}
+
+		auto params = extract_params(type.params());
+		if (params.empty()) {
+			return mpark::monostate();
+		}
+
+		return BoundType(*of_class, std::move(params), type.loc());
 	}
 
-	void visit(const Cst::Type::PrimitiveType& e) override
-	{
-		m_res_type = Ast::Type(
-			Ast::Type::PrimitiveType(to_kind(e.kind())), e.loc()
-		);
-	}
-
-	void visit(const Cst::Type::ObjectType& e) override
-	{
-		const auto& name = e.class_name();
-		auto* for_class = m_ast.find_class(name.ident());
-		if (for_class == nullptr) {
-			m_errors.add<SemanticError::MissingDefinition>(
-				name.ident(),
-				Ast::ErrorKind::CLASS,
-				name.loc()
-			);
-			return;
+	mpark::variant<mpark::monostate, LayoutType, BoundType>
+	operator()(const Cst::LayoutType& type) {
+		const auto* of_class = m_ast.find_layout(type.layout_name().ident());
+		if (of_class == nullptr) {
+			m_errors.add<MissingDefinition>(
+				type.layout_name().ident(),
+				ErrorKind::LAYOUT,
+				type.layout_name().loc());
+			return mpark::monostate();
 		}
 
-		visit(e.begin(), e.end());
-		Ast::Type type(
-			Ast::Type::ObjectType(*for_class, std::move(m_pool_params), e.loc()),
-			e.loc()
-		);
-
-		if (!TypeValidator::validate(type, m_errors)) {
-			m_res_type = Ast::Type();
-			return;
+		if (type.params().empty()) {
+			m_errors.add<NoPoolParameters>(to_string(type), type.loc());
+			return mpark::monostate();
 		}
 
-		m_res_type = std::move(type);
-	}
-
-	void visit(const Cst::Field& e) override
-	{
-		auto* field = m_curr_class->find_field(e.name().ident());
-		e.type().accept(*this);
-		field->set_type(std::move(m_res_type));
-	}
-
-	void visit(const Cst::Method& e) override
-	{
-		m_curr_method = m_curr_class->find_method(e.name().ident());
-		const auto* return_type = e.type();
-		if (return_type != nullptr) {
-			return_type->accept(*this);
-			auto type = std::move(m_res_type);
-
-			m_curr_method->set_return_type(std::move(type));
+		auto params = extract_params(type.params());
+		if (params.empty()) {
+			return mpark::monostate();
 		}
 
-		visit(e.begin(), e.end());
-	}
-
-	void visit(const Cst::MethodParameter& e) override
-	{
-		e.type().accept(*this);
-		auto type = std::move(m_res_type);
-		if (!type.valid()) {
-			return;
-		}
-
-		auto& name = e.name();
-		auto res = m_method_params.emplace(name.ident(), name.loc());
-		if (!res.second) {
-			m_errors.add<SemanticError::DuplicateDefinition>(
-				name.ident(),
-				Ast::ErrorKind::VARIABLE,
-				name.loc(),
-				res.first->second
-			);
-			return;
-		}
-
-		m_curr_method->add_parameter(name.ident(), std::move(type), name.loc());
-	}
-
-	void visit(const Cst::Class& e) override
-	{
-		m_curr_class = m_ast.find_class(e.name().ident());
-		m_pool_param_errors = false;
-		m_symtab.set_class(*m_curr_class);
-
-		m_symtab.push_scope();
-		for (auto it = m_curr_class->pools_begin(); it != m_curr_class->pools_end(); it++) {
-			auto& ref = it->get();
-			m_symtab.add_pool(ref.name(), ref);
-		}
-
-		std::vector<Ast::PoolParameter> first_bound_params;
-		for (auto it = m_curr_class->pools_begin(); it != m_curr_class->pools_end(); it++) {
-			first_bound_params.emplace_back(
-				Ast::PoolParameter::PoolRef(*it), it->get().loc()
-			);
-		}
-		Ast::PoolType::BoundType first_expected(
-			*m_curr_class,
-			std::move(first_bound_params),
-			Location());
-
-		const auto& first_actual = *m_curr_class->pools_begin()->get().type().as_bound_type();
-		if (first_expected != first_actual) {
-			m_errors.add<Ast::SemanticError::IncorrectType>(
-				m_curr_class->pools_begin()->get().type().loc(),
-				TypePrinter::to_string(first_expected),
-				TypePrinter::to_string(first_actual)
-			);
-		}
-
-		// If we get pool parameter errors, then we'd expect to get a lot
-		// of typechecking errors in general, so bail out
-		visit(e.pool_params_begin(), e.pool_params_end());
-		if (!m_pool_param_errors) {
-			visit(e.fields_begin(), e.fields_end());
-			visit(e.methods_begin(), e.methods_end());
-		}
-
-		m_curr_class = nullptr;
-	}
-
-	static void collect(const Cst::Program& cst, Ast::Program& ast, Ast::SemanticErrorList& errors)
-	{
-		MemberTypesCollector collector(ast, errors);
-		cst.accept(collector);
+		return LayoutType(*of_class, std::move(params), type.loc());
 	}
 };
 
+struct PoolTypeExtractor {
+	PoolType operator()(BoundType type) { return PoolType(std::move(type)); }
+	PoolType operator()(LayoutType type) { return PoolType(std::move(type)); }
+	PoolType operator()(mpark::monostate) {
+		unreachable("Please check if no pool type was extracted");
+	}
+};
+static PoolType get_type(mpark::variant<mpark::monostate, LayoutType, BoundType> type) {
+	return mpark::visit(PoolTypeExtractor(), std::move(type));
+}
+
+struct TypeExtractor {
+	Type operator()(ObjectType type) { return Type(std::move(type)); }
+	Type operator()(PrimitiveType type) { return Type(type); }
+	Type operator()(mpark::monostate) {
+		unreachable("Please check if no object type was extracted");
+	}
+};
+static Type get_type(mpark::variant<mpark::monostate, ObjectType, PrimitiveType> type) {
+	return mpark::visit(TypeExtractor(), std::move(type));
+}
+
+static void collect_pool_field_method_types(
+	const Cst::Program& cst, Program& ast, SemanticErrorList& errors)
+{
+	for (const auto& cst_class: cst.classes()) {
+		auto* clazz = ast.find_class(cst_class.name().ident());
+		assert_msg(clazz != nullptr, "Class not added?");
+
+		ScopeStack scope(*clazz);
+		TypeConstructor type_ctor(ast, scope, errors);
+
+		std::unordered_map<const Pool*, Location> defined_pool_types;
+		for (const auto& cst_bound: cst_class.pool_param_bounds()) {
+			auto* bound = clazz->find_pool(cst_bound.pool().ident());
+			if (bound == nullptr) {
+				errors.add<MissingDefinition>(
+					cst_bound.pool().ident(),
+					ErrorKind::POOL_BOUND,
+					cst_bound.pool().loc());
+				continue;
+			}
+
+			if (bound->has_type()) {
+				errors.add<DuplicateDefinition>(
+					cst_bound.pool().ident(),
+					ErrorKind::LAYOUT,
+					cst_bound.pool().loc(),
+					defined_pool_types[bound]);
+				continue;
+			}
+
+			auto maybe_bound_type = type_ctor(cst_bound.type());
+			if (mpark::holds_alternative<mpark::monostate>(maybe_bound_type)) {
+				continue;
+			}
+			bound->set_type(get_type(maybe_bound_type));
+		}
+
+		for (const auto& cst_field: cst_class.fields()) {
+			auto* field = clazz->find_field(cst_field.name().ident());
+			assert_msg(field != nullptr, "Field should always exist");
+
+			auto maybe_type = mpark::visit(type_ctor, cst_field.type());
+			if (mpark::holds_alternative<mpark::monostate>(maybe_type)) {
+				continue;
+			}
+			field->set_type(get_type(maybe_type));
+		}
+
+		for (const auto& cst_method: cst_class.methods()) {
+			const auto& method_name = cst_method.name();
+			auto res = clazz->add_method(method_name.ident(), method_name.loc());
+			auto* new_method = res.first;
+			bool inserted = res.second;
+
+			if (!inserted) {
+				errors.add<DuplicateDefinition>(
+					method_name.ident(),
+					ErrorKind::METHOD,
+					method_name.loc(),
+					new_method->loc());
+				continue;
+			}
+
+			const auto* cst_return_type = cst_method.type();
+			if (cst_return_type != nullptr) {
+				auto maybe_type = mpark::visit(type_ctor, *cst_return_type);
+				if (!mpark::holds_alternative<mpark::monostate>(maybe_type)) {
+					new_method->set_return_type(get_type(maybe_type));
+				}
+			} else {
+				new_method->set_return_type(VoidType());
+			}
+
+			std::unordered_map<std::string, Location> param_locs;
+			std::deque<Variable> params;
+			for (const auto& e: cst_method.params()) {
+				auto maybe_type = mpark::visit(type_ctor, e.type());
+				if (mpark::holds_alternative<mpark::monostate>(maybe_type)) {
+					continue;
+				}
+				auto type = get_type(std::move(maybe_type));
+
+				auto res = param_locs.emplace(e.name().ident(), e.name().loc());
+				auto it = res.first;
+				bool inserted = res.second;
+
+				if (!inserted) {
+					errors.add<DuplicateDefinition>(
+						e.name().ident(),
+						ErrorKind::VARIABLE,
+						e.name().loc(),
+						it->second);
+					continue;
+				}
+				params.emplace_back(e.name().ident(), std::move(type), e.name().loc());
+			}
+
+			new_method->set_params(std::move(params));
+		}
+	}
+}
+
+class TypeValidator
+{
+	SemanticErrorList& m_errors;
+
+	template<typename T>
+	bool visit(const T& type) {
+		bool success = true;
+		const auto& params = type.params();
+		for (size_t i = 0; i < params.size(); i++) {
+			auto given_bound = mpark::visit(*this, params[i]);
+			auto new_bound = type.bound_of_param(i);
+			if (!compatible_with_bound(given_bound, new_bound)) {
+				m_errors.add<IncompatibleBound>(
+					type.loc(), to_string(given_bound), to_string(new_bound));
+				success = false;
+			}
+		}
+
+		return success;
+	}
+
+public:
+	explicit TypeValidator(SemanticErrorList& errors)
+		: m_errors(errors)
+	{}
+
+	bool operator()(const NoneType&) {
+		unreachable("Must not validate a None type");
+	}
+
+	bool operator()(const ObjectType& type) {
+		return visit(type);
+	}
+
+	bool operator()(const PrimitiveType&) {
+		return true;
+	}
+
+	bool operator()(const NullptrType&) {
+		return true;
+	}
+
+	bool operator()(const VoidType&) {
+		return true;
+	}
+
+	bool operator()(const BoundType& type) {
+		return visit(type);
+	}
+
+	bool operator()(const LayoutType& type) {
+		return visit(type);
+	}
+
+	PoolType operator()(const None&) {
+		return NoneType();
+	}
+
+	PoolType operator()(const PoolRef& e) {
+		return e.pool().type();
+	}
+};
+
+static bool validate_type(const Type& type, SemanticErrorList& errors) {
+	return mpark::visit(TypeValidator(errors), type);
+}
+
+static bool validate_type(const PoolType& type, SemanticErrorList& errors) {
+	return mpark::visit(TypeValidator(errors), type);
+}
+
+static void validate_top_level_types(const Program& ast, SemanticErrorList& errors) {
+	bool pool_types_valid = true;
+	for (const Class& clazz: ast.ordered_classes()) {
+		for (const Pool& pool: clazz.pools()) {
+			if (!first_pool_param_is(pool.type(), pool)) {
+				pool_types_valid = false;
+				continue;
+			}
+			if (!validate_type(pool.type(), errors)) {
+				pool_types_valid = false;
+			}
+		}
+
+		const Pool& first_pool = clazz.pools().front();
+		if (!compatible_with_bound(first_pool.type(), clazz.this_bound_type())) {
+			pool_types_valid = false;
+		}
+	}
+	if (!pool_types_valid) {
+		return;
+	}
+
+	for (const auto& clazz: ast.ordered_classes()) {
+		for (const auto& field: clazz.get().fields()) {
+			validate_type(field.get().type(), errors);
+		}
+		for (const auto& method: clazz.get().methods()) {
+			validate_type(method.get().return_type(), errors);
+			for (const auto& param: method.get().params()) {
+				validate_type(param.type(), errors);
+			}
+		}
+	}
+}
+
 class BlockStack
 {
-	std::vector<std::vector<Ast::Stmt>> blocks;
+	std::vector<std::vector<Stmt>> blocks;
 
 public:
 	void push_block()
@@ -1203,7 +704,7 @@ public:
 		blocks.emplace_back();
 	}
 
-	std::vector<Ast::Stmt> pop_block()
+	std::vector<Stmt> pop_block()
 	{
 		auto block = std::move(blocks.back());
 		blocks.pop_back();
@@ -1227,1074 +728,814 @@ public:
 	}
 };
 
-class PoolTypeToObjectType: public Ast::DefaultVisitor
+class MethodBodyCollector
 {
-	const Ast::Class* m_class = nullptr;
-	Location m_loc;
-	std::vector<Ast::PoolParameter> m_params;
+	Program& m_ast;
 
-public:
-	using Ast::DefaultVisitor::visit;
+	Class& m_class;
+	Method& m_method;
 
-	void visit(const Ast::PoolType::BoundType& e) override
-	{
-		m_class = &e.of_class();
-		m_loc = e.loc();
-		visit(e.begin(), e.end());
-	}
+	SemanticErrorList& m_errors;
 
-	void visit(const Ast::PoolType::LayoutType& e) override
-	{
-		m_class = &e.of_class();
-		m_loc = e.loc();
-		visit(e.begin(), e.end());
-	}
-
-	void visit(const Ast::PoolParameter::PoolRef& e) override
-	{
-		m_params.emplace_back(e, Location());
-	}
-
-	void visit(const Ast::PoolParameter::None& e) override
-	{
-		m_params.emplace_back(e, Location());
-	}
-
-	static Ast::Type convert(const Ast::PoolType& type)
-	{
-		PoolTypeToObjectType converter;
-		type.accept(converter);
-
-		return Ast::Type(
-			Ast::Type::ObjectType(*converter.m_class, std::move(converter.m_params), converter.m_loc),
-			converter.m_loc
-		);
-	}
-};
-
-Ast::Type substitute_parameters(const Ast::Type::ObjectType& src, const Ast::Type& dest)
-{
-	const auto& for_class = src.of_class();
-	auto it = for_class.pools_begin();
-
-	std::unordered_map<const Ast::Pool*, const Ast::PoolParameter*> map;
-	for (const auto& e: src) {
-		map[&it->get()] = &e;
-		it++;
-	}
-
-	const auto* object_type = dest.as_object_type();
-	if (object_type == nullptr) {
-		return dest;
-	}
-
-	std::vector<Ast::PoolParameter> params;
-	for (auto e: *object_type) {
-		if (e.as_pool() == nullptr) {
-			params.emplace_back(*e.as_none(), e.loc());
-		} else {
-			params.emplace_back(*e.as_pool(), e.loc());
-		}
-	}
-
-	return Ast::Type(
-		Ast::Type::ObjectType(for_class, std::move(params), dest.loc()),
-		dest.loc()
-	);
-}
-
-class MethodBodiesCollector final: public Cst::DefaultVisitor
-{
-	Ast::Program& m_ast;
-	Ast::SemanticErrorList& m_errors;
-
+	ScopeStack m_scopes;
 	BlockStack m_blocks;
-	SymbolTable m_symtab;
 
-	Ast::Expr m_res_expr;
-	Ast::Type m_res_type;
-	Ast::PoolType m_res_pool_type;
-
-	Ast::Class* m_curr_class = nullptr;
-	Ast::Method* m_curr_method = nullptr;
-
-	std::vector<Ast::PoolParameter> m_pool_params;
-
-	unsigned loop_nesting_count = 0;
-
-	explicit MethodBodiesCollector(Ast::Program& ast, Ast::SemanticErrorList& errors)
-		: m_ast(ast)
-		, m_errors(errors)
-	{}
-
-	Ast::Type::ObjectType make_this_type()
-	{
-		std::vector<Ast::PoolParameter> params;
-		for (auto it = m_curr_class->pools_begin(); it != m_curr_class->pools_end(); it++) {
-			const auto& ref = it->get();
-			params.emplace_back(Ast::PoolParameter::PoolRef(ref), ref.loc());
-		}
-
-		return Ast::Type::ObjectType(*m_curr_class, std::move(params), Location());
-	}
+	unsigned m_loop_nesting_count = 0;
 
 public:
-	using Cst::DefaultVisitor::visit;
-
-	void visit(const Cst::PoolParameter::Pool& e) override
+	MethodBodyCollector(Program& ast, Class& clazz, Method& method, SemanticErrorList& errors)
+		: m_ast(ast)
+		, m_class(clazz)
+		, m_method(method)
+		, m_errors(errors)
+		, m_scopes(m_class, m_method)
 	{
-		auto* pool = m_symtab.find_pool(e.ident());
-		if (pool == nullptr) {
-			m_errors.add<SemanticError::MissingDefinition>(
-				e.ident(),
-				Ast::ErrorKind::POOL,
-				e.loc()
-			);
-			m_pool_params.emplace_back(
-				Ast::PoolParameter(Ast::PoolParameter::None(), e.loc())
-			);
-			return;
+		for (const auto& var: method.vars()) {
+			m_scopes.add_variable(var.name(), var);
 		}
-
-		m_pool_params.emplace_back(
-			Ast::PoolParameter(Ast::PoolParameter::PoolRef(*pool), e.loc())
-		);
+		m_blocks.push_block();
 	}
 
-	void visit(const Cst::PoolParameter::None& e) override
-	{
-		m_pool_params.emplace_back(
-			Ast::PoolParameter(Ast::PoolParameter::None(), e.loc())
-		);
-	}
-
-	void visit(const Cst::Type::PrimitiveType& e) override
-	{
-		m_res_type = Ast::Type(
-			Ast::Type::PrimitiveType(to_kind(e.kind())), e.loc()
-		);
-	}
-
-	void visit(const Cst::Type::ObjectType& e) override
-	{
-		const auto& name = e.class_name();
-		auto* for_class = m_ast.find_class(name.ident());
-		if (for_class == nullptr) {
-			m_errors.add<SemanticError::MissingDefinition>(
-				name.ident(),
-				Ast::ErrorKind::CLASS,
-				name.loc()
-			);
-			return;
+	void operator()(const Cst::Block& block) {
+		m_scopes.push_scope();
+		for (const auto& e: block.stmts()) {
+			mpark::visit(*this, e);
 		}
+		m_scopes.pop_scope();
+	}
 
-		visit(e.begin(), e.end());
-		Ast::Type type(
-			Ast::Type::ObjectType(*for_class, std::move(m_pool_params), e.loc()),
-			e.loc()
-		);
+	void operator()(const Cst::Noop&) {}
 
-		if (!TypeValidator::validate(type, m_errors)) {
-			m_res_type = Ast::Type();
-		} else {
-			m_res_type = std::move(type);
+	void operator()(const Cst::VariableDeclarations& decls)
+	{
+		for (const auto& e: decls.vars()) {
+			TypeConstructor type_ctor(m_ast, m_scopes, m_errors);
+			auto maybe_type = mpark::visit(type_ctor, e.type());
+			if (mpark::holds_alternative<mpark::monostate>(maybe_type)) {
+				continue;
+			}
+			auto type = get_type(std::move(maybe_type));
+			if (!validate_type(type, m_errors)) {
+				continue;
+			}
+			const auto& new_var = m_method.add_variable(
+				e.name().ident(), std::move(type), e.name().loc());
+			m_scopes.add_variable(e.name().ident(), new_var);
 		}
 	}
 
-	void visit(const Cst::LayoutType& e) override
+	void operator()(const Cst::PoolDeclarations& decls)
 	{
-		const auto& name = e.layout_name();
-		auto* layout = m_ast.find_layout(name.ident());
-		if (layout == nullptr) {
-			m_errors.add<SemanticError::MissingDefinition>(
-				name.ident(),
-				Ast::ErrorKind::LAYOUT,
-				name.loc()
-			);
-			return;
-		}
+		std::vector<Pool*> pools;
 
-		visit(e.begin(), e.end());
-		Ast::PoolType type(
-			Ast::PoolType::LayoutType(*layout, std::move(m_pool_params), e.loc()),
-			e.loc()
-		);
+		bool typechecks = true;
+		// Set up a new scope so that we can tear it down in case of an error
+		m_scopes.push_scope();
+		// Pass 1: Get all pool names
+		for (const auto& e: decls.pools()) {
+			auto& new_pool = m_method.add_pool(e.name().ident(), e.name().loc());
+			pools.push_back(&new_pool);
+			if (!m_scopes.add_pool(new_pool.name(), new_pool)) {
+				const auto* existing_pool = m_scopes.find_pool(new_pool.name());
 
-		if (!TypeValidator::validate(type, m_errors)) {
-			m_res_pool_type = Ast::PoolType();
-		} else {
-			m_res_pool_type = std::move(type);
-		}
-	}
-
-	void visit(const Cst::VariableDeclaration& e) override
-	{
-		e.type().accept(*this);
-		auto type = std::move(m_res_type);
-		if (!type.valid()) {
-			return;
-		}
-
-		const auto& name = e.name();
-		const auto& var = m_curr_method->add_variable(
-			name.ident(), std::move(type), name.loc()
-		);
-
-		m_symtab.add_variable(name.ident(), var);
-	}
-
-	void visit(const Cst::Stmt::PoolDeclarations& e) override
-	{
-		for (auto& pool: e) {
-			const auto& name = pool.name();
-			auto& pool_ref = m_curr_method->add_pool(name.ident(), name.loc());
-			if (!m_symtab.add_pool(name.ident(), pool_ref)) {
-				m_errors.add<SemanticError::DuplicateDefinition>(
-					name.ident(),
-					Ast::ErrorKind::POOL,
-					name.loc(),
-					m_symtab.find_pool(name.ident())->loc()
-				);
+				m_errors.add<DuplicateDefinition>(
+					e.name().ident(),
+					ErrorKind::POOL,
+					e.name().loc(),
+					existing_pool->loc());
+				typechecks = false;
 				continue;
 			}
 		}
-
-		Cst::DefaultVisitor::visit(e);
-	}
-
-	void visit(const Cst::PoolDeclaration& e) override
-	{
-		e.type().accept(*this);
-		auto type = std::move(m_res_pool_type);
-		if (!type.valid()) {
+		if (!typechecks) {
+			m_scopes.pop_scope();
 			return;
 		}
 
-		const auto& name = e.name();
-		auto* pool = m_symtab.find_pool(name.ident());
+		// Pass 2: Get all pool types
+		TypeConstructor type_ctor(m_ast, m_scopes, m_errors);
+		for (size_t i = 0; i < pools.size(); i++) {
+			auto* pool = pools[i];
+			auto maybe_type = type_ctor(decls.pools()[i].type());
+			if (mpark::holds_alternative<mpark::monostate>(maybe_type)) {
+				typechecks = false;
+				continue;
+			}
+			if (!first_pool_param_is(pool->type(), *pool)) {
+				typechecks = false;
+				continue;
+			}
+			pool->set_type(get_type(maybe_type));
+		}
+		if (!typechecks) {
+			m_scopes.pop_scope();
+			return;
+		}
 
-		pool->set_type(std::move(type));
+		// Pass 3: Validate the types of pool parameters
+		for (const auto& e: pools) {
+			if (!validate_type(e->type(), m_errors)) {
+				typechecks = false;
+			}
+		}
+
+		m_scopes.pop_scope();
+		if (!typechecks) {
+			return;
+		}
+
+		for (auto e: pools) {
+			m_scopes.add_pool(e->name(), *e);
+		}
 	}
 
-	void visit(const Cst::Expr::IntegerConst& e) override
-	{
+	void operator()(const Cst::Assignment& e) {
+		auto lhs = mpark::visit(*this, e.lhs());
+		auto lhs_type = expr_type(lhs);
+
+		auto rhs = mpark::visit(*this, e.rhs());
+		auto rhs_type = expr_type(rhs);
+
+		if (!is_lvalue(lhs)) {
+			m_errors.add<NotLvalue>(location(e.lhs()));
+			return;
+		}
+
+		if (!assignable_from(lhs_type, rhs_type)) {
+			m_errors.add<NonAssignableType>(
+				location(e.rhs()), to_string(lhs_type), to_string(rhs_type));
+		}
+
+		m_blocks.add<Assignment>(std::move(lhs), std::move(rhs));
+	}
+
+	void operator()(const Cst::OpAssignment& e) {
+		auto lhs = mpark::visit(*this, e.lhs());
+		auto rhs = mpark::visit(*this, e.rhs());
+
+		auto op = to_ast_binop(e.op());
+
+		if (!is_lvalue(lhs)) {
+			m_errors.add<NotLvalue>(location(e.lhs()));
+			return;
+		}
+
+		auto lhs_type = expr_type(lhs);
+		auto rhs_type = expr_type(rhs);
+
+		switch (op) {
+		case BinOp::PLUS:
+		case BinOp::MINUS:
+		case BinOp::TIMES:
+		case BinOp::DIV: {
+			const auto* as_primitive = mpark::get_if<PrimitiveType>(&lhs_type);
+			if (as_primitive == nullptr) {
+				m_errors.add<ExpectedPrimitiveType>(
+					location(e.lhs()), to_string(lhs_type));
+				return;
+			}
+			if (lhs_type != rhs_type) {
+				m_errors.add<IncorrectType>(
+					location(e.rhs()),
+					to_string(lhs_type),
+					to_string(rhs_type));
+				return;
+			}
+
+			m_blocks.add<OpAssignment>(std::move(lhs), op, std::move(rhs));
+			break;
+		}
+		case BinOp::AND:
+		case BinOp::OR:
+		case BinOp::XOR: {
+			const auto* as_primitive = mpark::get_if<PrimitiveType>(&lhs_type);
+			if (as_primitive == nullptr || is_floating_point(*as_primitive)) {
+				m_errors.add<ExpectedIntegerType>(
+					location(e.lhs()), to_string(lhs_type));
+				return;
+			}
+			if (lhs_type != rhs_type) {
+				m_errors.add<IncorrectType>(
+					location(e.rhs()),
+					to_string(lhs_type),
+					to_string(rhs_type));
+				return;
+			}
+
+			m_blocks.add<OpAssignment>(std::move(lhs), op, std::move(rhs));
+			break;
+		}
+		case BinOp::SHL:
+		case BinOp::SHR: {
+			const auto* lhs_as_primitive = mpark::get_if<PrimitiveType>(&lhs_type);
+			const auto* rhs_as_primitive = mpark::get_if<PrimitiveType>(&rhs_type);
+			if (lhs_as_primitive == nullptr || !is_integer(*lhs_as_primitive)) {
+				m_errors.add<ExpectedIntegerType>(
+					location(e.lhs()), to_string(lhs_type));
+				return;
+			}
+			if (rhs_as_primitive == nullptr || !is_integer(*rhs_as_primitive)) {
+				m_errors.add<ExpectedIntegerType>(
+					location(e.rhs()), to_string(rhs_type));
+				return;
+			}
+
+			m_blocks.add<OpAssignment>(std::move(lhs), op, std::move(rhs));
+			break;
+		}
+		default:
+			unreachable("Missing operator case");
+		}
+	}
+
+	void operator()(const Cst::IfStmt& e) {
+		auto cond = mpark::visit(*this, e.cond());
+		auto type = expr_type(cond);
+		if (type != Type(PrimitiveType::BOOL)) {
+			m_errors.add<IncorrectType>(
+				location(e.cond()),
+				to_string(PrimitiveType::BOOL),
+				to_string(type));
+		}
+
+		m_scopes.push_scope();
+		m_blocks.push_block();
+
+		mpark::visit(*this, e.then_branch());
+
+		auto then_branch = m_blocks.pop_block();
+		m_scopes.pop_scope();
+
+		m_scopes.push_scope();
+		m_blocks.push_block();
+
+		mpark::visit(*this, e.then_branch());
+
+		auto else_branch = m_blocks.pop_block();
+		m_scopes.pop_scope();
+
+		m_blocks.add<If>(
+			std::move(cond),
+			std::move(then_branch),
+			std::move(else_branch));
+	}
+
+	void operator()(const Cst::WhileStmt& e) {
+		auto cond = mpark::visit(*this, e.cond());
+		auto type = expr_type(cond);
+		if (type != Type(PrimitiveType::BOOL)) {
+			m_errors.add<IncorrectType>(
+				location(e.cond()),
+				to_string(PrimitiveType::BOOL),
+				to_string(type));
+		}
+
+		m_scopes.push_scope();
+		m_blocks.push_block();
+
+		m_loop_nesting_count++;
+
+		mpark::visit(*this, e.body());
+
+		m_loop_nesting_count--;
+
+		auto body = m_blocks.pop_block();
+		m_scopes.pop_scope();
+
+		m_blocks.add<While>(std::move(cond), std::move(body));
+	}
+
+	void operator()(const Cst::ForeachRange& e) {
+		auto begin = mpark::visit(*this, e.range_begin());
+		auto end = mpark::visit(*this, e.range_end());
+
+		auto begin_type = expr_type(begin);
+		auto end_type = expr_type(end);
+
+		const auto* begin_as_primitive = mpark::get_if<PrimitiveType>(&begin_type);
+		const auto* end_as_primitive = mpark::get_if<PrimitiveType>(&end_type);
+
+		if (begin_as_primitive == nullptr || !is_integer(*begin_as_primitive)) {
+			m_errors.add<ExpectedIntegerType>(
+				location(e.range_begin()), to_string(begin_type));
+			return;
+		}
+		if (end_as_primitive == nullptr || !is_integer(*end_as_primitive)) {
+			m_errors.add<ExpectedIntegerType>(
+				location(e.range_end()), to_string(end_type));
+			return;
+		}
+		if (*begin_as_primitive != *end_as_primitive) {
+			m_errors.add<IncorrectType>(
+				location(e.range_end()), to_string(begin_type), to_string(end_type));
+		}
+
+		const auto& var = e.var();
+		const auto& new_var = m_method.add_variable(
+			var.ident(), *begin_as_primitive, var.loc());
+		m_scopes.add_variable(var.ident(), new_var);
+
+		m_scopes.push_scope();
+		m_blocks.push_block();
+
+		m_loop_nesting_count++;
+
+		mpark::visit(*this, e.body());
+
+		m_loop_nesting_count--;
+
+		auto body = m_blocks.pop_block();
+		m_scopes.pop_scope();
+
+		m_blocks.add<ForeachRange>(new_var, std::move(begin), std::move(end), std::move(body));
+	}
+
+	void operator()(const Cst::ForeachPool& e) {
+		const auto* pool = m_scopes.find_pool(e.pool().ident());
+		if (pool == nullptr) {
+			m_errors.add<MissingDefinition>(
+				e.pool().ident(), ErrorKind::POOL, e.pool().loc());
+			return;
+		}
+
+		auto type = from_pool_type(pool->type());
+		const auto& var = e.var();
+		const auto& new_var = m_method.add_variable(
+			var.ident(), std::move(type), var.loc());
+		m_scopes.add_variable(var.ident(), new_var);
+
+		m_scopes.push_scope();
+		m_blocks.push_block();
+
+		m_loop_nesting_count++;
+
+		mpark::visit(*this, e.body());
+
+		m_loop_nesting_count--;
+
+		auto body = m_blocks.pop_block();
+		m_scopes.pop_scope();
+
+		m_blocks.add<ForeachPool>(new_var, *pool, std::move(body));
+	}
+
+	void operator()(const Cst::ExprStmt& e) {
+		auto expr = mpark::visit(*this, e.expr());
+		m_blocks.add<ExprStmt>(std::move(expr));
+	}
+
+	void operator()(const Cst::Break& e) {
+		if (m_loop_nesting_count == 0) {
+			m_errors.add<NotInsideLoop>(e.loc());
+			return;
+		}
+
+		m_blocks.add<Break>();
+	}
+
+	void operator()(const Cst::Continue& e) {
+		if (m_loop_nesting_count == 0) {
+			m_errors.add<NotInsideLoop>(e.loc());
+			return;
+		}
+
+		m_blocks.add<Break>();
+	}
+
+	void operator()(const Cst::Return& e) {
+		const auto& ret_type = m_method.return_type();
+		if (mpark::holds_alternative<VoidType>(ret_type)) {
+			m_errors.add<ReturnWithExpression>(location(e.expr()));
+		}
+
+		auto expr = mpark::visit(*this, e.expr());
+		auto type = expr_type(expr);
+		if (!assignable_from(ret_type, type)) {
+			m_errors.add<NonAssignableType>(
+				location(e.expr()), to_string(type), to_string(ret_type));
+		}
+
+		m_blocks.add<Return>(std::move(expr));
+	}
+
+	void operator()(const Cst::ReturnVoid& e) {
+		if (!mpark::holds_alternative<VoidType>(m_method.return_type())) {
+			m_errors.add<ReturnWithoutExpression>(e.loc());
+		}
+
+		m_blocks.add<Return>();
+	}
+
+	Expr operator()(const Cst::IntegerConst& e) {
 		unsigned long long value = 0;
 
 		try {
 			value = std::stoull(e.value());
 		} catch (...) {
-			m_errors.add<SemanticError::IntegerOutOfBounds>(e.loc());
-			m_res_expr = Ast::Expr(
-				Ast::Expr::IntegerConst(0),
-				Ast::Type(Ast::Type::PrimitiveType(Ast::Type::PrimitiveKind::U64), e.loc()),
-				e.loc()
-			);
-			return;
+			m_errors.add<IntegerOutOfBounds>(e.loc());
+			return IntegerConst(0);
 		}
 
 		if (value > UINT64_MAX) {
-			m_errors.add<SemanticError::IntegerOutOfBounds>(e.loc());
-			m_res_expr = Ast::Expr(
-				Ast::Expr::IntegerConst(0),
-				Ast::Type(Ast::Type::PrimitiveType(Ast::Type::PrimitiveKind::U64), e.loc()),
-				e.loc()
-			);
-			return;
+			m_errors.add<IntegerOutOfBounds>(e.loc());
+			return IntegerConst(0);
 		}
 
-		m_res_expr = Ast::Expr(
-			Ast::Expr::IntegerConst(value),
-			Ast::Type(Ast::Type::PrimitiveType(Ast::Type::PrimitiveKind::U64), e.loc()),
-			e.loc()
-		);
+		return IntegerConst(value);
 	}
 
-	void visit(const Cst::Expr::BooleanConst& e) override
+	Expr operator()(const Cst::BooleanConst& e)
 	{
-		m_res_expr = Ast::Expr(
-			Ast::Expr::BooleanConst(e.value()),
-			Ast::Type(Ast::Type::PrimitiveType(Ast::Type::PrimitiveKind::BOOL), e.loc()),
-			e.loc()
-		);
+		return BooleanConst(e.value());
 	}
 
-	void visit(const Cst::Expr::Null& e) override
+	Expr operator()(const Cst::NullExpr&)
 	{
-		m_res_expr = Ast::Expr(
-			Ast::Expr::Null(),
-			Ast::Type(Ast::Type::NullType(), e.loc()),
-			e.loc()
-		);
+		return NullExpr();
 	}
 
-	void visit(const Cst::Expr::This& e) override
+	Expr operator()(const Cst::ThisExpr& e)
 	{
-		m_res_expr = Ast::Expr(
-			Ast::Expr::This(make_this_type()),
-			Ast::Type(make_this_type(), e.loc()),
-			e.loc()
-		);
+		std::vector<PoolParameter> params;
+		for (const Pool& pool: m_class.pools()) {
+			params.emplace_back(PoolRef(pool));
+		}
+
+		return ThisExpr(ObjectType(m_class, std::move(params), e.loc()));
 	}
 
-	void visit(const Cst::Expr::Cast& e) override
+	Expr operator()(const Cst::CastExpr& e)
 	{
-		e.expr().accept(*this);
-		e.type().accept(*this);
-		auto expr = std::move(m_res_expr);
-		m_res_expr = Ast::Expr();
-
-		if (!expr.valid()) {
-			return;
+		TypeConstructor type_ctor(m_ast, m_scopes, m_errors);
+		auto expr = mpark::visit(*this, e.expr());
+		auto type = expr_type(expr);
+		if (!mpark::holds_alternative<PrimitiveType>(type)) {
+			m_errors.add<ExpectedPrimitiveType>(location(e.expr()), to_string(type));
+			return IntegerConst(0);
 		}
 
-		const auto* type = expr.type().as_primitive_type();
-		if (type == nullptr) {
-			m_errors.add<Ast::SemanticError::ExpectedPrimitiveType>(
-				e.loc(),
-				TypePrinter::to_string(expr.type())
-			);
-			return;
-		}
-
-		m_res_expr = Ast::Expr(
-			Ast::Expr::Cast(std::move(expr), *type),
-			Ast::Type(*type, e.loc()),
-			e.loc()
-		);
+		return CastExpr(std::move(expr), get_primitive_type(e.type()));
 	}
 
-	void visit(const Cst::Expr::Binary& e) override
+	Expr operator()(const Cst::UnaryExpr& e)
 	{
-		e.lhs().accept(*this);
-		auto lhs = std::move(m_res_expr);
+		auto expr = mpark::visit(*this, e.expr());
+		auto type = expr_type(expr);
 
-		e.rhs().accept(*this);
-		auto rhs = std::move(m_res_expr);
-
-		m_res_expr = Ast::Expr();
-		if (!lhs.valid() || !rhs.valid()) {
-			return;
+		if (!mpark::holds_alternative<PrimitiveType>(type)) {
+			m_errors.add<ExpectedPrimitiveType>(location(e.expr()), to_string(type));
+			return IntegerConst(0);
 		}
 
-		auto* lhs_primitive_type = lhs.type().as_primitive_type();
-		if (lhs_primitive_type == nullptr) {
-			m_errors.add<Ast::SemanticError::ExpectedPrimitiveType>(
-				e.lhs().loc(), TypePrinter::to_string(lhs.type())
-			);
-			return;
+		auto op = to_ast_unop(e.op());
+		const auto* primitive_type = mpark::get_if<PrimitiveType>(&type);
+		if (is_bitwise_operator(op) && is_floating_point(*primitive_type)) {
+			m_errors.add<ExpectedIntegerType>(location(e.expr()), to_string(type));
+			return IntegerConst(0);
 		}
 
-		auto* rhs_primitive_type = rhs.type().as_primitive_type();
-		if (rhs_primitive_type == nullptr) {
-			m_errors.add<Ast::SemanticError::ExpectedPrimitiveType>(
-				e.rhs().loc(), TypePrinter::to_string(rhs.type())
-			);
-			return;
-		}
+		return UnaryExpr(op, std::move(expr));
+	}
+
+	Expr operator()(const Cst::BinaryExpr& e)
+	{
+		auto lhs = mpark::visit(*this, e.lhs());
+		auto rhs = mpark::visit(*this, e.rhs());
+
+		auto lhs_type = expr_type(lhs);
+		auto rhs_type = expr_type(rhs);
 
 		auto op = to_ast_binop(e.op());
 
-		auto type = lhs.type();
-
 		switch (op) {
-		case Ast::Expr::BinOp::PLUS:
-		case Ast::Expr::BinOp::MINUS:
-		case Ast::Expr::BinOp::TIMES:
-		case Ast::Expr::BinOp::DIV:
-		case Ast::Expr::BinOp::LT:
-		case Ast::Expr::BinOp::LE:
-		case Ast::Expr::BinOp::GT:
-		case Ast::Expr::BinOp::GE: {
-			if (lhs.type() != rhs.type()) {
-				m_errors.add<Ast::SemanticError::IncorrectType>(
-					rhs.loc(),
-					TypePrinter::to_string(lhs.type()),
-					TypePrinter::to_string(rhs.type())
-				);
-				return;
+		case BinOp::PLUS:
+		case BinOp::MINUS:
+		case BinOp::TIMES:
+		case BinOp::DIV: {
+			const auto* lhs_primitive = mpark::get_if<PrimitiveType>(&lhs_type);
+			if (lhs_primitive == nullptr) {
+				m_errors.add<ExpectedPrimitiveType>(
+					location(e.lhs()), to_string(lhs_type));
+				return IntegerConst(0);
 			}
-
-			if (!lhs_primitive_type->is_integer() && !lhs_primitive_type->is_floating_point()) {
-				m_errors.add<SemanticError::ExpectedNumericType>(
-					e.loc(), TypePrinter::to_string(lhs.type())
-				);
-				return;
+			if (lhs_type != rhs_type) {
+				m_errors.add<IncorrectType>(
+					location(e.rhs()), to_string(lhs_type), to_string(rhs_type));
+				return IntegerConst(0);
 			}
-			break;
+			return BinaryExpr(std::move(lhs), op, std::move(rhs), *lhs_primitive);
 		}
 
-		case Ast::Expr::BinOp::LAND:
-		case Ast::Expr::BinOp::LOR: {
-			if (lhs.type() != rhs.type()) {
-				m_errors.add<Ast::SemanticError::IncorrectType>(
-					rhs.loc(),
-					TypePrinter::to_string(lhs.type()),
-					TypePrinter::to_string(rhs.type())
-				);
-				return;
+		case BinOp::AND:
+		case BinOp::OR:
+		case BinOp::XOR: {
+			const auto* lhs_primitive = mpark::get_if<PrimitiveType>(&lhs_type);
+			if (lhs_primitive == nullptr || is_floating_point(*lhs_primitive)) {
+				m_errors.add<ExpectedIntegerType>(
+					location(e.lhs()), to_string(lhs_type));
+				return IntegerConst(0);
 			}
-
-			if (!lhs_primitive_type->is_boolean()) {
-				m_errors.add<SemanticError::ExpectedBooleanType>(
-					e.loc(), TypePrinter::to_string(lhs.type())
-				);
-				return;
+			if (lhs_type != rhs_type) {
+				m_errors.add<IncorrectType>(
+					location(e.rhs()), to_string(lhs_type), to_string(rhs_type));
+				return IntegerConst(0);
 			}
-			break;
-		}
-		case Ast::Expr::BinOp::AND:
-		case Ast::Expr::BinOp::OR:
-		case Ast::Expr::BinOp::XOR: {
-			if (lhs.type() != rhs.type()) {
-				m_errors.add<Ast::SemanticError::IncorrectType>(
-					rhs.loc(),
-					TypePrinter::to_string(lhs.type()),
-					TypePrinter::to_string(rhs.type())
-				);
-				return;
-			}
-
-			if (!lhs_primitive_type->is_integer()) {
-				m_errors.add<SemanticError::ExpectedIntegerType>(
-					e.loc(), TypePrinter::to_string(lhs.type())
-				);
-				return;
-			}
-			break;
+			return BinaryExpr(std::move(lhs), op, std::move(rhs), *lhs_primitive);
 		}
 
-		case Ast::Expr::BinOp::EQ:
-		case Ast::Expr::BinOp::NE: {
-			type = Ast::Type(
-				Ast::Type::PrimitiveType(Ast::Type::PrimitiveKind::BOOL), e.loc()
-			);
-			auto lhs_is_null = lhs.type().as_null_type() != nullptr;
-			auto rhs_is_null = rhs.type().as_null_type() != nullptr;
+		case BinOp::SHL:
+		case BinOp::SHR: {
+			const auto* lhs_primitive = mpark::get_if<PrimitiveType>(&lhs_type);
+			if (lhs_primitive == nullptr || !is_integer(*lhs_primitive)) {
+				m_errors.add<ExpectedIntegerType>(
+					location(e.lhs()), to_string(lhs_type));
+				return IntegerConst(0);
+			}
+			const auto* rhs_primitive = mpark::get_if<PrimitiveType>(&rhs_type);
+			if (rhs_primitive == nullptr || !is_integer(*rhs_primitive)) {
+				m_errors.add<ExpectedIntegerType>(
+					location(e.rhs()), to_string(rhs_type));
+				return IntegerConst(0);
+			}
+			return BinaryExpr(std::move(lhs), op, std::move(rhs), *lhs_primitive);
+		}
 
-			auto lhs_is_object = lhs.type().as_object_type() != nullptr;
-			auto rhs_is_object = rhs.type().as_object_type() != nullptr;
+		case BinOp::LAND:
+		case BinOp::LOR: {
+			const auto* lhs_primitive = mpark::get_if<PrimitiveType>(&lhs_type);
+			if (lhs_primitive == nullptr || *lhs_primitive != PrimitiveType::BOOL) {
+				m_errors.add<ExpectedBooleanType>(
+					location(e.lhs()), to_string(lhs_type));
+				return IntegerConst(0);
+			}
 
-			if (lhs_is_null || rhs_is_null || lhs_is_object || rhs_is_object) {
-				if (lhs_is_null || rhs_is_null) {
-					// Allow all kinds of comparisons with the null pointer constant
-					break;
+			const auto* rhs_primitive = mpark::get_if<PrimitiveType>(&rhs_type);
+			if (rhs_primitive == nullptr || *rhs_primitive != PrimitiveType::BOOL) {
+				m_errors.add<ExpectedBooleanType>(
+					location(e.rhs()), to_string(rhs_type));
+				return IntegerConst(0);
+			}
+			return BinaryExpr(std::move(lhs), op, std::move(rhs), PrimitiveType::BOOL);
+		}
+
+		case BinOp::EQ:
+		case BinOp::NE: {
+			if (mpark::holds_alternative<PrimitiveType>(lhs_type) && lhs_type != rhs_type) {
+				m_errors.add<IncorrectType>(
+					location(e.rhs()), to_string(lhs_type), to_string(rhs_type));
+				return IntegerConst(0);
+			}
+			bool lhs_is_null = mpark::holds_alternative<NullptrType>(lhs_type);
+			bool rhs_is_null = mpark::holds_alternative<NullptrType>(rhs_type);
+
+			if (lhs_is_null && rhs_is_null) {
+				return BooleanConst(op == BinOp::EQ);
+			}
+			if (!lhs_is_null && !rhs_is_null) {
+				if (lhs_type != rhs_type) {
+					m_errors.add<IncorrectType>(
+						location(e.rhs()), to_string(lhs_type), to_string(rhs_type));
+					return IntegerConst(0);
 				}
 			}
 
-			if (lhs.type() != rhs.type()) {
-				m_errors.add<Ast::SemanticError::IncorrectType>(
-					rhs.loc(),
-					TypePrinter::to_string(lhs.type()),
-					TypePrinter::to_string(rhs.type())
-				);
-				return;
-			}
-			break;
+			return BinaryExpr(std::move(lhs), op, std::move(rhs), PrimitiveType::BOOL);
 		}
 
-		case Ast::Expr::BinOp::SHL:
-		case Ast::Expr::BinOp::SHR: {
-			if (!lhs_primitive_type->is_integer()) {
-				m_errors.add<SemanticError::ExpectedIntegerType>(
-					lhs.loc(), TypePrinter::to_string(lhs.type())
-				);
-				return;
+		case BinOp::GT:
+		case BinOp::GE:
+		case BinOp::LT:
+		case BinOp::LE: {
+			const auto* lhs_primitive = mpark::get_if<PrimitiveType>(&lhs_type);
+			if (lhs_primitive == nullptr || is_floating_point(*lhs_primitive)) {
+				m_errors.add<ExpectedIntegerType>(
+					location(e.lhs()), to_string(lhs_type));
+				return IntegerConst(0);
 			}
-
-			if (!rhs_primitive_type->is_integer()) {
-				m_errors.add<SemanticError::ExpectedIntegerType>(
-					rhs.loc(), TypePrinter::to_string(rhs.type())
-				);
-				return;
+			if (lhs_type != rhs_type) {
+				m_errors.add<IncorrectType>(
+					location(e.rhs()), to_string(lhs_type), to_string(rhs_type));
+				return IntegerConst(0);
 			}
-			break;
+			return BinaryExpr(std::move(lhs), op, std::move(rhs), PrimitiveType::BOOL);
+		}
 		}
 
-		}
-
-		m_res_expr = Ast::Expr(
-			Ast::Expr::Binary(std::move(lhs), op, std::move(rhs)),
-			std::move(type),
-			e.loc()
-		);
+		unreachable("Forgot to handle operand");
 	}
 
-	void visit(const Cst::Expr::VariableExpr& e) override
+	Expr operator()(const Cst::IndexExpr& e)
 	{
-		const auto& name = e.name();
-		auto* var = m_symtab.find_variable(name.ident());
-		if (var != nullptr) {
-			m_res_expr = Ast::Expr(Ast::Expr::VariableExpr(*var), var->type(), e.loc());
-			return;
-		}
-
-		const auto* field = m_curr_class->find_field(name.ident());
-		if (field != nullptr) {
-			Cst::Expr::This made_up_this_expr(e.loc());
-			made_up_this_expr.accept(*this);
-			m_res_expr = Ast::Expr(
-				Ast::Expr::FieldAccess(std::move(m_res_expr), *field),
-				field->type(),
-				e.loc()
-			);
-			return;
-		}
-
-		m_errors.add<SemanticError::MissingDefinition>(
-			name.ident(),
-			Ast::ErrorKind::VARIABLE,
-			name.loc()
-		);
-		m_res_expr = Ast::Expr();
-	}
-
-	void visit(const Cst::Expr::Unary& e) override
-	{
-		e.expr().accept(*this);
-		auto expr = std::move(m_res_expr);
-		m_res_expr = Ast::Expr();
-		if (!expr.valid()) {
-			return;
-		}
-
-		const auto* primitive_type = expr.type().as_primitive_type();
-		if (primitive_type == nullptr) {
-			m_errors.add<Ast::SemanticError::ExpectedPrimitiveType>(
-				e.loc(), TypePrinter::to_string(expr.type())
-			);
-			return;
-		}
-
-		if ((e.op() == Cst::UnOp::PLUS || e.op() == Cst::UnOp::MINUS)
-				&& primitive_type->is_boolean()) {
-			m_errors.add<Ast::SemanticError::IncorrectType>(
-				m_curr_class->pools_begin()->get().type().loc(),
-				TypePrinter::to_string(*primitive_type),
-				TypePrinter::to_string(
-					Ast::Type::PrimitiveType(Ast::Type::PrimitiveKind::BOOL)
-				)
-			);
-			return;
-		}
-
-		Ast::Expr::UnOp op;
-		switch (e.op()) {
-		case Cst::UnOp::PLUS:
-			op = Ast::Expr::UnOp::PLUS;
-			break;
-
-		case Cst::UnOp::MINUS:
-			op = Ast::Expr::UnOp::MINUS;
-			break;
-
-		case Cst::UnOp::NOT:
-			op = Ast::Expr::UnOp::NOT;
-			break;
-		}
-
-		m_res_expr = Ast::Expr(
-			Ast::Expr::Unary(op, std::move(expr)),
-			expr.type(),
-			e.loc()
-		);
-	}
-
-	void visit(const Cst::Expr::IndexExpr& e) override
-	{
-		e.idx().accept(*this);
-		auto expr = std::move(m_res_expr);
-		m_res_expr = Ast::Expr();
-		if (!expr.valid()) {
-			return;
-		}
-
-		const auto* primitive_type = expr.type().as_primitive_type();
-		if (primitive_type == nullptr || !primitive_type->is_integer()) {
-			m_errors.add<Ast::SemanticError::ExpectedIntegerType>(
-				expr.loc(), TypePrinter::to_string(expr.type())
-			);
-			return;
-		}
-
-		const auto& pool_name = e.pool();
-		const auto* pool = m_symtab.find_pool(pool_name.ident());
+		const auto* pool = m_scopes.find_pool(e.pool().ident());
 		if (pool == nullptr) {
-			m_errors.add<Ast::SemanticError::MissingDefinition>(
-				pool_name.ident(), Ast::ErrorKind::POOL, expr.loc()
-			);
-			return;
+			m_errors.add<MissingDefinition>(
+				e.pool().ident(), ErrorKind::POOL, e.pool().loc());
+			return IntegerConst(0);
 		}
 
-		auto type = PoolTypeToObjectType::convert(pool->type());
+		auto idx = mpark::visit(*this, e.idx());
+		auto type = expr_type(idx);
 
-		m_res_expr = Ast::Expr(
-			Ast::Expr::IndexExpr(*pool, std::move(expr)),
-			std::move(type),
-			e.loc()
-		);
+		const auto* primitive_type = mpark::get_if<PrimitiveType>(&type);
+		if (primitive_type == nullptr || !is_integer(*primitive_type)) {
+			m_errors.add<ExpectedIntegerType>(location(e.idx()), to_string(type));
+			return IntegerConst(0);
+		}
+
+		return IndexExpr(*pool, std::move(idx));
 	}
 
-	void visit(const Cst::Expr::MethodCall& e) override
+	Expr operator()(const Cst::VariableExpr& e)
 	{
-		const auto& name = e.name();
-		const auto* method = m_curr_class->find_method(name.ident());
+		const auto* var = m_scopes.find_variable(e.name().ident());
+		if (var != nullptr) {
+			return VariableExpr(*var);
+		}
+
+		const auto* field = m_scopes.find_field(e.name().ident());
+		if (field != nullptr) {
+			return FieldAccess(
+				ThisExpr(m_class.this_object_type()),
+				*field,
+				field->type());
+		}
+
+		m_errors.add<MissingDefinition>(
+			e.name().ident(), ErrorKind::VARIABLE, e.name().loc());
+		return IntegerConst(0);
+	}
+
+	Expr operator()(const Cst::MethodCall& e)
+	{
+		const auto* method = m_class.find_method(e.name().ident());
+		if (method == nullptr) {
+			m_errors.add<MissingDefinition>(
+				e.name().ident(), ErrorKind::METHOD, e.name().loc());
+			return IntegerConst(0);
+		}
+		const auto& method_params = method->params();
+
+		std::vector<Expr> args;
+		for (const auto& cst_arg: e.params()) {
+			args.emplace_back(mpark::visit(*this, cst_arg));
+		}
+		if (args.size() != method_params.size()) {
+			m_errors.add<IncorrectArgsNumber>(
+				e.loc(), method_params.size(), args.size());
+			return IntegerConst(0);
+		}
+
+		bool type_mismatch = false;
+		for (size_t i = 0; i < args.size(); i++) {
+			if (!assignable_from(method_params[i].type(), expr_type(args[i]))) {
+				m_errors.add<NonAssignableType>(
+					location(e.params()[i]),
+					to_string(method_params[i].type()),
+					to_string(expr_type(args[i])));
+				type_mismatch = true;
+			}
+		}
+
+		if (type_mismatch) {
+			return IntegerConst(0);
+		}
+
+		return MethodCall(
+			*method,
+			ThisExpr(m_class.this_object_type()),
+			std::move(args),
+			method->return_type());
+	}
+
+	Expr operator()(const Cst::MemberMethodCall& e)
+	{
+		auto this_expr = mpark::visit(*this, e.this_expr());
+		auto this_type = expr_type(this_expr);
+		const auto* obj_type = mpark::get_if<ObjectType>(&this_type);
+		if (obj_type == nullptr) {
+			m_errors.add<ExpectedObjectType>(
+				location(e.this_expr()),
+				to_string(obj_type));
+			return IntegerConst(0);
+		}
+
+		const auto& clazz = obj_type->of_class();
+		const auto* method = clazz.find_method(e.name().ident());
 
 		if (method == nullptr) {
-			m_errors.add<SemanticError::MissingDefinition>(
-				e.name().ident(),
-				Ast::ErrorKind::METHOD,
-				e.name().loc()
-			);
-			m_res_expr = Ast::Expr();
-			return;
+			m_errors.add<MissingDefinition>(
+				e.name().ident(), ErrorKind::METHOD, e.name().loc());
+			return IntegerConst(0);
+		}
+		const auto& method_params = method->params();
+
+		std::vector<Expr> args;
+		for (const auto& cst_arg: e.args()) {
+			args.emplace_back(mpark::visit(*this, cst_arg));
+		}
+		if (args.size() != method_params.size()) {
+			m_errors.add<IncorrectArgsNumber>(
+				e.loc(), method_params.size(), args.size());
+			return IntegerConst(0);
 		}
 
-		if (method->num_params() != e.num_args()) {
-			m_errors.add<SemanticError::IncorrectArgsNumber>(
-				e.name().loc(),
-				method->num_params(),
-				e.num_args()
-			);
-			m_res_expr = Ast::Expr();
-			return;
-		}
-
-		std::vector<Ast::Expr> args;
-
-		auto param_it = method->params_begin();
-		auto expr_it = e.begin();
-
-		for (; param_it != method->params_end(); param_it++, expr_it++) {
-			expr_it->accept(*this);
-			auto expr = std::move(m_res_expr);
-			if (!expr.valid()) {
-				m_res_expr = Ast::Expr();
-				return;
+		bool type_mismatch = false;
+		for (size_t i = 0; i < args.size(); i++) {
+			auto remapped_type =
+				obj_type->remap_formal_pool_params(method_params[i].type());
+			if (!assignable_from(remapped_type, expr_type(args[i]))) {
+				m_errors.add<NonAssignableType>(
+					location(e.args()[i]),
+					to_string(method_params[i].type()),
+					to_string(expr_type(args[i])));
+				type_mismatch = true;
 			}
-
-			if (!expr.type().assignable_to(param_it->type())) {
-				m_errors.add<Ast::SemanticError::NonAssignableType>(
-					expr.loc(),
-					TypePrinter::to_string(expr.type()),
-					TypePrinter::to_string(param_it->type())
-				);
-				m_res_expr = Ast::Expr();
-				return;
-			}
-
-			args.emplace_back(std::move(expr));
 		}
 
-		auto type = method->return_type() != nullptr
-			? *method->return_type()
-			: Ast::Type();
+		if (type_mismatch) {
+			return IntegerConst(0);
+		}
 
-		Ast::Expr this_expr(
-			Ast::Expr::This(make_this_type()),
-			Ast::Type(make_this_type(), e.loc()),
-			e.loc()
-		);
-
-		m_res_expr = Ast::Expr(
-			Ast::Expr::MethodCall(*method, std::move(this_expr), std::move(args)),
-			std::move(type),
-			e.loc()
-		);
+		return MethodCall(
+			*method,
+			std::move(this_expr),
+			std::move(args),
+			obj_type->remap_formal_pool_params(method->return_type()));
 	}
 
-	void visit(const Cst::Expr::MemberMethodCall& e) override
+	Expr operator()(const Cst::FieldAccess& e)
 	{
-		e.this_expr().accept(*this);
-		auto expr = std::move(m_res_expr);
-		m_res_expr = Ast::Expr();
-		if (!m_res_expr.valid()) {
-			return;
+		auto expr = mpark::visit(*this, e.expr());
+		auto type = expr_type(expr);
+		const auto* as_obj_type = mpark::get_if<ObjectType>(&type);
+		if (as_obj_type == nullptr) {
+			m_errors.add<ExpectedObjectType>(location(e.expr()), to_string(type));
+			return IntegerConst(0);
 		}
 
-		auto* object_type = expr.type().as_object_type();
-		if (object_type == nullptr) {
-			m_errors.add<SemanticError::ExpectedObjectType>(
-				expr.loc(),
-				TypePrinter::to_string(expr.type())
-			);
-			return;
-		}
-
-		const auto& name = e.method_name();
-		const auto* method = object_type->of_class().find_method(name.ident());
-		if (method == nullptr) {
-			m_errors.add<SemanticError::MissingDefinition>(
-				name.ident(),
-				Ast::ErrorKind::METHOD,
-				name.loc()
-			);
-			return;
-		}
-
-		if (method->num_params() != e.num_args()) {
-			m_errors.add<SemanticError::IncorrectArgsNumber>(
-				name.loc(),
-				method->num_params(),
-				e.num_args()
-			);
-			m_res_expr = Ast::Expr();
-			return;
-		}
-
-		std::vector<Ast::Expr> args;
-		for (auto& arg: e) {
-			arg.accept(*this);
-		}
-
-		auto return_type = (method->return_type() == nullptr)
-			? Ast::Type(Ast::Type::VoidType())
-			: substitute_parameters(*object_type, *method->return_type());
-
-		m_res_expr = Ast::Expr(
-			Ast::Expr::MethodCall(*method, std::move(expr), std::move(args)),
-			return_type,
-			e.loc()
-		);
-	}
-
-	void visit(const Cst::Expr::FieldAccess& e) override
-	{
-		e.expr().accept(*this);
-		auto expr = std::move(m_res_expr);
-		m_res_expr = Ast::Expr();
-		if (!m_res_expr.valid()) {
-			return;
-		}
-
-		auto* object_type = expr.type().as_object_type();
-		if (object_type == nullptr) {
-			m_errors.add<SemanticError::ExpectedObjectType>(
-				expr.loc(),
-				TypePrinter::to_string(expr.type())
-			);
-			return;
-		}
-
-		const auto& name = e.field();
-		const auto* field = object_type->of_class().find_field(name.ident());
+		const auto* field = as_obj_type->of_class().find_field(e.field().ident());
 		if (field == nullptr) {
-			m_errors.add<SemanticError::MissingDefinition>(
-				name.ident(),
-				Ast::ErrorKind::FIELD,
-				name.loc()
-			);
-			return;
+			m_errors.add<MissingDefinition>(
+				e.field().ident(), ErrorKind::FIELD, e.field().loc());
+			return IntegerConst(0);
 		}
 
-		m_res_expr = Ast::Expr(
-			Ast::Expr::FieldAccess(std::move(expr), *field),
-			substitute_parameters(*object_type, field->type()),
-			e.loc()
-		);
+		Type new_type;
+		const auto& field_type = field->type();
+		const auto* as_field_obj_type = mpark::get_if<ObjectType>(&field_type);
+		if (as_field_obj_type != nullptr) {
+			type = as_field_obj_type->remap_formal_pool_params(*as_obj_type);
+		} else {
+			new_type = field_type;
+		}
+
+		return FieldAccess(
+			std::move(expr), *field, std::move(new_type));
 	}
 
-	void visit(const Cst::Expr::New& e) override
+	Expr operator()(const Cst::NewExpr& e)
 	{
-		e.type().accept(*this);
-		auto type = std::move(m_res_type);
-		m_res_type = Ast::Type();
-
-		if (!type.valid()) {
-			return;
+		TypeConstructor type_ctor(m_ast, m_scopes, m_errors);
+		auto maybe_type = type_ctor(e.type());
+		auto* type = mpark::get_if<ObjectType>(&maybe_type);
+		if (type == nullptr) {
+			return IntegerConst(0);
 		}
 
-		m_res_expr = Ast::Expr(
-			Ast::Expr::New(*type.as_object_type()),
-			Ast::Type(*type.as_object_type(), e.type().loc()),
-			e.loc()
-		);
+		return NewExpr(std::move(*type));
 	}
 
-	void visit(const Cst::Stmt::Assignment& e) override
-	{
-		e.lhs().accept(*this);
-		auto lhs = std::move(m_res_expr);
+	std::vector<Stmt> get_body() { return m_blocks.pop_block(); }
+};
 
-		e.rhs().accept(*this);
-		auto rhs = std::move(m_res_expr);
+static void collect_method_bodies(
+	const Cst::Program& cst, Program& ast, SemanticErrorList& errors)
+{
+	for (const auto& c: cst.classes()) {
+		auto* clazz = ast.find_class(c.name().ident());
+		assert_msg(clazz != nullptr, "Class cannot be null");
 
-		m_res_expr = Ast::Expr();
+		for (const auto& m: c.methods()) {
+			auto* method = clazz->find_method(m.name().ident());
+			assert_msg(method != nullptr, "Method cannot be null");
 
-		if (!lhs.valid() || !rhs.valid()) {
-			return;
+			MethodBodyCollector collector(ast, *clazz, *method, errors);
+			collector(m.body());
+			method->set_body(collector.get_body());
 		}
-
-		if (!lhs.is_lvalue()) {
-			m_errors.add<Ast::SemanticError::NotLvalue>(lhs.loc());
-			return;
-		}
-
-		if (!rhs.type().assignable_to(lhs.type())) {
-			m_errors.add<Ast::SemanticError::NonAssignableType>(
-				rhs.loc(),
-				TypePrinter::to_string(rhs.type()),
-				TypePrinter::to_string(lhs.type())
-			);
-			return;
-		}
-
-		m_blocks.add<Ast::Stmt::Assignment>(
-			std::move(lhs), std::move(rhs)
-		);
 	}
+}
 
-	void visit(const Cst::Stmt::OpAssignment& e) override
-	{
-		e.lhs().accept(*this);
-		auto lhs = std::move(m_res_expr);
-
-		e.rhs().accept(*this);
-		auto rhs = std::move(m_res_expr);
-
-		m_res_expr = Ast::Expr();
-
-		if (!lhs.valid() || !rhs.valid()) {
-			return;
-		}
-
-		if (!lhs.is_lvalue()) {
-			m_errors.add<Ast::SemanticError::NotLvalue>(lhs.loc());
-			return;
-		}
-
-		const auto* lhs_primitive_type = lhs.type().as_primitive_type();
-		if (lhs_primitive_type == nullptr) {
-			m_errors.add<Ast::SemanticError::ExpectedPrimitiveType>(
-				lhs.loc(), TypePrinter::to_string(lhs.type())
-			);
-			return;
-		}
-
-		const auto* rhs_primitive_type = rhs.type().as_primitive_type();
-		if (rhs_primitive_type == nullptr) {
-			m_errors.add<Ast::SemanticError::ExpectedPrimitiveType>(
-				rhs.loc(), TypePrinter::to_string(rhs.type())
-			);
-			return;
-		}
-
-		auto op = to_ast_binop(e.op());
-
-		switch (op) {
-		case Ast::Expr::BinOp::PLUS:
-		case Ast::Expr::BinOp::MINUS:
-		case Ast::Expr::BinOp::TIMES:
-		case Ast::Expr::BinOp::DIV: {
-			if (lhs.type() != rhs.type()) {
-				m_errors.add<Ast::SemanticError::IncorrectType>(
-					rhs.loc(),
-					TypePrinter::to_string(lhs.type()),
-					TypePrinter::to_string(rhs.type())
-				);
-				return;
-			}
-
-			if (!lhs_primitive_type->is_integer() && !lhs_primitive_type->is_floating_point()) {
-				m_errors.add<SemanticError::ExpectedNumericType>(
-					e.lhs().loc(), TypePrinter::to_string(lhs.type())
-				);
-				return;
-			}
-			break;
-		}
-
-		case Ast::Expr::BinOp::AND:
-		case Ast::Expr::BinOp::OR:
-		case Ast::Expr::BinOp::XOR: {
-			if (lhs.type() != rhs.type()) {
-				m_errors.add<Ast::SemanticError::IncorrectType>(
-					rhs.loc(),
-					TypePrinter::to_string(lhs.type()),
-					TypePrinter::to_string(rhs.type())
-				);
-				return;
-			}
-
-			if (!lhs_primitive_type->is_integer()) {
-				m_errors.add<SemanticError::ExpectedIntegerType>(
-					e.lhs().loc(), TypePrinter::to_string(lhs.type())
-				);
-				return;
-			}
-			break;
-		}
-
-		case Ast::Expr::BinOp::SHL:
-		case Ast::Expr::BinOp::SHR: {
-			if (!lhs_primitive_type->is_integer()) {
-				m_errors.add<SemanticError::ExpectedIntegerType>(
-					lhs.loc(), TypePrinter::to_string(lhs.type())
-				);
-				return;
-			}
-
-			if (!rhs_primitive_type->is_integer()) {
-				m_errors.add<SemanticError::ExpectedIntegerType>(
-					rhs.loc(), TypePrinter::to_string(rhs.type())
-				);
-				return;
-			}
-			break;
-
-		default:
-			// Never occurs
-			assert(false);
-		}
-
-		}
-
-		m_blocks.add<Ast::Stmt::OpAssignment>(
-			std::move(lhs), op, std::move(rhs)
-		);
-	}
-
-	void visit(const Cst::Stmt::If& e) override
-	{
-		e.cond().accept(*this);
-		auto cond = std::move(m_res_expr);
-		m_res_expr = Ast::Expr();
-		if (!cond.valid()) {
-			cond = Ast::Expr(
-				Ast::Expr::BooleanConst(false),
-				Ast::Type(
-					Ast::Type::PrimitiveType(Ast::Type::PrimitiveKind::BOOL),
-					e.cond().loc()
-				),
-				e.cond().loc()
-			);
-		}
-
-		const auto* primitive_type = cond.type().as_primitive_type();
-		if (primitive_type == nullptr || primitive_type->is_boolean()) {
-			m_errors.add<Ast::SemanticError::ExpectedPrimitiveType>(
-				cond.loc(), TypePrinter::to_string(cond.type())
-			);
-			cond = Ast::Expr(
-				Ast::Expr::BooleanConst(false),
-				Ast::Type(
-					Ast::Type::PrimitiveType(Ast::Type::PrimitiveKind::BOOL),
-					e.cond().loc()
-				),
-				e.cond().loc()
-			);
-		}
-
-		m_symtab.push_scope();
-		m_blocks.push_block();
-		e.then_branch().accept(*this);
-		auto then_branch = m_blocks.pop_block();
-		m_symtab.pop_scope();
-
-		m_symtab.push_scope();
-		m_blocks.push_block();
-		e.else_branch().accept(*this);
-		auto else_branch = m_blocks.pop_block();
-		m_symtab.pop_scope();
-
-		m_blocks.add<Ast::Stmt::If>(
-			std::move(cond), std::move(then_branch), std::move(else_branch)
-		);
-	}
-
-	void visit(const Cst::Stmt::While& e) override
-	{
-		e.cond().accept(*this);
-		auto cond = std::move(m_res_expr);
-		m_res_expr = Ast::Expr();
-		if (!cond.valid()) {
-			cond = Ast::Expr(
-				Ast::Expr::BooleanConst(false),
-				Ast::Type(
-					Ast::Type::PrimitiveType(Ast::Type::PrimitiveKind::BOOL),
-					e.cond().loc()
-				),
-				e.cond().loc()
-			);
-		}
-
-		const auto* primitive_type = cond.type().as_primitive_type();
-		if (primitive_type == nullptr || primitive_type->is_boolean()) {
-			m_errors.add<Ast::SemanticError::ExpectedPrimitiveType>(
-				cond.loc(), TypePrinter::to_string(cond.type())
-			);
-			cond = Ast::Expr(
-				Ast::Expr::BooleanConst(false),
-				Ast::Type(
-					Ast::Type::PrimitiveType(Ast::Type::PrimitiveKind::BOOL),
-					e.cond().loc()
-				),
-				e.cond().loc()
-			);
-		}
-
-		m_symtab.push_scope();
-		m_blocks.push_block();
-		e.body().accept(*this);
-		auto body = m_blocks.pop_block();
-		m_symtab.pop_scope();
-
-		m_blocks.add<Ast::Stmt::While>(std::move(cond), std::move(body));
-	}
-
-	void visit(const Cst::Stmt::ForeachRange& e) override
-	{
-		e.range_begin().accept(*this);
-		auto range_begin = std::move(m_res_expr);
-
-		e.range_end().accept(*this);
-		auto range_end = std::move(m_res_expr);
-
-		if (!range_begin.valid() || !range_end.valid()) {
-			return;
-		}
-
-		const auto* primitive_type = range_begin.type().as_primitive_type();
-		if (primitive_type == nullptr || !primitive_type->is_integer()) {
-			m_errors.add<Ast::SemanticError::ExpectedIntegerType>(
-				range_begin.loc(), TypePrinter::to_string(range_begin.type())
-			);
-			return;
-		}
-
-		if (range_begin.type() != range_end.type()) {
-			m_errors.add<Ast::SemanticError::IncorrectType>(
-				range_end.loc(),
-				TypePrinter::to_string(range_begin.type()),
-				TypePrinter::to_string(range_end.type())
-			);
-			return;
-		}
-
-		m_symtab.push_scope();
-		m_blocks.push_block();
-
-		auto& var = m_curr_method->add_variable(
-			e.var().ident(), range_begin.type(), e.var().loc()
-		);
-		m_symtab.add_variable(e.var().ident(), var);
-
-		e.body().accept(*this);
-
-		auto stmts = m_blocks.pop_block();
-		m_symtab.pop_scope();
-
-		m_blocks.add<Ast::Stmt::ForeachRange>(
-			var, std::move(range_begin), std::move(range_end), std::move(stmts)
-		);
-	}
-
+/*
+class MethodBodiesCollector final: public Cst::DefaultVisitor
+{
 	void visit(const Cst::Stmt::ForeachPool& e) override
 	{
 		const auto* pool = m_symtab.find_pool(e.pool().ident());
 		if (pool == nullptr) {
-			m_errors.add<SemanticError::MissingDefinition>(
+			m_errors.add<MissingDefinition>(
 				e.pool().ident(),
-				Ast::ErrorKind::POOL,
+				ErrorKind::POOL,
 				e.pool().loc()
 			);
 			return;
@@ -2315,144 +1556,42 @@ public:
 		auto stmts = m_blocks.pop_block();
 		m_symtab.pop_scope();
 
-		m_blocks.add<Ast::Stmt::ForeachPool>(
+		m_blocks.add<Stmt::ForeachPool>(
 			var, *pool, std::move(stmts)
 		);
 	}
-
-	void visit(const Cst::Stmt::Block& e) override
-	{
-		m_symtab.push_scope();
-		m_blocks.push_block();
-
-		visit(e.begin(), e.end());
-
-		auto stmts = m_blocks.pop_block();
-		m_blocks.add(stmts.begin(), stmts.end());
-		m_symtab.pop_scope();
-	}
-
-	void visit(const Cst::Stmt::ExprStmt& e) override
-	{
-		e.expr().accept(*this);
-		auto expr = std::move(m_res_expr);
-		if (!expr.valid()) {
-			return;
-		}
-
-		m_blocks.add<Ast::Stmt::ExprStmt>(std::move(expr));
-	}
-
-	void visit(const Cst::Stmt::Break& e) override
-	{
-		if (loop_nesting_count == 0) {
-			m_errors.add<SemanticError::NotInsideLoop>(e.loc());
-			return;
-		}
-
-		m_blocks.add<Ast::Stmt::Break>();
-	}
-
-	void visit(const Cst::Stmt::Continue& e) override
-	{
-		if (loop_nesting_count == 0) {
-			m_errors.add<SemanticError::NotInsideLoop>(e.loc());
-			return;
-		}
-
-		m_blocks.add<Ast::Stmt::Continue>();
-	}
-
-	void visit(const Cst::Stmt::Return& e) override
-	{
-		e.expr().accept(*this);
-		auto expr = std::move(m_res_expr);
-		if (!m_res_expr.valid()) {
-			return;
-		}
-
-		if (m_curr_method->return_type() == nullptr) {
-			m_errors.add<Ast::SemanticError::ReturnWithExpression>(e.expr().loc());
-			return;
-		}
-
-		if (!expr.type().assignable_to(*m_curr_method->return_type())) {
-			m_errors.add<Ast::SemanticError::NonAssignableType>(
-				e.expr().loc(),
-				TypePrinter::to_string(expr.type()),
-				TypePrinter::to_string(*m_curr_method->return_type())
-			);
-			return;
-		}
-	}
-
-	void visit(const Cst::Stmt::ReturnVoid& e) override
-	{
-		if (m_curr_method->return_type() != nullptr) {
-			m_errors.add<Ast::SemanticError::ReturnWithoutExpression>(e.loc());
-		}
-
-		m_blocks.add<Ast::Stmt::Return>();
-	}
-
-	void visit(const Cst::Method& e) override
-	{
-		m_curr_method = m_curr_class->find_method(e.name().ident());
-		for (auto it = m_curr_method->params_begin(); it != m_curr_method->params_end(); it++) {
-			m_symtab.add_variable(it->name(), *it);
-		}
-
-		m_symtab.push_scope();
-		m_blocks.push_block();
-
-		Cst::DefaultVisitor::visit(e);
-		m_curr_method->set_body(m_blocks.pop_block());
-		m_symtab.pop_scope();
-
-		m_curr_class = nullptr;
-	}
-
-	void visit(const Cst::Class& e) override
-	{
-		m_curr_class = m_ast.find_class(e.name().ident());
-		m_symtab.set_class(*m_curr_class);
-
-		m_symtab.push_scope();
-		for (auto it = m_curr_class->pools_begin(); it != m_curr_class->pools_end(); it++) {
-			auto& ref = it->get();
-			m_symtab.add_pool(ref.name(), ref);
-		}
-
-		Cst::DefaultVisitor::visit(e);
-
-		m_curr_class = nullptr;
-	}
-
-	static void collect(const Cst::Program& cst, Ast::Program& ast, Ast::SemanticErrorList& errors)
-	{
-		MethodBodiesCollector collector(ast, errors);
-		cst.accept(collector);
-	}
 };
+*/
 
-void Ast::run_semantic_analysis(const Cst::Program& cst, Ast::Program& ast, Ast::SemanticErrorList& errors)
+void run_semantic_analysis(const Cst::Program& cst, Program& ast, SemanticErrorList& errors)
 {
-	Ast::Program program;
-
-	ClassLayoutMembersCollector::collect(cst, ast, errors);
+	Program program;
+	collect_classes_fields_pool_params(cst, ast, errors);
 	if (errors.has_errors()) {
 		return;
 	}
 
-	MemberTypesCollector::collect(cst, ast, errors);
+	collect_layouts(cst, ast, errors);
 	if (errors.has_errors()) {
 		return;
 	}
 
-	MethodBodiesCollector::collect(cst, ast, errors);
+	collect_pool_field_method_types(cst, ast, errors);
+	if (errors.has_errors()) {
+		return;
+	}
+
+	validate_top_level_types(ast, errors);
+	if (errors.has_errors()) {
+		return;
+	}
+
+	collect_method_bodies(cst, ast, errors);
 	if (errors.has_errors()) {
 		return;
 	}
 
 	ast = std::move(program);
 }
+
+} // namespace Ast
