@@ -131,6 +131,7 @@ public:
 };
 
 using PoolType = mpark::variant<LayoutType, BoundType, NoneType>;
+const Class& for_class(const PoolType& type);
 std::ostream& operator<<(std::ostream& os, const PoolType& type);
 bool compatible_with_bound(const PoolType& type, const BoundType& bound);
 bool first_pool_param_is(const PoolType& type, const Pool& pool);
@@ -571,11 +572,18 @@ public:
 	void add_field(const Field& field) { m_fields.emplace_back(&field); }
 };
 
+struct FieldPos
+{
+	size_t cluster_idx;
+	size_t pos;
+};
+
 class Layout
 {
 	std::string m_name;
 	const Class& m_class;
 	std::vector<Cluster> m_clusters;
+	std::unordered_map<const Field*, FieldPos> m_field_map;
 	Location m_loc;
 
 public:
@@ -600,6 +608,8 @@ public:
 		m_clusters.emplace_back(loc);
 		return m_clusters.back();
 	}
+
+	void build_field_map();
 };
 
 class Assignment;
@@ -802,6 +812,7 @@ class Class
 	std::vector<std::reference_wrapper<Pool>> m_pools;
 
 	std::unordered_map<std::string, Field> m_field_map;
+	std::unordered_map<const Field*, size_t> m_field_indices;
 	std::vector<std::reference_wrapper<Field>> m_fields;
 
 	std::unordered_map<std::string, Method> m_method_map;
@@ -853,6 +864,8 @@ public:
 	const std::vector<std::reference_wrapper<const Layout>>& layouts() const {
 		return m_layouts;
 	}
+
+	size_t index_of(const Field& field) const;
 
 	void add_layout(const Layout& layout) { m_layouts.emplace_back(layout); }
 

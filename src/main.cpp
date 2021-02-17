@@ -7,6 +7,8 @@
 #include "ast.h"
 #include "semantic_analysis.h"
 
+#include "ir.h"
+
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
@@ -269,6 +271,8 @@ int main(int argc, char** argv)
 
 	yylex_destroy(scanner);
 
+	fclose(in);
+
 	if (syntax_errors.has_errors()) {
 		for (auto it = syntax_errors.begin(); it != syntax_errors.end(); it++) {
 			const auto& e = *it;
@@ -279,8 +283,7 @@ int main(int argc, char** argv)
 					e.msg().c_str());
 		}
 
-		fclose(in);
-		return EXIT_SUCCESS;
+		return EXIT_FAILURE;
 	}
 
 	Ast::Program ast;
@@ -295,10 +298,11 @@ int main(int argc, char** argv)
 			fprintf(stderr, "\n");
 		}
 
-		fclose(in);
-		return EXIT_SUCCESS;
+		return EXIT_FAILURE;
 	}
 
-	fclose(in);
+	Ir::init_llvm();
+	Ir::ir(ast);
+
 	return EXIT_SUCCESS;
 }

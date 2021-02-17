@@ -218,6 +218,7 @@ static void collect_layouts(
 			}
 		}
 
+		new_layout->build_field_map();
 		for_class->add_layout(*new_layout);
 	}
 }
@@ -1525,43 +1526,6 @@ static void collect_method_bodies(
 		}
 	}
 }
-
-/*
-class MethodBodiesCollector final: public Cst::DefaultVisitor
-{
-	void visit(const Cst::Stmt::ForeachPool& e) override
-	{
-		const auto* pool = m_symtab.find_pool(e.pool().ident());
-		if (pool == nullptr) {
-			m_errors.add<MissingDefinition>(
-				e.pool().ident(),
-				ErrorKind::POOL,
-				e.pool().loc()
-			);
-			return;
-		}
-
-		m_symtab.push_scope();
-		m_blocks.push_block();
-
-		auto& var = m_curr_method->add_variable(
-			e.var().ident(),
-			PoolTypeToObjectType::convert(pool->type()),
-			e.var().loc()
-		);
-		m_symtab.add_variable(e.var().ident(), var);
-
-		e.body().accept(*this);
-
-		auto stmts = m_blocks.pop_block();
-		m_symtab.pop_scope();
-
-		m_blocks.add<Stmt::ForeachPool>(
-			var, *pool, std::move(stmts)
-		);
-	}
-};
-*/
 
 void run_semantic_analysis(const Cst::Program& cst, Program& ast, SemanticErrorList& errors)
 {

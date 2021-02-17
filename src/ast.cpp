@@ -143,6 +143,21 @@ bool first_pool_param_is(const PoolType& type, const Pool& pool)
 	}, type);
 }
 
+struct PoolTypeClass {
+	const Class& operator()(const LayoutType& e) {
+		return e.for_class();
+	}
+	const Class& operator()(const BoundType& e) {
+		return e.of_class();
+	}
+	const Class& operator()(const NoneType&) {
+		unreachable("Can't pass none to formal pool parameter");
+	}
+};
+const Class& for_class(const PoolType& type) {
+	return mpark::visit(PoolTypeClass(), type);
+}
+
 struct PoolToObjType {
 	ObjectType operator()(const LayoutType& e) {
 		return e.to_object_type();
@@ -397,6 +412,20 @@ ForeachPool::ForeachPool(const Variable& var, const Pool& pool, std::vector<Stmt
 	, m_body(std::move(body))
 {}
 
+void Layout::build_field_map()
+{
+	for (size_t i = 0; i < m_clusters.size(); i++) {
+		const auto& fields = m_clusters[i].fields();
+		for (size_t j = 0; j < fields.size(); j++) {
+			FieldPos pos;
+			pos.cluster_idx = i;
+			pos.pos = j;
+
+			m_field_map[fields[i]] = pos;
+		}
+	}
+}
+
 const Pool* Class::find_pool(const std::string& name) const
 {
 	auto it = m_pool_map.find(name);
@@ -472,6 +501,7 @@ std::pair<Field*, bool> Class::add_field(std::string name, const Location& loc)
 		Field(std::move(name), loc)
 		);
 	if (res.second) {
+		m_field_indices[&res.first->second] = m_fields.size();
 		m_fields.emplace_back(res.first->second);
 	}
 	return std::make_pair(&res.first->second, res.second);
@@ -486,6 +516,16 @@ std::pair<Method*, bool> Class::add_method(std::string name, const Location& loc
 		m_methods.emplace_back(res.first->second);
 	}
 	return std::make_pair(&res.first->second, res.second);
+}
+
+size_t Class::index_of(const Field& field) const
+{
+	const auto it = m_field_indices.find(&field);
+	if (it == m_field_indices.end()) {
+		return -1;
+	}
+
+	return it->second;
 }
 
 const Class* Program::find_class(const std::string& name) const
