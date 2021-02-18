@@ -301,8 +301,10 @@ int main(int argc, char** argv)
 		return EXIT_FAILURE;
 	}
 
+#if 0
 	Ir::init_llvm();
 	Ir::ir(ast);
+#endif
 
 	return EXIT_SUCCESS;
 }

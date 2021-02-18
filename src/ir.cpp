@@ -36,6 +36,45 @@ class ClassSpecialization
 	const Ast::Class* m_class = nullptr;
 	std::vector<const Ast::Layout*> m_pool_param_types;
 
+	ClassSpecialization specialize(
+		const Ast::Class& clazz,
+		const std::vector<Ast::PoolParameter>& params) const
+	{
+		const auto& pools = m_class->pools();
+		std::unordered_map<const Ast::Pool*, const Ast::Layout*> mapping;
+		for (size_t i = 0; i < m_pool_param_types.size(); i++) {
+			const Ast::Pool& pool = pools[i];
+			mapping[&pool] = m_pool_param_types[i];
+		}
+
+		std::vector<const Ast::Layout*> param_types;
+		for (const auto& e: params) {
+			const auto* pool_ref = mpark::get_if<Ast::PoolRef>(&e);
+			if (pool_ref == nullptr) {
+				param_types.push_back(nullptr);
+				continue;
+			}
+
+			const Ast::Pool& pool = pool_ref->pool();
+			if (mpark::holds_alternative<Ast::NoneType>(pool.type())) {
+				param_types.push_back(nullptr);
+				continue;
+			}
+
+			const auto* as_layout = mpark::get_if<Ast::LayoutType>(&pool.type());
+			if (as_layout != nullptr) {
+				param_types.push_back(&as_layout->layout());
+				continue;
+			}
+
+			auto it = mapping.find(&pool);
+			assert_msg(it != mapping.end(), "Could not find pool");
+			param_types.push_back(it->second);
+		}
+
+		return ClassSpecialization(clazz, std::move(param_types));
+	}
+
 public:
 	ClassSpecialization(
 			const Ast::Class& clazz,
@@ -56,6 +95,21 @@ public:
 	bool operator!=(const ClassSpecialization& rhs) const {
 		return m_class != rhs.m_class
 			|| !(m_pool_param_types == rhs.m_pool_param_types);
+	}
+
+	ClassSpecialization specialize_type(const Ast::LayoutType& type) const
+	{
+		return specialize(type.for_class(), type.params());
+	}
+
+	ClassSpecialization specialize_type(const Ast::BoundType& type) const
+	{
+		return specialize(type.of_class(), type.params());
+	}
+
+	ClassSpecialization specialize_type(const Ast::ObjectType& type) const
+	{
+		return specialize(type.of_class(), type.params());
 	}
 };
 
@@ -79,6 +133,8 @@ std::ostream& operator<<(std::ostream& os, const ClassSpecialization& specializa
 struct SpecializationInfo
 {
 	llvm::StructType* type = nullptr;
+	llvm::Function* ctor = nullptr;
+
 	std::unordered_map<const Ast::Method*, llvm::Function*> funcs;
 };
 
@@ -90,6 +146,9 @@ class CodegenState
 
 	llvm::Module* m_mod = nullptr;
 
+	llvm::Type* m_void = nullptr;
+
+	llvm::Type* m_i1 = nullptr;
 	llvm::Type* m_i8 = nullptr;
 	llvm::Type* m_i16 = nullptr;
 	llvm::Type* m_i32 = nullptr;
@@ -104,6 +163,15 @@ class CodegenState
 
 	void generate_specializations_impl(
 		const Ast::Class& clazz, std::vector<const Ast::Layout*>& curr_layouts);
+
+	llvm::Type* type_of(
+		const Ast::ObjectType& type, const ClassSpecialization& specialization);
+	llvm::Type* type_of(
+		const Ast::PrimitiveType& type, const ClassSpecialization&);
+	llvm::Type* type_of(
+		const Ast::NullptrType&, const ClassSpecialization&);
+	llvm::Type* type_of(
+		const Ast::VoidType&, const ClassSpecialization&);
 
 public:
 	bool ir(const Ast::Program& ast);
@@ -123,14 +191,6 @@ std::string create_ctor_name(const ClassSpecialization& specialization)
 {
 	std::ostringstream os;
 	os << "_shapes" << specialization << "_C";
-
-	return os.str();
-}
-
-std::string create_alloc_name(const ClassSpecialization& specialization)
-{
-	std::ostringstream os;
-	os << "_shapes" << specialization << "_A";
 
 	return os.str();
 }
@@ -203,6 +263,47 @@ void CodegenState::generate_specializations(const Ast::Class& clazz)
 	generate_specializations_impl(clazz, curr_layouts);
 }
 
+llvm::Type* CodegenState::type_of(const Ast::VoidType&, const ClassSpecialization&)
+{
+	return m_void;
+}
+
+llvm::Type* CodegenState::type_of(const Ast::ObjectType& type, const ClassSpecialization& specialization)
+{
+	auto new_spec = specialization.specialize_type(type);
+	return m_specialization_info[new_spec].type;
+}
+
+llvm::Type* CodegenState::type_of(const Ast::PrimitiveType& type, const ClassSpecialization&)
+{
+	switch (type) {
+	case Ast::PrimitiveType::BOOL:
+		return m_i1;
+
+	case Ast::PrimitiveType::I8:
+	case Ast::PrimitiveType::U8:
+		return m_i8;
+
+	case Ast::PrimitiveType::I16:
+	case Ast::PrimitiveType::U16:
+		return m_i16;
+
+	case Ast::PrimitiveType::I32:
+	case Ast::PrimitiveType::U32:
+		return m_i32;
+
+	case Ast::PrimitiveType::I64:
+	case Ast::PrimitiveType::U64:
+		return m_i64;
+
+	case Ast::PrimitiveType::F32:
+		return m_f32;
+
+	case Ast::PrimitiveType::F64:
+		return m_f64;
+	}
+}
+
 bool CodegenState::ir(const Ast::Program& ast)
 {
 	CodegenState state;
@@ -223,6 +324,9 @@ bool CodegenState::ir(const Ast::Program& ast)
 		llvm::None,
 		llvm::CodeGenOpt::Aggressive);
 
+	m_i1 = llvm::Type::getVoidTy(m_ctx);
+
+	m_i1 = llvm::Type::getInt1Ty(m_ctx);
 	m_i8 = llvm::Type::getInt8Ty(m_ctx);
 	m_i16 = llvm::Type::getInt16Ty(m_ctx);
 	m_i32 = llvm::Type::getInt32Ty(m_ctx);
@@ -254,6 +358,39 @@ bool CodegenState::ir(const Ast::Program& ast)
 		const auto& specialization = e.first;
 		auto& info = e.second;
 
+		const auto* layout = specialization.pool_param_types().front();
+		if (layout != nullptr) {
+			std::vector<llvm::Type*> pool_fields { m_i64, m_i64 };
+
+			size_t count = 0;
+			for (const auto& cluster: layout->clusters()) {
+				std::vector<llvm::Type*> cluster_fields;
+				for (const Ast::Field* e: cluster.fields()) {
+					auto* type = mpark::visit(
+						[this, &specialization](const auto& e) {
+							return type_of(e, specialization);
+					}, e->type());
+					cluster_fields.push_back(type);
+				}
+
+				auto* cluster_type = llvm::StructType::create(
+					m_ctx,
+					cluster_fields,
+					create_cluster_name(specialization, count++));
+				pool_fields.push_back(cluster_type->getPointerTo());
+			}
+			info.type->setBody(pool_fields);
+		} else {
+			std::vector<llvm::Type*> fields;
+			for (const Ast::Field& e: specialization.clazz().fields()) {
+				auto* type = mpark::visit(
+					[this, &specialization](const auto& e) {
+						return type_of(e, specialization);
+				}, e.type());
+				fields.push_back(type);
+			}
+			info.type->setBody(fields);
+		}
 	}
 
 #if 0
