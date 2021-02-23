@@ -147,6 +147,7 @@ class CodegenState
 	llvm::Module* m_mod = nullptr;
 
 	llvm::Type* m_void = nullptr;
+	llvm::Type* m_null = nullptr;
 
 	llvm::Type* m_i1 = nullptr;
 	llvm::Type* m_i8 = nullptr;
@@ -263,6 +264,11 @@ void CodegenState::generate_specializations(const Ast::Class& clazz)
 	generate_specializations_impl(clazz, curr_layouts);
 }
 
+llvm::Type* CodegenState::type_of(const Ast::NullptrType&, const ClassSpecialization&)
+{
+	return m_null;
+}
+
 llvm::Type* CodegenState::type_of(const Ast::VoidType&, const ClassSpecialization&)
 {
 	return m_void;
@@ -324,7 +330,8 @@ bool CodegenState::ir(const Ast::Program& ast)
 		llvm::None,
 		llvm::CodeGenOpt::Aggressive);
 
-	m_i1 = llvm::Type::getVoidTy(m_ctx);
+	m_void = llvm::Type::getVoidTy(m_ctx);
+	m_null = m_void->getPointerTo();
 
 	m_i1 = llvm::Type::getInt1Ty(m_ctx);
 	m_i8 = llvm::Type::getInt8Ty(m_ctx);

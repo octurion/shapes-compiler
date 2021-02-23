@@ -240,8 +240,7 @@ public:
 		: m_class(&class_scope)
 	{
 		push_scope();
-		for (const auto& e: class_scope.pools()) {
-			Pool& pool = e;
+		for (Pool& pool: class_scope.pools()) {
 			add_pool(pool.name(), pool);
 		}
 	}
@@ -250,13 +249,11 @@ public:
 		: m_class(&class_scope)
 	{
 		push_scope();
-		for (const auto& e: class_scope.pools()) {
-			Pool& pool = e;
+		for (Pool& pool: class_scope.pools()) {
 			add_pool(pool.name(), pool);
 		}
 
-		for (const auto& e: method_scope.params()) {
-			const Variable& var = e;
+		for (const Variable& var: method_scope.params()) {
 			add_variable(var.name(), var);
 		}
 	}
@@ -350,6 +347,7 @@ class TypeConstructor {
 					e.ident(), ErrorKind::POOL, e.loc());
 				return std::vector<PoolParameter>();
 			}
+			ast_params.emplace_back(PoolRef(*found_pool));
 		}
 
 		return ast_params;
@@ -374,6 +372,7 @@ class TypeConstructor {
 						pool->ident(), ErrorKind::POOL, pool->loc());
 					return std::vector<PoolParameter>();
 				}
+				ast_params.emplace_back(PoolRef(*found_pool));
 			}
 		}
 
@@ -442,8 +441,8 @@ public:
 
 	mpark::variant<mpark::monostate, LayoutType, BoundType>
 	operator()(const Cst::LayoutType& type) {
-		const auto* of_class = m_ast.find_layout(type.layout_name().ident());
-		if (of_class == nullptr) {
+		const auto* layout = m_ast.find_layout(type.layout_name().ident());
+		if (layout == nullptr) {
 			m_errors.add<MissingDefinition>(
 				type.layout_name().ident(),
 				ErrorKind::LAYOUT,
@@ -461,7 +460,7 @@ public:
 			return mpark::monostate();
 		}
 
-		return LayoutType(*of_class, std::move(params), type.loc());
+		return LayoutType(*layout, std::move(params), type.loc());
 	}
 };
 
@@ -822,11 +821,12 @@ public:
 				typechecks = false;
 				continue;
 			}
-			if (!first_pool_param_is(pool->type(), *pool)) {
+			auto type = get_type(maybe_type);
+			if (!first_pool_param_is(type, *pool)) {
 				typechecks = false;
 				continue;
 			}
-			pool->set_type(get_type(maybe_type));
+			pool->set_type(std::move(type));
 		}
 		if (!typechecks) {
 			m_scopes.pop_scope();
@@ -1527,9 +1527,9 @@ static void collect_method_bodies(
 	}
 }
 
-void run_semantic_analysis(const Cst::Program& cst, Program& ast, SemanticErrorList& errors)
+void run_semantic_analysis(const Cst::Program& cst, Program& dest_ast, SemanticErrorList& errors)
 {
-	Program program;
+	Program ast;
 	collect_classes_fields_pool_params(cst, ast, errors);
 	if (errors.has_errors()) {
 		return;
@@ -1554,8 +1554,9 @@ void run_semantic_analysis(const Cst::Program& cst, Program& ast, SemanticErrorL
 	if (errors.has_errors()) {
 		return;
 	}
+	debug_ast(ast);
 
-	ast = std::move(program);
+	dest_ast = std::move(ast);
 }
 
 } // namespace Ast

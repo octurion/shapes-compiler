@@ -397,6 +397,7 @@ public:
 };
 
 enum class UnOp { PLUS, MINUS, NOT };
+std::ostream& operator<<(std::ostream& os, UnOp op);
 inline bool is_bitwise_operator(UnOp op) { return op == UnOp::NOT; }
 
 class UnaryExpr
@@ -421,6 +422,7 @@ enum class BinOp
 	AND, OR, XOR, SHL, SHR,
 	EQ, NE, LT, LE, GT, GE,
 };
+std::ostream& operator<<(std::ostream& os, BinOp op);
 inline bool is_bitwise_operator(BinOp op) {
 	switch (op) {
 	case BinOp::AND:
@@ -560,9 +562,6 @@ class Cluster
 	Location m_loc;
 
 public:
-	using const_iterator = decltype(m_fields)::const_iterator;
-	using iterator = decltype(m_fields)::iterator;
-
 	explicit Cluster(const Location& loc)
 		: m_loc(loc)
 	{}
@@ -900,5 +899,7 @@ public:
 	std::pair<Layout*, bool> add_layout(
 		std::string name, const Class& for_class, const Location& loc);
 };
+
+void debug_ast(const Program& ast);
 
 } // namespace Ast
