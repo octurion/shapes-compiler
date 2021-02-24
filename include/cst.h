@@ -585,9 +585,6 @@ class Block
 	std::vector<Stmt> m_stmts;
 
 public:
-	using const_iterator = decltype(m_stmts)::const_iterator;
-	using iterator = decltype(m_stmts)::iterator;
-
 	Block();
 	explicit Block(std::vector<Stmt> stmts);
 
@@ -801,9 +798,6 @@ class Cluster
 {
 	std::vector<ClusterField> m_fields;
 	Location m_loc;
-
-	using iterator = decltype(m_fields)::iterator;
-	using const_iterator = decltype(m_fields)::const_iterator;
 
 public:
 	Cluster() = default;
