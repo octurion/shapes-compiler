@@ -1,0 +1,17 @@
+class Main<p1> where
+    p1: [Main<p1>]
+{
+    u: i32;
+    fn meme(x: i32): i32
+    {
+        pool hoho: Foo<hoho>;
+        let y: Main<hoho>;
+
+        y = new Main<hoho>;
+        x = 0 as i32;
+
+        return x;
+    }
+}
+
+layout Foo: Main = rec{u};
