@@ -134,6 +134,7 @@ struct SpecializationInfo
 {
 	llvm::StructType* type = nullptr;
 	llvm::Function* ctor = nullptr;
+	llvm::Function* alloc = nullptr;
 
 	std::unordered_map<const Ast::Method*, llvm::Function*> funcs;
 };
@@ -158,12 +159,24 @@ class CodegenState
 	llvm::Type* m_f32 = nullptr;
 	llvm::Type* m_f64 = nullptr;
 
+	llvm::Function* m_realloc = nullptr;
+	llvm::Function* m_malloc = nullptr;
+
 	std::unordered_map<ClassSpecialization, SpecializationInfo> m_specialization_info;
 
 	void generate_specializations(const Ast::Class& clazz);
 
 	void generate_specializations_impl(
 		const Ast::Class& clazz, std::vector<const Ast::Layout*>& curr_layouts);
+
+	llvm::Type* type_of(
+		const Ast::NoneType& type, const ClassSpecialization& specialization);
+	llvm::Type* type_of(
+		const Ast::LayoutType& type, const ClassSpecialization& specialization);
+	llvm::Type* type_of(
+		const Ast::BoundType& type, const ClassSpecialization& specialization);
+	llvm::Type* type_of(
+		const Ast::PoolType& type, const ClassSpecialization& specialization);
 
 	llvm::Type* type_of(
 		const Ast::ObjectType& type, const ClassSpecialization& specialization);
@@ -173,6 +186,8 @@ class CodegenState
 		const Ast::NullptrType&, const ClassSpecialization&);
 	llvm::Type* type_of(
 		const Ast::VoidType&, const ClassSpecialization&);
+	llvm::Type* type_of(
+		const Ast::Type& type, const ClassSpecialization& specialization);
 
 public:
 	bool ir(const Ast::Program& ast);
@@ -184,6 +199,14 @@ std::string create_method_name(
 	std::ostringstream os;
 	os << "_shapes" << specialization
 		<< "_M" << method.name().length() << method.name();
+
+	return os.str();
+}
+
+std::string create_alloc_name(const ClassSpecialization& specialization)
+{
+	std::ostringstream os;
+	os << "_shapes" << specialization << "_A";
 
 	return os.str();
 }
@@ -257,6 +280,33 @@ void CodegenState::generate_specializations_impl(
 	curr_layouts.pop_back();
 }
 
+llvm::Type* CodegenState::type_of(const Ast::PoolType& type, const ClassSpecialization& specialization)
+{
+	return mpark::visit([this, &specialization](const auto& e) {
+		return type_of(e, specialization);
+	}, type);
+}
+
+llvm::Type* CodegenState::type_of(const Ast::NoneType&, const ClassSpecialization&)
+{
+	return nullptr;
+}
+
+llvm::Type* CodegenState::type_of(const Ast::LayoutType& type, const ClassSpecialization& specialization)
+{
+	auto new_spec = specialization.specialize_type(type);
+	return m_specialization_info[new_spec].type;
+}
+
+llvm::Type* CodegenState::type_of(const Ast::BoundType& type, const ClassSpecialization& specialization)
+{
+	auto new_spec = specialization.specialize_type(type);
+	if (new_spec.pool_param_types().front() == nullptr) {
+		return nullptr;
+	}
+	return m_specialization_info[new_spec].type;
+}
+
 void CodegenState::generate_specializations(const Ast::Class& clazz)
 {
 	std::vector<const Ast::Layout*> curr_layouts;
@@ -277,7 +327,10 @@ llvm::Type* CodegenState::type_of(const Ast::VoidType&, const ClassSpecializatio
 llvm::Type* CodegenState::type_of(const Ast::ObjectType& type, const ClassSpecialization& specialization)
 {
 	auto new_spec = specialization.specialize_type(type);
-	return m_specialization_info[new_spec].type;
+	if (new_spec.pool_param_types().front() == nullptr) {
+		return m_specialization_info[new_spec].type->getPointerTo();
+	}
+	return m_i64;
 }
 
 llvm::Type* CodegenState::type_of(const Ast::PrimitiveType& type, const ClassSpecialization&)
@@ -308,6 +361,13 @@ llvm::Type* CodegenState::type_of(const Ast::PrimitiveType& type, const ClassSpe
 	case Ast::PrimitiveType::F64:
 		return m_f64;
 	}
+}
+
+llvm::Type* CodegenState::type_of(const Ast::Type& type, const ClassSpecialization& specialization)
+{
+	return mpark::visit([this, &specialization](const auto& e){
+		return type_of(e, specialization);
+	}, type);
 }
 
 bool CodegenState::ir(const Ast::Program& ast)
@@ -344,6 +404,25 @@ bool CodegenState::ir(const Ast::Program& ast)
 
 	llvm::Module mod("shapes", m_ctx);
 	mod.setDataLayout(m_target_machine->createDataLayout());
+	m_mod = &mod;
+
+	auto* malloc_type = llvm::FunctionType::get(
+		m_i8->getPointerTo(), {m_i64}, false);
+	m_malloc = llvm::Function::Create(
+		malloc_type,
+		llvm::GlobalValue::ExternalLinkage,
+		"malloc",
+		m_mod);
+	m_malloc->setReturnDoesNotAlias();
+
+	auto* realloc_type = llvm::FunctionType::get(
+		m_i8->getPointerTo(), {m_i8->getPointerTo(), m_i64}, false);
+	m_realloc = llvm::Function::Create(
+		realloc_type,
+		llvm::GlobalValue::ExternalLinkage,
+		"realloc",
+		m_mod);
+	m_realloc->setReturnDoesNotAlias();
 
 	for (const Ast::Class& e: ast.ordered_classes()) {
 		generate_specializations(e);
@@ -400,31 +479,265 @@ bool CodegenState::ir(const Ast::Program& ast)
 		}
 	}
 
-#if 0
-	auto* struct_type = llvm::StructType::create(
-		ctx, {state.i32(), state.f32()}, "struct.Meme");
-	auto* struct_ptr_type = struct_type->getPointerTo();
+	for (auto& e: m_specialization_info) {
+		const auto& specialization = e.first;
+		auto& info = e.second;
 
-	auto* func_type = llvm::FunctionType::get(
-		state.f32(), {struct_ptr_type, state.i64()}, false);
-	auto* func = llvm::Function::Create(
-		func_type, llvm::Function::ExternalLinkage, "hello", &mod);
+		std::vector<llvm::Type*> pool_params;
+		for (const Ast::Pool& pool: specialization.clazz().pools()) {
+			auto* type = type_of(pool.type(), specialization);
+			if (type == nullptr) {
+				continue;
+			}
+			pool_params.push_back(type->getPointerTo());
+		}
 
-	auto* bb = llvm::BasicBlock::Create(ctx, "entry", func);
-	{
-		llvm::IRBuilder<> builder(bb);
-		auto it = func->arg_begin();
-		auto* param0 = &*it++;
-		auto* param1 = &*it++;
+		for (const Ast::Method& method: specialization.clazz().methods()) {
+			std::vector<llvm::Type*> params;
+			params.push_back(type_of(
+					specialization.clazz().this_object_type(),
+					specialization));
+			for (const auto& e: method.params()) {
+				params.push_back(type_of(e.type(), specialization));
+			}
+			params.insert(params.end(), pool_params.begin(), pool_params.end());
+			auto* ret_type = type_of(method.return_type(), specialization);
 
-		auto* record_split_ptr = builder.CreateInBoundsGEP(struct_type, param0, param1);
-		auto* field = builder.CreateStructGEP(struct_type, record_split_ptr, 1);
+			auto* func_type = llvm::FunctionType::get(ret_type, params, false);
+			auto* func = llvm::Function::Create(
+				func_type,
+				llvm::GlobalValue::ExternalLinkage,
+				create_method_name(specialization, method),
+				m_mod);
+			{
+				auto* bb = llvm::BasicBlock::Create(m_ctx, "entry", func);
+				llvm::IRBuilder<> builder(bb);
 
-		auto* val = builder.CreateLoad(state.f32(), field);
+				if (method.name() == "getter") {
+					if (specialization.pool_param_types().front() == nullptr) {
+						auto* gep = builder.CreateStructGEP(func->args().begin(), 0);
+						auto* load = builder.CreateLoad(gep);
 
-		builder.CreateRet(val);
+						builder.CreateRet(load);
+					} else {
+						auto* gep = builder.CreateStructGEP(func->args().begin() + 1, 2);
+						auto* cluster = builder.CreateLoad(gep);
+						auto* cluster_gep = builder.CreateGEP(cluster, func->args().begin());
+						auto* field_gep = builder.CreateStructGEP(cluster_gep, 0);
+
+						auto* load = builder.CreateLoad(field_gep);
+
+						builder.CreateRet(load);
+					}
+				} else {
+					if (specialization.pool_param_types().front() == nullptr) {
+						auto* gep = builder.CreateStructGEP(func->args().begin(), 0);
+						builder.CreateStore(func->args().begin() + 1, gep);
+					} else {
+						auto* gep = builder.CreateStructGEP(func->args().begin() + 2, 2);
+						auto* cluster = builder.CreateLoad(gep);
+						auto* cluster_gep = builder.CreateGEP(cluster, func->args().begin());
+						auto* field_gep = builder.CreateStructGEP(cluster_gep, 0);
+
+						builder.CreateStore(func->args().begin() + 1, field_gep);
+					}
+
+					builder.CreateRetVoid();
+				}
+			}
+
+			info.funcs[&method] = func;
+		}
+
+		{
+			if (specialization.pool_param_types().front() == nullptr) {
+				auto* alloc_func_type = llvm::FunctionType::get(info.type->getPointerTo(), {}, false);
+				auto* alloc_func = llvm::Function::Create(
+					alloc_func_type,
+					llvm::GlobalValue::ExternalLinkage,
+					create_alloc_name(specialization),
+					m_mod);
+				alloc_func->setReturnDoesNotAlias();
+				{
+					auto* bb = llvm::BasicBlock::Create(m_ctx, "entry", alloc_func);
+					llvm::IRBuilder<> builder(bb);
+					auto* class_ptr_type = info.type->getPointerTo();
+
+					auto* unused_ptr = builder.CreateConstGEP1_64(
+						llvm::ConstantPointerNull::get(class_ptr_type), 1);
+					auto* size = builder.CreateBitCast(unused_ptr, m_i64);
+					auto* malloc = builder.CreateCall(m_malloc, {size});
+					auto* retval = builder.CreatePointerCast(malloc, class_ptr_type);
+
+					builder.CreateRet(retval);
+				}
+
+				info.alloc = alloc_func;
+
+				auto* ctor_func_type = llvm::FunctionType::get(
+					m_void, {info.type->getPointerTo()}, false);
+				auto* ctor_func = llvm::Function::Create(
+					ctor_func_type,
+					llvm::GlobalValue::ExternalLinkage,
+					create_ctor_name(specialization),
+					m_mod);
+				{
+					auto* bb = llvm::BasicBlock::Create(m_ctx, "entry", ctor_func);
+					llvm::IRBuilder<> builder(bb);
+
+					std::vector<llvm::Constant*> constants;
+
+					const auto& fields = specialization.clazz().fields();
+					for (size_t i = 0; i < fields.size(); i++) {
+						const Ast::Field& e = fields[i];
+						const auto& type = e.type();
+						const auto* primitive_type = mpark::get_if<Ast::PrimitiveType>(&type);
+						if (primitive_type != nullptr) {
+							constants.push_back(
+								llvm::ConstantInt::get(
+									type_of(*primitive_type, specialization), 0));
+							continue;
+						}
+						const auto* object_type = mpark::get_if<Ast::ObjectType>(&type);
+						assert_msg(object_type != nullptr, "Not an object or primitive type");
+						auto new_spec = specialization.specialize_type(*object_type);
+						if (new_spec.pool_param_types().front() == nullptr) {
+							constants.push_back(
+								llvm::ConstantPointerNull::get(
+									m_specialization_info[new_spec].type->getPointerTo()));
+						} else {
+							constants.push_back(llvm::ConstantInt::get(m_i64, -1ull));
+						}
+					}
+
+					builder.CreateStore(
+						llvm::ConstantStruct::get(info.type, constants),
+						ctor_func->arg_begin());
+
+					builder.CreateRetVoid();
+				}
+
+				info.ctor = ctor_func;
+			} else {
+				auto* layout = specialization.pool_param_types().front();
+				auto* alloc_func_type = llvm::FunctionType::get(m_i64, {info.type->getPointerTo()}, false);
+				auto* alloc_func = llvm::Function::Create(
+					alloc_func_type,
+					llvm::GlobalValue::ExternalLinkage,
+					create_alloc_name(specialization),
+					m_mod);
+				{
+					auto* bb = llvm::BasicBlock::Create(m_ctx, "entry", alloc_func);
+					llvm::IRBuilder<> builder(bb);
+					auto* size_ptr = builder.CreateStructGEP(
+						alloc_func->args().begin(), 0, "size_ptr");
+					auto* capacity_ptr = builder.CreateStructGEP(
+						alloc_func->args().begin(), 1, "cap_ptr");
+					auto* size = builder.CreateLoad(size_ptr, "size");
+					auto* capacity = builder.CreateLoad(capacity_ptr, "cap");
+					auto* eq = builder.CreateICmpEQ(size, capacity, "cap_full");
+
+					auto* bb_call_realloc = llvm::BasicBlock::Create(m_ctx, "call_realloc", alloc_func);
+					auto* bb_alloc = llvm::BasicBlock::Create(m_ctx, "alloc", alloc_func);
+
+					builder.CreateCondBr(eq, bb_call_realloc, bb_alloc);
+
+					llvm::IRBuilder<> builder_call_realloc(bb_call_realloc);
+					auto* maybe_new_cap = builder_call_realloc.CreateShl(capacity, 1, "new_cap");
+					auto* maybe_new_cap_zero = builder_call_realloc.CreateICmpNE(
+						maybe_new_cap, llvm::ConstantInt::get(m_i64, 0));
+					auto* new_cap = builder_call_realloc.CreateSelect(
+						maybe_new_cap_zero,
+						maybe_new_cap,
+						llvm::ConstantInt::get(m_i64, 1));
+					builder_call_realloc.CreateStore(new_cap, capacity_ptr);
+
+					const auto& members = info.type->elements();
+					for (size_t i = 2; i < members.size(); i++) {
+						auto* e = members[i];
+						auto* member_ptr = builder_call_realloc.CreateStructGEP(
+							alloc_func->args().begin(), i);
+						auto* old_ptr = builder_call_realloc.CreatePointerCast(
+							builder_call_realloc.CreateLoad(member_ptr),
+							m_i8->getPointerTo());
+
+						auto* unused_ptr = builder_call_realloc.CreateConstGEP1_64(
+							llvm::ConstantPointerNull::getNullValue(e), 1);
+						auto* cluster_size = builder_call_realloc.CreateBitCast(unused_ptr, m_i64);
+						auto* new_size = builder_call_realloc.CreateMul(new_cap, cluster_size, "realloc_size");
+						auto* realloc = builder_call_realloc.CreateCall(
+							m_realloc, {old_ptr, new_size}, "realloc_ptr");
+						builder_call_realloc.CreateStore(
+							builder_call_realloc.CreatePointerCast(realloc, e),
+							member_ptr);
+					}
+					builder_call_realloc.CreateBr(bb_alloc);
+
+					llvm::IRBuilder<> builder_alloc(bb_alloc);
+					auto* new_idx = size;
+					builder_alloc.CreateStore(
+						builder_alloc.CreateAdd(size, llvm::ConstantInt::get(m_i64, 1)),
+						builder_alloc.CreateStructGEP(alloc_func->args().begin(), 1));
+					builder_alloc.CreateRet(new_idx);
+				}
+
+				info.alloc = alloc_func;
+
+				auto* ctor_func_type = llvm::FunctionType::get(
+					m_void, {m_i64, info.type->getPointerTo()}, false);
+				auto* ctor_func = llvm::Function::Create(
+					ctor_func_type,
+					llvm::GlobalValue::ExternalLinkage,
+					create_ctor_name(specialization),
+					m_mod);
+
+				{
+					auto* bb = llvm::BasicBlock::Create(m_ctx, "entry", ctor_func);
+					llvm::IRBuilder<> builder(bb);
+
+					auto* idx = ctor_func->args().begin();
+					auto* pool = ctor_func->args().begin() + 1;
+
+					const auto& clusters = layout->clusters();
+					for (size_t i = 0; i < clusters.size(); i++) {
+						std::vector<llvm::Constant*> constants;
+						const auto& fields = clusters[i].fields();
+						for (size_t j = 0; j < fields.size(); j++) {
+							const auto& e = *fields[i];
+							const auto& type = e.type();
+							const auto* primitive_type = mpark::get_if<Ast::PrimitiveType>(&type);
+							if (primitive_type != nullptr) {
+								constants.push_back(
+									llvm::ConstantInt::get(
+										type_of(*primitive_type, specialization), 0));
+								continue;
+							}
+							const auto* object_type = mpark::get_if<Ast::ObjectType>(&type);
+							assert_msg(object_type != nullptr, "Not an object or primitive type");
+							auto new_spec = specialization.specialize_type(*object_type);
+							if (new_spec.pool_param_types().front() == nullptr) {
+								constants.push_back(
+									llvm::ConstantPointerNull::get(
+										m_specialization_info[new_spec].type->getPointerTo()));
+							} else {
+								constants.push_back(llvm::ConstantInt::get(m_i64, -1ull));
+							}
+						}
+						auto* cluster = builder.CreateStructGEP(pool, i + 2);
+						auto* ptr = builder.CreateLoad(cluster);
+						auto* offset_ptr = builder.CreateGEP(ptr, idx);
+						auto* const_val = llvm::ConstantStruct::get(
+							(llvm::StructType*)
+								(cluster->getType()->getPointerElementType()->getPointerElementType()),
+							constants);
+						builder.CreateStore(const_val, offset_ptr);
+						builder.CreateRetVoid();
+					}
+				}
+				info.ctor = ctor_func;
+			}
+		}
 	}
-#endif
 
 	llvm::FunctionAnalysisManager fam;
 	llvm::LoopAnalysisManager lam;
@@ -443,16 +756,16 @@ bool CodegenState::ir(const Ast::Program& ast)
 	pass_manager.addPass(llvm::PrintModulePass(llvm::errs()));
 	pass_manager.addPass(llvm::VerifierPass());
 
-	pass_manager.run(mod, mam);
+	pass_manager.run(*m_mod, mam);
 
-	auto Filename = "shapes.o";
+	const char* filename = "shapes.o";
 	std::error_code EC;
-	llvm::raw_fd_ostream dest(Filename, EC, llvm::sys::fs::OF_None);
+	llvm::raw_fd_ostream dest(filename, EC, llvm::sys::fs::OF_None);
 
 	llvm::legacy::PassManager old_pm;
 
 	m_target_machine->addPassesToEmitFile(old_pm, dest, nullptr, llvm::TargetMachine::CGFT_ObjectFile);
-	old_pm.run(mod);
+	old_pm.run(*m_mod);
 
 	return true;
 }
