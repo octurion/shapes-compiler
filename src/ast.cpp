@@ -747,7 +747,7 @@ public:
 	{
 		emit_indentation();
 		fprintf(stderr, "Binary expression (op: %s)\n",
-			to_string(expr.type()).c_str());
+			to_string(expr.op()).c_str());
 
 		emit_indentation();
 		fprintf(stderr, "Lhs:\n");

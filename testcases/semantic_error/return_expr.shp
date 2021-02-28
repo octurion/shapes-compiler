@@ -3,15 +3,9 @@ class Main<p1> where
 {
     f: i32;
 
-    fn getter(): i32
-    {
-        return f;
-    }
-
     fn setter(x: i32)
     {
         f = x;
+        return x;
     }
 }
-
-layout Foo: Main = rec{f};

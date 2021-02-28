@@ -1,0 +1,22 @@
+class Main<p1> where
+    p1: [Main<p1>]
+{
+    f1: i32;
+
+    fn test() {
+        let x: i32, y: i32, z: i32;
+        f1 = 5 as i32;
+        x = f1 + f1;
+        y = x * x;
+        z = -x;
+        x = x / x;
+
+        x = y & z;
+        y = z | x;
+        x = y ^ x;
+        z = !y;
+        x = x << 1;
+
+        f1 = +f1;
+    }
+}

@@ -1,0 +1,22 @@
+class Main<p1> where
+    p1: [Main<p1>]
+{
+    f1: i32;
+    f2: bool;
+
+    fn test(): i32 {
+        return f1;
+    }
+
+    fn test2(): i32 {
+        return this.f1;
+    }
+
+    fn test3(): bool {
+        return f2;
+    }
+
+    fn test4(): bool {
+        return this.f2;
+    }
+}

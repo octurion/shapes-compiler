@@ -18,6 +18,7 @@
 using namespace testing;
 
 class SemanticPass: public TestWithParam<std::string> {};
+class SemanticFail: public TestWithParam<std::string> {};
 
 TEST_P(SemanticPass, SemanticPass) {
 	const auto& path = GetParam();
@@ -44,6 +45,35 @@ TEST_P(SemanticPass, SemanticPass) {
 	Ast::run_semantic_analysis(cst, ast, errors);
 
 	EXPECT_THAT(errors.has_errors(), IsFalse());
+
+	fclose(in);
+}
+
+TEST_P(SemanticFail, SemanticFail) {
+	const auto& path = GetParam();
+
+	FILE* in = fopen(path.c_str(), "r");
+	ASSERT_THAT(in, NotNull());
+
+	Cst::Program cst;
+	Cst::SyntaxErrorList syntax_errors;
+
+	yyscan_t scanner;
+	yylex_init(&scanner);
+	yyset_in(in, scanner);
+
+	yyparse(scanner, &cst, &syntax_errors);
+
+	yylex_destroy(scanner);
+
+	ASSERT_THAT(syntax_errors.has_errors(), IsFalse());
+
+	Ast::Program ast;
+	Ast::SemanticErrorList errors;
+
+	Ast::run_semantic_analysis(cst, ast, errors);
+
+	EXPECT_THAT(errors.has_errors(), IsTrue());
 
 	fclose(in);
 }
@@ -76,3 +106,8 @@ INSTANTIATE_TEST_SUITE_P(
 	Parser,
 	SemanticPass,
 	ValuesIn(files_in_path("../testcases/valid")));
+
+INSTANTIATE_TEST_SUITE_P(
+	Parser,
+	SemanticFail,
+	ValuesIn(files_in_path("../testcases/semantic_error")));

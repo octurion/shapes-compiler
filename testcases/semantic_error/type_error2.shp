@@ -1,0 +1,9 @@
+class Main<p1> where
+    p1: [Main<p1>]
+{
+    f1: i32;
+
+    fn test(): i32 {
+        return true + 2 as i32;
+    }
+}

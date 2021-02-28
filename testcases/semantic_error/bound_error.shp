@@ -1,0 +1,18 @@
+class A<p1, p2> where
+    p1: [A<p1, p2>],
+    p2: [B<p2, p1>],
+{
+    f: B<p2, p1>;
+
+    fn foo() {
+        pool p3: A<p3, none>;
+
+        let x: A<p3, none>;
+        x = new A<p3, none>;
+
+        let y: B<none, none>;
+        y = new B<none, none>;
+
+        x.f = y;
+    }
+}

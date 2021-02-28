@@ -218,6 +218,18 @@ static void collect_layouts(
 			}
 		}
 
+		bool fields_missing = false;
+		for (const Field& e: for_class->fields())
+		{
+			if (fields_added.find(&e) == fields_added.end()) {
+				errors.add<LayoutMissingField>(e.name(), layout.name().ident(), e.loc());
+				fields_missing = true;
+			}
+		}
+		if (fields_missing) {
+			continue;
+		}
+
 		new_layout->build_field_map();
 		for_class->add_layout(*new_layout);
 	}
@@ -864,7 +876,7 @@ public:
 
 		if (!assignable_from(lhs_type, rhs_type)) {
 			m_errors.add<NonAssignableType>(
-				location(e.rhs()), to_string(lhs_type), to_string(rhs_type));
+				location(e.rhs()), to_string(rhs_type), to_string(lhs_type));
 		}
 
 		m_blocks.add<Assignment>(std::move(lhs), std::move(rhs));
@@ -1391,8 +1403,8 @@ public:
 			if (!assignable_from(method_params[i].type(), expr_type(args[i]))) {
 				m_errors.add<NonAssignableType>(
 					location(e.params()[i]),
-					to_string(method_params[i].type()),
-					to_string(expr_type(args[i])));
+					to_string(expr_type(args[i])),
+					to_string(method_params[i].type()));
 				type_mismatch = true;
 			}
 		}
@@ -1485,7 +1497,7 @@ public:
 		const auto& field_type = field->type();
 		const auto* as_field_obj_type = mpark::get_if<ObjectType>(&field_type);
 		if (as_field_obj_type != nullptr) {
-			type = as_field_obj_type->remap_formal_pool_params(*as_obj_type);
+			new_type = as_field_obj_type->remap_formal_pool_params(*as_obj_type);
 		} else {
 			new_type = field_type;
 		}

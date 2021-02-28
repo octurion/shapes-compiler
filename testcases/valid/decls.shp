@@ -1,0 +1,19 @@
+class Main<p1> where
+    p1: [Main<p1>]
+{
+    f1: i32;
+    f2: Main<none>;
+    f3: Main<p1>;
+
+    fn test() {
+        pool q1: Foo<q1>;
+        let o1: Main<q1>;
+        {
+            let o1: i32;
+            let o2: Main<q1>;
+            let o3: Main<p1>;
+        }
+    }
+}
+
+layout Foo: Main = rec{f1} + rec{f2, f3};
