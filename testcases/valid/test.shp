@@ -4,15 +4,12 @@ class Main<p1> where
     f1: i32;
     f2: i32;
 
-    fn if_stmt(): i32
+    fn meme()
     {
-        let x: i32;
-        if f1 + f2 == (0 as i32) {
-            return f1;
-        } else {
-            return f2;
+        f1 = 0 as i32;
+        foreach i = 0 as i32 .. 10 as i32 {
+            f1 += i;
         }
-        return x;
     }
 }
 

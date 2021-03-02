@@ -828,6 +828,12 @@ void CodegenState::generate_llvm_function_decls()
 	}
 }
 
+struct LoopStackEntry
+{
+	llvm::BasicBlock* loop_continue;
+	llvm::BasicBlock* loop_break;
+};
+
 struct MethodCodegenState
 {
 	ClassSpecialization spec;
@@ -838,6 +844,8 @@ struct MethodCodegenState
 
 	std::unordered_map<const Ast::Variable*, llvm::Value*> local_vars;
 	std::unordered_map<const Ast::Pool*, llvm::Value*> local_pools;
+
+	std::vector<LoopStackEntry> loop_stack;
 
 	MethodCodegenState() = default;
 	MethodCodegenState(const MethodCodegenState&) = delete;
@@ -1074,17 +1082,158 @@ void CodegenState::visit(const Ast::If& e, MethodCodegenState& state)
 
 void CodegenState::visit(const Ast::While& e, MethodCodegenState& state)
 {
+	auto* header_bb = llvm::BasicBlock::Create(m_ctx, "while_header", state.llvm_func);
+	auto* body_bb = llvm::BasicBlock::Create(m_ctx, "while_body", state.llvm_func);
+	auto* exit_bb = llvm::BasicBlock::Create(m_ctx, "while_exit", state.llvm_func);
 
+	LoopStackEntry entry;
+
+	entry.loop_continue = header_bb;
+	entry.loop_break = exit_bb;
+
+	state.loop_stack.push_back(entry);
+
+	state.builder->CreateBr(header_bb);
+	state.builder->SetInsertPoint(header_bb);
+
+	auto* cond = mpark::visit([this, &state](const auto& e) {
+		return visit(e, state);
+	}, e.cond());
+	if (Ast::is_lvalue(e.cond())) {
+		cond = state.builder->CreateLoad(cond);
+	}
+
+	state.builder->CreateCondBr(cond, body_bb, exit_bb);
+
+	state.builder->SetInsertPoint(body_bb);
+	for (const auto& stmt: e.body()) {
+		mpark::visit([this, &state](const auto& e) { visit(e, state); }, stmt);
+	}
+	state.builder->CreateBr(header_bb);
+
+	state.builder->SetInsertPoint(exit_bb);
+	state.loop_stack.pop_back();
 }
 
 void CodegenState::visit(const Ast::ForeachRange& e, MethodCodegenState& state)
 {
+	auto type = Ast::expr_type(e.range_begin());
+	const auto* as_primitive = mpark::get_if<Ast::PrimitiveType>(&type);
+	assert_msg(as_primitive != nullptr, "Range loop needs primitives");
 
+	bool is_signed = Ast::is_signed_integer(*as_primitive);
+
+	auto* range_begin = mpark::visit([this, &state](const auto& e) {
+		return visit(e, state);
+	}, e.range_begin());
+	if (Ast::is_lvalue(e.range_begin())) {
+		range_begin = state.builder->CreateLoad(range_begin);
+	}
+
+	auto* range_end = mpark::visit([this, &state](const auto& e) {
+		return visit(e, state);
+	}, e.range_end());
+	if (Ast::is_lvalue(e.range_end())) {
+		range_end = state.builder->CreateLoad(range_end);
+	}
+
+	auto* var = state.local_vars[&e.var()];
+	assert_msg(var != nullptr, "No LLVM variable for loop");
+
+	auto* init_bb = llvm::BasicBlock::Create(m_ctx, "foreach_range_init", state.llvm_func);
+	auto* exit_bb = llvm::BasicBlock::Create(m_ctx, "foreach_range_exit", state.llvm_func);
+	auto* cond_bb = llvm::BasicBlock::Create(m_ctx, "foreach_range_cond", state.llvm_func);
+	auto* body_bb = llvm::BasicBlock::Create(m_ctx, "foreach_range_body", state.llvm_func);
+	auto* update_bb = llvm::BasicBlock::Create(m_ctx, "foreach_range_update", state.llvm_func);
+
+	auto* initial_cond = is_signed
+		? state.builder->CreateICmpSLT(range_begin, range_end)
+		: state.builder->CreateICmpULT(range_begin, range_end);
+	state.builder->CreateCondBr(initial_cond, init_bb, exit_bb);
+
+	state.builder->SetInsertPoint(init_bb);
+	state.builder->CreateStore(range_begin, var);
+	state.builder->CreateBr(cond_bb);
+
+	state.builder->SetInsertPoint(cond_bb);
+	auto* var_value = state.builder->CreateLoad(var);
+	auto* cond = is_signed
+		? state.builder->CreateICmpSLT(var_value, range_end)
+		: state.builder->CreateICmpULT(var_value, range_end);
+	state.builder->CreateCondBr(cond, body_bb, exit_bb);
+
+	LoopStackEntry entry;
+	entry.loop_continue = update_bb;
+	entry.loop_break = exit_bb;
+	state.loop_stack.push_back(entry);
+
+	state.builder->SetInsertPoint(body_bb);
+
+	for (const auto& stmt: e.body()) {
+		mpark::visit([this, &state](const auto& e) { visit(e, state); }, stmt);
+	}
+	state.builder->CreateBr(update_bb);
+
+	state.builder->SetInsertPoint(update_bb);
+	auto* const_one = llvm::ConstantInt::get(var_value->getType(), 1);
+	auto* new_var_value = is_signed
+		? state.builder->CreateNSWAdd(var_value, const_one)
+		: state.builder->CreateNUWAdd(var_value, const_one);
+	state.builder->CreateStore(new_var_value, var);
+	state.builder->CreateBr(cond_bb);
+
+	state.loop_stack.pop_back();
+
+	state.builder->SetInsertPoint(exit_bb);
 }
 
 void CodegenState::visit(const Ast::ForeachPool& e, MethodCodegenState& state)
 {
+	auto* pool = state.local_pools[&e.pool()];
+	if (pool == nullptr) {
+		return;
+	}
 
+	auto* var = state.local_vars[&e.var()];
+	assert_msg(var != nullptr, "No LLVM variable for loop");
+
+	auto* cond_bb = llvm::BasicBlock::Create(m_ctx, "foreach_pool_cond", state.llvm_func);
+	auto* body_bb = llvm::BasicBlock::Create(m_ctx, "foreach_pool_body", state.llvm_func);
+	auto* update_bb = llvm::BasicBlock::Create(m_ctx, "foreach_pool_update", state.llvm_func);
+	auto* exit_bb = llvm::BasicBlock::Create(m_ctx, "foreach_pool_exit", state.llvm_func);
+
+	state.builder->CreateStore(llvm::ConstantInt::get(m_i64, 0), var);
+	state.builder->CreateBr(cond_bb);
+
+	state.builder->SetInsertPoint(cond_bb);
+
+	auto* var_value = state.builder->CreateLoad(var);
+	auto* size_ptr = state.builder->CreateStructGEP(pool, 0);
+	auto* size = state.builder->CreateLoad(size_ptr);
+	auto* cond = state.builder->CreateICmpULT(var_value, size);
+
+	state.builder->CreateCondBr(cond, body_bb, exit_bb);
+
+	LoopStackEntry entry;
+	entry.loop_continue = update_bb;
+	entry.loop_break = exit_bb;
+	state.loop_stack.push_back(entry);
+
+	state.builder->SetInsertPoint(body_bb);
+	for (const auto& stmt: e.body()) {
+		mpark::visit([this, &state](const auto& e) { visit(e, state); }, stmt);
+	}
+	state.builder->CreateBr(update_bb);
+
+	state.builder->SetInsertPoint(update_bb);
+	auto* const_one = llvm::ConstantInt::get(var_value->getType(), 1);
+	auto* new_var_value = state.builder->CreateNUWAdd(var_value, const_one);
+	state.builder->CreateStore(new_var_value, var);
+	state.builder->CreateBr(cond_bb);
+
+	state.loop_stack.pop_back();
+
+	state.builder->SetInsertPoint(exit_bb);
 }
 
 void CodegenState::visit(const Ast::ExprStmt& e, MethodCodegenState& state)
@@ -1097,14 +1246,26 @@ void CodegenState::visit(const Ast::ExprStmt& e, MethodCodegenState& state)
 	}, e.expr());
 }
 
-void CodegenState::visit(const Ast::Break& e, MethodCodegenState& state)
+void CodegenState::visit(const Ast::Break&, MethodCodegenState& state)
 {
+	assert_msg(!state.loop_stack.empty(), "Must be inside loop");
 
+	auto& entry = state.loop_stack.back();
+	state.builder->CreateBr(entry.loop_break);
+
+	auto* bb = llvm::BasicBlock::Create(m_ctx, "post_break", state.llvm_func);
+	state.builder->SetInsertPoint(bb);
 }
 
-void CodegenState::visit(const Ast::Continue& e, MethodCodegenState& state)
+void CodegenState::visit(const Ast::Continue&, MethodCodegenState& state)
 {
+	assert_msg(!state.loop_stack.empty(), "Must be inside loop");
 
+	auto& entry = state.loop_stack.back();
+	state.builder->CreateBr(entry.loop_continue);
+
+	auto* bb = llvm::BasicBlock::Create(m_ctx, "post_continue", state.llvm_func);
+	state.builder->SetInsertPoint(bb);
 }
 
 void CodegenState::visit(const Ast::Return& e, MethodCodegenState& state)
@@ -1716,7 +1877,7 @@ bool CodegenState::ir(const Ast::Program& ast)
 	generate_llvm_function_decls();
 	generate_llvm_functions();
 
-	// llvm::verifyModule(*m_mod, &llvm::errs());
+	llvm::verifyModule(*m_mod, &llvm::errs());
 
 	llvm::FunctionAnalysisManager fam;
 	llvm::LoopAnalysisManager lam;
@@ -1730,12 +1891,12 @@ bool CodegenState::ir(const Ast::Program& ast)
 	pass_builder.registerModuleAnalyses(mam);
 
 	pass_builder.crossRegisterProxies(lam, fam, cam, mam);
-	auto pass_manager = pass_builder.buildModuleOptimizationPipeline(
+	auto mod_pass_manager = pass_builder.buildPerModuleDefaultPipeline(
 		llvm::PassBuilder::O3, false);
-	pass_manager.addPass(llvm::PrintModulePass(llvm::errs()));
-	pass_manager.addPass(llvm::VerifierPass());
+	mod_pass_manager.addPass(llvm::PrintModulePass(llvm::errs()));
+	mod_pass_manager.addPass(llvm::VerifierPass());
 
-	pass_manager.run(*m_mod, mam);
+	mod_pass_manager.run(*m_mod, mam);
 
 	const char* filename = "shapes.o";
 	std::error_code EC;
