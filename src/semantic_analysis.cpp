@@ -982,7 +982,7 @@ public:
 		m_scopes.push_scope();
 		m_blocks.push_block();
 
-		mpark::visit(*this, e.then_branch());
+		mpark::visit(*this, e.else_branch());
 
 		auto else_branch = m_blocks.pop_block();
 		m_scopes.pop_scope();
@@ -1337,27 +1337,6 @@ public:
 		unreachable("Forgot to handle operand");
 	}
 
-	Expr operator()(const Cst::IndexExpr& e)
-	{
-		const auto* pool = m_scopes.find_pool(e.pool().ident());
-		if (pool == nullptr) {
-			m_errors.add<MissingDefinition>(
-				e.pool().ident(), ErrorKind::POOL, e.pool().loc());
-			return IntegerConst(0);
-		}
-
-		auto idx = mpark::visit(*this, e.idx());
-		auto type = expr_type(idx);
-
-		const auto* primitive_type = mpark::get_if<PrimitiveType>(&type);
-		if (primitive_type == nullptr || !is_integer(*primitive_type)) {
-			m_errors.add<ExpectedIntegerType>(location(e.idx()), to_string(type));
-			return IntegerConst(0);
-		}
-
-		return IndexExpr(*pool, std::move(idx));
-	}
-
 	Expr operator()(const Cst::VariableExpr& e)
 	{
 		const auto* var = m_scopes.find_variable(e.name().ident());
@@ -1428,7 +1407,7 @@ public:
 		if (obj_type == nullptr) {
 			m_errors.add<ExpectedObjectType>(
 				location(e.this_expr()),
-				to_string(obj_type));
+				to_string(this_type));
 			return IntegerConst(0);
 		}
 
@@ -1566,7 +1545,6 @@ void run_semantic_analysis(const Cst::Program& cst, Program& dest_ast, SemanticE
 	if (errors.has_errors()) {
 		return;
 	}
-	debug_ast(ast);
 
 	dest_ast = std::move(ast);
 }

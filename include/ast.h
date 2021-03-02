@@ -307,7 +307,6 @@ class ThisExpr;
 class CastExpr;
 class UnaryExpr;
 class BinaryExpr;
-class IndexExpr;
 class VariableExpr;
 class MethodCall;
 class FieldAccess;
@@ -315,7 +314,7 @@ class NewExpr;
 
 using Expr = mpark::variant<
 	IntegerConst, DoubleConst, BooleanConst, NullExpr, ThisExpr, CastExpr,
-	UnaryExpr, BinaryExpr, IndexExpr, VariableExpr, MethodCall, FieldAccess,
+	UnaryExpr, BinaryExpr, VariableExpr, MethodCall, FieldAccess,
 	NewExpr>;
 Type expr_type(const Expr& expr);
 bool is_lvalue(const Expr& expr);
@@ -378,7 +377,7 @@ class ThisExpr
 	{}
 
 	const ObjectType& type() const { return m_type; }
-	bool is_lvalue() const { return true; }
+	bool is_lvalue() const { return false; }
 };
 
 class CastExpr
@@ -454,21 +453,6 @@ public:
 	bool is_lvalue() const { return false; }
 };
 
-class IndexExpr
-{
-	const Pool& m_pool;
-	std::unique_ptr<Expr> m_idx;
-
-public:
-	IndexExpr(const Pool& pool, Expr idx);
-
-	const Pool& pool() const { return m_pool; }
-	const Expr& idx() const;
-
-	ObjectType type() const;
-	bool is_lvalue() const { return true; }
-};
-
 class VariableExpr
 {
 	const Variable& m_var;
@@ -499,7 +483,7 @@ public:
 
 	const std::vector<Expr>& args() const { return m_args; }
 	size_t num_args() const { return m_args.size(); }
-	bool is_lvalue() const;
+	bool is_lvalue() const { return false; }
 };
 
 class FieldAccess
@@ -527,7 +511,7 @@ public:
 	{}
 
 	const ObjectType& type() const { return m_type; }
-	bool is_lvalue() const { return true; }
+	bool is_lvalue() const { return false; }
 };
 
 class Field
@@ -601,6 +585,13 @@ public:
 	size_t num_clusters() const { return m_clusters.size(); }
 
 	const Location& loc() const { return m_loc; }
+	const FieldPos* field_pos(const Field& field) const
+	{
+		auto it = m_field_map.find(&field);
+		return it != m_field_map.end()
+			? &it->second
+			: nullptr;
+	}
 
 	Cluster& add_cluster(const Location& loc)
 	{
@@ -769,7 +760,7 @@ public:
 	const std::string& name() const { return m_name; }
 
 	const std::deque<Pool>& pools() const { return m_pools; }
-	const std::deque<Variable> vars() const { return m_vars; }
+	const std::deque<Variable>& vars() const { return m_vars; }
 
 	const std::deque<Variable>& params() const { return m_params; }
 	size_t num_params() const { return m_params.size(); }
@@ -786,8 +777,8 @@ public:
 
 	const Variable& add_parameter(std::string name, Type type, const Location& loc)
 	{
-		m_vars.emplace_back(std::move(name), std::move(type), loc);
-		return m_vars.back();
+		m_params.emplace_back(std::move(name), std::move(type), loc);
+		return m_params.back();
 	}
 
 	const Variable& add_variable(std::string name, Type type, const Location& loc)

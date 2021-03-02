@@ -255,7 +255,7 @@ std::ostream& operator<<(std::ostream& os, PrimitiveType type)
 
 std::ostream& operator<<(std::ostream& os, const NullptrType&)
 {
-	return os << "nullptr_t";
+	return os << "nullptr";
 }
 std::ostream& operator<<(std::ostream& os, const VoidType&)
 {
@@ -387,16 +387,6 @@ UnaryExpr::UnaryExpr(UnOp op, Expr expr)
 const Expr& UnaryExpr::expr() const { return *m_expr; }
 Type UnaryExpr::type() const { return expr_type(*m_expr); }
 
-IndexExpr::IndexExpr(const Pool& pool, Expr idx)
-	: m_pool(pool)
-	, m_idx(new Expr(std::move(idx)))
-{}
-const Expr& IndexExpr::idx() const { return *m_idx; }
-
-ObjectType IndexExpr::type() const {
-	return from_pool_type(m_pool.type());
-}
-
 MethodCall::MethodCall(const Method& method, Expr this_expr, std::vector<Expr> args, Type type)
 	: m_method(method)
 	, m_this_expr(new Expr(std::move(this_expr)))
@@ -404,9 +394,6 @@ MethodCall::MethodCall(const Method& method, Expr this_expr, std::vector<Expr> a
 	, m_type(std::move(type))
 {}
 const Expr& MethodCall::this_expr() const { return *m_this_expr; }
-bool MethodCall::is_lvalue() const {
-	return mpark::holds_alternative<ObjectType>(m_type);
-}
 const Type& MethodCall::type() const { return m_type; }
 
 FieldAccess::FieldAccess(Expr expr, const Field& field, Type type)
@@ -466,7 +453,7 @@ void Layout::build_field_map()
 			pos.cluster_idx = i;
 			pos.pos = j;
 
-			m_field_map[fields[i]] = pos;
+			m_field_map[fields[j]] = pos;
 		}
 	}
 }
@@ -761,20 +748,6 @@ public:
 
 		indent();
 		mpark::visit(*this, expr.rhs());
-		dedent();
-	}
-
-	void operator()(const IndexExpr& expr)
-	{
-		emit_indentation();
-		fprintf(stderr, "Index expression (pool: %s)\n",
-			expr.pool().name().c_str());
-
-		emit_indentation();
-		fprintf(stderr, "Index:\n");
-
-		indent();
-		mpark::visit(*this, expr.idx());
 		dedent();
 	}
 

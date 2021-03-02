@@ -301,6 +301,8 @@ int main(int argc, char** argv)
 		return EXIT_FAILURE;
 	}
 
+	Ast::debug_ast(ast);
+
 	Ir::init_llvm();
 	Ir::ir(ast);
 

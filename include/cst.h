@@ -225,7 +225,6 @@ class ThisExpr;
 class CastExpr;
 class UnaryExpr;
 class BinaryExpr;
-class IndexExpr;
 class VariableExpr;
 class MethodCall;
 class MemberMethodCall;
@@ -233,7 +232,7 @@ class FieldAccess;
 class NewExpr;
 
 using Expr = mpark::variant<IntegerConst, BooleanConst, NullExpr, ThisExpr,
-	  CastExpr, UnaryExpr, BinaryExpr, IndexExpr, VariableExpr, MethodCall,
+	  CastExpr, UnaryExpr, BinaryExpr, VariableExpr, MethodCall,
 	  MemberMethodCall, FieldAccess, NewExpr>;
 const Location& location(const Expr& expr);
 
@@ -359,20 +358,6 @@ public:
 
 	const Expr& expr() const;
 	UnOp op() const { return m_op; }
-	const Location& loc() const { return m_loc; }
-};
-
-class IndexExpr
-{
-	Pool m_pool;
-	std::unique_ptr<Expr> m_idx;
-	Location m_loc;
-
-public:
-	IndexExpr(Pool pool, Expr idx, const Location& loc);
-
-	const Pool& pool() const { return m_pool; }
-	const Expr& idx() const;
 	const Location& loc() const { return m_loc; }
 };
 
