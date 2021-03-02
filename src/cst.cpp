@@ -132,13 +132,6 @@ UnaryExpr::UnaryExpr(UnOp op, Expr expr, const Location& loc)
 {}
 const Expr& UnaryExpr::expr() const { return *m_expr; }
 
-IndexExpr::IndexExpr(Pool pool, Expr idx, const Location& loc)
-	: m_pool(std::move(pool))
-	, m_idx(new Expr(std::move(idx)))
-	, m_loc(loc)
-{}
-const Expr& IndexExpr::idx() const { return *m_idx; }
-
 MethodCall::MethodCall(
 		Identifier name, std::vector<Expr> params, const Location& loc)
 	: m_name(std::move(name))

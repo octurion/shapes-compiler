@@ -1,6 +1,8 @@
 #include "ast.h"
 
+#include <cinttypes>
 #include <ostream>
+#include <sstream>
 #include <vector>
 #include <type_traits>
 #include <unordered_map>
@@ -22,6 +24,39 @@ static const char* const PRIMITIVE_TYPE_NAMES[] = {
 	"f32",  // PrimitiveType::F32
 	"f64",  // PrimitiveType::F64
 };
+
+static const char* const UN_OP_NAMES[] = {
+	"+", // UnOp::PLUS
+	"-", // UnOp::MINUS
+	"!", // UnOp::NOT
+};
+
+static const char* const BIN_OP_NAMES[] = {
+	"+",  // BinOp::PLUS
+	"-",  // BinOp::MINUS
+	"*",  // BinOp::TIMES
+	"/",  // BinOp::DIV
+	"&&", // BinOp::LAND
+	"||", // BinOp::LOR
+	"&",  // BinOp::AND
+	"|",  // BinOp::OR
+	"^",  // BinOp::XOR
+	"<<", // BinOp::SHL
+	">>", // BinOp::SHR
+	"==", // BinOp::EQ
+	"!=", // BinOp::NE
+	"<",  // BinOp::LT
+	"<=", // BinOp::LE
+	">",  // BinOp::GT
+	">=", // BinOp::GE
+};
+
+template<typename T>
+static std::string to_string(const T& value) {
+	std::ostringstream os;
+	os << value;
+	return os.str();
+}
 
 static BoundType extract_bound_of_param(
 	const Class& clazz, const std::vector<PoolParameter>& params, size_t idx, const Location& loc)
@@ -57,10 +92,10 @@ static BoundType extract_bound_of_param(
 }
 
 bool PoolRef::operator==(const PoolRef& rhs) const {
-	return this == &rhs;
+	return m_pool == rhs.m_pool;
 }
 bool PoolRef::operator!=(const PoolRef& rhs) const {
-	return this != &rhs;
+	return m_pool != rhs.m_pool;
 }
 std::ostream& operator<<(std::ostream& os, const PoolRef& pool) {
 	return os << pool.pool().name();
@@ -77,7 +112,7 @@ static std::ostream& print_pool_params(
 
 	os << "<";
 	auto it = pool_params.begin();
-	mpark::visit([&os](const auto& e) { os << e; }, *it);
+	mpark::visit([&os](const auto& e) { os << e; }, *it++);
 
 	for (; it != pool_params.end(); it++) {
 		os << ", ";
@@ -89,11 +124,11 @@ static std::ostream& print_pool_params(
 
 bool BoundType::operator==(const BoundType& rhs) const
 {
-	return &m_class == &rhs.m_class && m_params == rhs.m_params;
+	return m_class == rhs.m_class && m_params == rhs.m_params;
 }
 bool BoundType::operator!=(const BoundType& rhs) const
 {
-	return &m_class != &rhs.m_class || !(m_params == rhs.m_params);
+	return m_class != rhs.m_class || !(m_params == rhs.m_params);
 }
 bool BoundType::compatible_with_bound(const BoundType& bound) const
 {
@@ -143,6 +178,21 @@ bool first_pool_param_is(const PoolType& type, const Pool& pool)
 	}, type);
 }
 
+struct PoolTypeClass {
+	const Class& operator()(const LayoutType& e) {
+		return e.for_class();
+	}
+	const Class& operator()(const BoundType& e) {
+		return e.of_class();
+	}
+	const Class& operator()(const NoneType&) {
+		unreachable("Can't pass none to formal pool parameter");
+	}
+};
+const Class& for_class(const PoolType& type) {
+	return mpark::visit(PoolTypeClass(), type);
+}
+
 struct PoolToObjType {
 	ObjectType operator()(const LayoutType& e) {
 		return e.to_object_type();
@@ -160,11 +210,11 @@ ObjectType from_pool_type(const PoolType& type) {
 
 bool LayoutType::operator==(const LayoutType& rhs) const
 {
-	return &m_layout == &rhs.m_layout && m_params == rhs.m_params;
+	return m_layout == rhs.m_layout && m_params == rhs.m_params;
 }
 bool LayoutType::operator!=(const LayoutType& rhs) const
 {
-	return &m_layout != &rhs.m_layout || !(m_params == rhs.m_params);
+	return m_layout != rhs.m_layout || !(m_params == rhs.m_params);
 }
 bool LayoutType::compatible_with_bound(const BoundType& bound) const
 {
@@ -205,7 +255,7 @@ std::ostream& operator<<(std::ostream& os, PrimitiveType type)
 
 std::ostream& operator<<(std::ostream& os, const NullptrType&)
 {
-	return os << "nullptr_t";
+	return os << "nullptr";
 }
 std::ostream& operator<<(std::ostream& os, const VoidType&)
 {
@@ -218,10 +268,10 @@ std::ostream& operator<<(std::ostream& os, const ObjectType& type)
 }
 
 bool ObjectType::operator==(const ObjectType& rhs) const {
-	return &m_class == &rhs.m_class && m_params == rhs.m_params;
+	return m_class == rhs.m_class && m_params == rhs.m_params;
 }
 bool ObjectType::operator!=(const ObjectType& rhs) const {
-	return &m_class != &rhs.m_class || !(m_params == rhs.m_params);
+	return m_class != rhs.m_class || !(m_params == rhs.m_params);
 }
 bool ObjectType::compatible_with_bound(const BoundType& type) const
 {
@@ -305,6 +355,16 @@ bool is_lvalue(const Expr& expr) {
 	return mpark::visit([](const auto& e) { return e.is_lvalue(); }, expr);
 }
 
+std::ostream& operator<<(std::ostream& os, UnOp op)
+{
+	return os << UN_OP_NAMES[(int)op];
+}
+
+std::ostream& operator<<(std::ostream& os, BinOp op)
+{
+	return os << BIN_OP_NAMES[(int)op];
+}
+
 CastExpr::CastExpr(Expr expr, PrimitiveType type)
 	: m_expr(new Expr(std::move(expr)))
 	, m_type(std::move(type))
@@ -327,16 +387,6 @@ UnaryExpr::UnaryExpr(UnOp op, Expr expr)
 const Expr& UnaryExpr::expr() const { return *m_expr; }
 Type UnaryExpr::type() const { return expr_type(*m_expr); }
 
-IndexExpr::IndexExpr(const Pool& pool, Expr idx)
-	: m_pool(pool)
-	, m_idx(new Expr(std::move(idx)))
-{}
-const Expr& IndexExpr::idx() const { return *m_idx; }
-
-ObjectType IndexExpr::type() const {
-	return from_pool_type(m_pool.type());
-}
-
 MethodCall::MethodCall(const Method& method, Expr this_expr, std::vector<Expr> args, Type type)
 	: m_method(method)
 	, m_this_expr(new Expr(std::move(this_expr)))
@@ -344,9 +394,6 @@ MethodCall::MethodCall(const Method& method, Expr this_expr, std::vector<Expr> a
 	, m_type(std::move(type))
 {}
 const Expr& MethodCall::this_expr() const { return *m_this_expr; }
-bool MethodCall::is_lvalue() const {
-	return mpark::holds_alternative<ObjectType>(m_type);
-}
 const Type& MethodCall::type() const { return m_type; }
 
 FieldAccess::FieldAccess(Expr expr, const Field& field, Type type)
@@ -396,6 +443,20 @@ ForeachPool::ForeachPool(const Variable& var, const Pool& pool, std::vector<Stmt
 	, m_pool(pool)
 	, m_body(std::move(body))
 {}
+
+void Layout::build_field_map()
+{
+	for (size_t i = 0; i < m_clusters.size(); i++) {
+		const auto& fields = m_clusters[i].fields();
+		for (size_t j = 0; j < fields.size(); j++) {
+			FieldPos pos;
+			pos.cluster_idx = i;
+			pos.pos = j;
+
+			m_field_map[fields[j]] = pos;
+		}
+	}
+}
 
 const Pool* Class::find_pool(const std::string& name) const
 {
@@ -472,6 +533,7 @@ std::pair<Field*, bool> Class::add_field(std::string name, const Location& loc)
 		Field(std::move(name), loc)
 		);
 	if (res.second) {
+		m_field_indices[&res.first->second] = m_fields.size();
 		m_fields.emplace_back(res.first->second);
 	}
 	return std::make_pair(&res.first->second, res.second);
@@ -486,6 +548,16 @@ std::pair<Method*, bool> Class::add_method(std::string name, const Location& loc
 		m_methods.emplace_back(res.first->second);
 	}
 	return std::make_pair(&res.first->second, res.second);
+}
+
+size_t Class::index_of(const Field& field) const
+{
+	const auto it = m_field_indices.find(&field);
+	if (it == m_field_indices.end()) {
+		return -1;
+	}
+
+	return it->second;
 }
 
 const Class* Program::find_class(const std::string& name) const
@@ -563,6 +635,434 @@ BoundType Class::this_bound_type() const {
 
 	const Pool& first = m_pools.front();
 	return BoundType(*this, std::move(params), first.loc());
+}
+
+class AstDebugger
+{
+	int indentation_level = 0;
+
+	void indent() { indentation_level++; }
+
+	void dedent() { indentation_level--; }
+
+	void emit_indentation()
+	{
+		fprintf(stderr, "%*c", indentation_level * 2, ' ');
+	}
+
+public:
+	void operator()(const Field& field)
+	{
+		emit_indentation();
+		fprintf(stderr, "Field: %s (type: %s)\n",
+			field.name().c_str(),
+			to_string(field.type()).c_str());
+	}
+
+	void operator()(const Pool& pool)
+	{
+		emit_indentation();
+		if (pool.has_type()) {
+			fprintf(stderr, "Pool: %s (type: %s)\n",
+				pool.name().c_str(), to_string(pool.type()).c_str());
+		} else {
+			fprintf(stderr, "Pool: %s (no type)\n", pool.name().c_str());
+		}
+	}
+
+	void operator()(const IntegerConst& expr)
+	{
+		emit_indentation();
+		fprintf(stderr, "Integer constant: %" PRIu64 "\n", expr.value());
+	}
+
+	void operator()(const DoubleConst& expr)
+	{
+		emit_indentation();
+		fprintf(stderr, "Double constant: %.f\n", expr.value());
+	}
+
+	void operator()(const NullExpr&)
+	{
+		emit_indentation();
+		fprintf(stderr, "Null expression\n");
+	}
+
+	void operator()(const ThisExpr& expr)
+	{
+		emit_indentation();
+		fprintf(stderr, "This expression (type: %s)\n",
+			to_string(expr.type()).c_str());
+	}
+
+	void operator()(const BooleanConst& expr)
+	{
+		emit_indentation();
+		fprintf(stderr, "Boolean constant: %s\n",
+			expr.value() ? "true" : "false");
+	}
+
+	void operator()(const CastExpr& expr)
+	{
+		emit_indentation();
+		fprintf(stderr, "Cast expression into type: %s\n",
+			to_string(expr.type()).c_str());
+
+		emit_indentation();
+		fprintf(stderr, "Expression:\n");
+
+		indent();
+		mpark::visit(*this, expr.expr());
+		dedent();
+	}
+
+	void operator()(const UnaryExpr& expr)
+	{
+		emit_indentation();
+		fprintf(stderr, "Unary expression (op: %s)\n",
+			to_string(expr.type()).c_str());
+
+		emit_indentation();
+		fprintf(stderr, "Expression:\n");
+
+		indent();
+		mpark::visit(*this, expr.expr());
+		dedent();
+	}
+
+	void operator()(const BinaryExpr& expr)
+	{
+		emit_indentation();
+		fprintf(stderr, "Binary expression (op: %s)\n",
+			to_string(expr.op()).c_str());
+
+		emit_indentation();
+		fprintf(stderr, "Lhs:\n");
+
+		indent();
+		mpark::visit(*this, expr.lhs());
+		dedent();
+
+		emit_indentation();
+		fprintf(stderr, "Rhs:\n");
+
+		indent();
+		mpark::visit(*this, expr.rhs());
+		dedent();
+	}
+
+	void operator()(const VariableExpr& expr)
+	{
+		emit_indentation();
+		fprintf(stderr, "Variable expression (variable: %s)\n",
+			expr.var().name().c_str());
+	}
+
+	void operator()(const MethodCall& expr)
+	{
+		emit_indentation();
+		fprintf(stderr, "Method call: %s\n",
+			expr.method().name().c_str());
+
+		emit_indentation();
+		fprintf(stderr, "This expression:\n");
+
+		indent();
+		mpark::visit(*this, expr.this_expr());
+		dedent();
+
+		emit_indentation();
+		fprintf(stderr, "Arguments:\n");
+
+		indent();
+		for (const auto& e: expr.args()) {
+			mpark::visit(*this, e);
+		}
+		dedent();
+	}
+
+	void operator()(const FieldAccess& expr)
+	{
+		emit_indentation();
+		fprintf(stderr, "Field Access: %s\n",
+			expr.field().name().c_str());
+
+		emit_indentation();
+		fprintf(stderr, "Inner expression:\n");
+
+		indent();
+		mpark::visit(*this, expr.expr());
+		dedent();
+	}
+
+	void operator()(const NewExpr& expr)
+	{
+		emit_indentation();
+		fprintf(stderr, "New expression (type: %s)\n",
+			to_string(expr.type()).c_str());
+	}
+
+	void operator()(const Assignment& stmt)
+	{
+		emit_indentation();
+		fprintf(stderr, "Assignment:\n");
+
+		emit_indentation();
+		fprintf(stderr, "Lhs:\n");
+		indent();
+		mpark::visit(*this, stmt.lhs());
+		dedent();
+
+		emit_indentation();
+		fprintf(stderr, "Rhs:\n");
+		indent();
+		mpark::visit(*this, stmt.rhs());
+		dedent();
+	}
+
+	void operator()(const OpAssignment& stmt)
+	{
+		emit_indentation();
+		fprintf(stderr, "Operation assignment:\n");
+
+		emit_indentation();
+		fprintf(stderr, "Lhs:\n");
+		indent();
+		mpark::visit(*this, stmt.lhs());
+		dedent();
+
+		emit_indentation();
+		fprintf(stderr, "Op: %s\n", to_string(stmt.op()).c_str());
+
+		emit_indentation();
+		fprintf(stderr, "Rhs:\n");
+		indent();
+		mpark::visit(*this, stmt.rhs());
+		dedent();
+	}
+
+	void operator()(const If& stmt)
+	{
+		emit_indentation();
+		fprintf(stderr, "If stmt. Cond:\n");
+
+		indent();
+		mpark::visit(*this, stmt.cond());
+		dedent();
+
+		emit_indentation();
+		fprintf(stderr, "Then branch:\n");
+
+		indent();
+		for (const auto& e: stmt.then_stmts()) {
+			mpark::visit(*this, e);
+		}
+		dedent();
+
+		emit_indentation();
+		fprintf(stderr, "Else branch:\n");
+
+		indent();
+		for (const auto& e: stmt.else_stmts()) {
+			mpark::visit(*this, e);
+		}
+		dedent();
+	}
+
+	void operator()(const While& stmt)
+	{
+		emit_indentation();
+		fprintf(stderr, "While stmt. Cond:\n");
+
+		indent();
+		mpark::visit(*this, stmt.cond());
+		dedent();
+
+		emit_indentation();
+		fprintf(stderr, "Body:\n");
+
+		indent();
+		for (const auto& e: stmt.body()) {
+			mpark::visit(*this, e);
+		}
+		dedent();
+	}
+
+	void operator()(const ForeachRange& stmt)
+	{
+		emit_indentation();
+		fprintf(stderr, "Foreach range stmt. Variable: %s (type: %s)\n",
+			stmt.var().name().c_str(), to_string(stmt.var().type()).c_str());
+
+		emit_indentation();
+		fprintf(stderr, "Begin:\n");
+		indent();
+		mpark::visit(*this, stmt.range_begin());
+		dedent();
+
+		emit_indentation();
+		fprintf(stderr, "End:\n");
+		indent();
+		mpark::visit(*this, stmt.range_end());
+		dedent();
+
+		emit_indentation();
+		fprintf(stderr, "Body:\n");
+
+		indent();
+		for (const auto& e: stmt.body()) {
+			mpark::visit(*this, e);
+		}
+		dedent();
+	}
+
+	void operator()(const ForeachPool& stmt)
+	{
+		emit_indentation();
+		fprintf(stderr, "Foreach pool stmt. Variable: %s (type: %s), Pool %s\n",
+			stmt.var().name().c_str(),
+			to_string(stmt.var().type()).c_str(),
+			stmt.pool().name().c_str());
+
+		emit_indentation();
+		fprintf(stderr, "Body:\n");
+
+		indent();
+		for (const auto& e: stmt.body()) {
+			mpark::visit(*this, e);
+		}
+		dedent();
+	}
+
+	void operator()(const ExprStmt& stmt)
+	{
+		emit_indentation();
+		fprintf(stderr, "Expression stmt\n");
+
+		indent();
+		mpark::visit(*this, stmt.expr());
+		dedent();
+	}
+
+	void operator()(const Break&)
+	{
+		emit_indentation();
+		fprintf(stderr, "Break stmt\n");
+	}
+
+	void operator()(const Continue&)
+	{
+		emit_indentation();
+		fprintf(stderr, "Continue stmt\n");
+	}
+
+	void operator()(const Return& stmt)
+	{
+		if (stmt.expr() != nullptr) {
+			emit_indentation();
+			fprintf(stderr, "Return stmt. Expr:\n");
+
+			indent();
+			mpark::visit(*this, *stmt.expr());
+			dedent();
+		} else {
+			emit_indentation();
+			fprintf(stderr, "Return stmt.\n");
+		}
+	}
+
+	void operator()(const Method& method)
+	{
+		emit_indentation();
+		fprintf(stderr, "Method: %s\n", method.name().c_str());
+
+		emit_indentation();
+		fprintf(stderr, "Parameters:\n");
+
+		indent();
+		for (const auto& e: method.params()) {
+			emit_indentation();
+			fprintf(stderr, "%s: %s\n", e.name().c_str(), to_string(e.type()).c_str());
+		}
+		dedent();
+
+		emit_indentation();
+		fprintf(stderr, "Return type: %s\n",
+			to_string(method.return_type()).c_str());
+
+		emit_indentation();
+		fprintf(stderr, "Body:\n");
+
+		indent();
+		for (const auto& e: method.body()) {
+			mpark::visit(*this, e);
+		}
+		dedent();
+	}
+
+	void operator()(const Class& clazz)
+	{
+		emit_indentation();
+		fprintf(stderr, "Class: %s\n",
+				clazz.name().c_str());
+
+		indent();
+		for (const auto& e: clazz.pools()) {
+			(*this)(e);
+		}
+
+		for (const auto& e: clazz.fields()) {
+			(*this)(e);
+		}
+
+		for (const auto& e: clazz.methods()) {
+			(*this)(e);
+		}
+
+		dedent();
+	}
+
+	void operator()(const Cluster& cluster)
+	{
+		emit_indentation();
+		fprintf(stderr, "Cluster:\n");
+
+		indent();
+		for (const auto& e: cluster.fields()) {
+			(*this)(*e);
+		}
+		dedent();
+	}
+
+	void operator()(const Layout& layout)
+	{
+		emit_indentation();
+		fprintf(stderr, "Layout: %s (class: %s)\n",
+				layout.name().c_str(),
+				layout.for_class().name().c_str());
+
+		indent();
+		for (const auto& e: layout.clusters()) {
+			(*this)(e);
+		}
+		dedent();
+	}
+
+	void operator()(const Program& ast)
+	{
+		for (const Class& e: ast.ordered_classes()) {
+			(*this)(e);
+		}
+		for (const Layout& e: ast.ordered_layouts()) {
+			(*this)(e);
+		}
+	}
+};
+
+void debug_ast(const Program& ast)
+{
+	AstDebugger debugger;
+	debugger(ast);
 }
 
 } // namespace Ast

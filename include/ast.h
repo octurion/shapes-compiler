@@ -131,6 +131,7 @@ public:
 };
 
 using PoolType = mpark::variant<LayoutType, BoundType, NoneType>;
+const Class& for_class(const PoolType& type);
 std::ostream& operator<<(std::ostream& os, const PoolType& type);
 bool compatible_with_bound(const PoolType& type, const BoundType& bound);
 bool first_pool_param_is(const PoolType& type, const Pool& pool);
@@ -306,7 +307,6 @@ class ThisExpr;
 class CastExpr;
 class UnaryExpr;
 class BinaryExpr;
-class IndexExpr;
 class VariableExpr;
 class MethodCall;
 class FieldAccess;
@@ -314,7 +314,7 @@ class NewExpr;
 
 using Expr = mpark::variant<
 	IntegerConst, DoubleConst, BooleanConst, NullExpr, ThisExpr, CastExpr,
-	UnaryExpr, BinaryExpr, IndexExpr, VariableExpr, MethodCall, FieldAccess,
+	UnaryExpr, BinaryExpr, VariableExpr, MethodCall, FieldAccess,
 	NewExpr>;
 Type expr_type(const Expr& expr);
 bool is_lvalue(const Expr& expr);
@@ -377,7 +377,7 @@ class ThisExpr
 	{}
 
 	const ObjectType& type() const { return m_type; }
-	bool is_lvalue() const { return true; }
+	bool is_lvalue() const { return false; }
 };
 
 class CastExpr
@@ -396,6 +396,7 @@ public:
 };
 
 enum class UnOp { PLUS, MINUS, NOT };
+std::ostream& operator<<(std::ostream& os, UnOp op);
 inline bool is_bitwise_operator(UnOp op) { return op == UnOp::NOT; }
 
 class UnaryExpr
@@ -420,6 +421,7 @@ enum class BinOp
 	AND, OR, XOR, SHL, SHR,
 	EQ, NE, LT, LE, GT, GE,
 };
+std::ostream& operator<<(std::ostream& os, BinOp op);
 inline bool is_bitwise_operator(BinOp op) {
 	switch (op) {
 	case BinOp::AND:
@@ -449,21 +451,6 @@ public:
 
 	PrimitiveType type() const { return m_type; }
 	bool is_lvalue() const { return false; }
-};
-
-class IndexExpr
-{
-	const Pool& m_pool;
-	std::unique_ptr<Expr> m_idx;
-
-public:
-	IndexExpr(const Pool& pool, Expr idx);
-
-	const Pool& pool() const { return m_pool; }
-	const Expr& idx() const;
-
-	ObjectType type() const;
-	bool is_lvalue() const { return true; }
 };
 
 class VariableExpr
@@ -496,7 +483,7 @@ public:
 
 	const std::vector<Expr>& args() const { return m_args; }
 	size_t num_args() const { return m_args.size(); }
-	bool is_lvalue() const;
+	bool is_lvalue() const { return false; }
 };
 
 class FieldAccess
@@ -524,7 +511,7 @@ public:
 	{}
 
 	const ObjectType& type() const { return m_type; }
-	bool is_lvalue() const { return true; }
+	bool is_lvalue() const { return false; }
 };
 
 class Field
@@ -559,9 +546,6 @@ class Cluster
 	Location m_loc;
 
 public:
-	using const_iterator = decltype(m_fields)::const_iterator;
-	using iterator = decltype(m_fields)::iterator;
-
 	explicit Cluster(const Location& loc)
 		: m_loc(loc)
 	{}
@@ -571,11 +555,18 @@ public:
 	void add_field(const Field& field) { m_fields.emplace_back(&field); }
 };
 
+struct FieldPos
+{
+	size_t cluster_idx;
+	size_t pos;
+};
+
 class Layout
 {
 	std::string m_name;
 	const Class& m_class;
 	std::vector<Cluster> m_clusters;
+	std::unordered_map<const Field*, FieldPos> m_field_map;
 	Location m_loc;
 
 public:
@@ -594,12 +585,21 @@ public:
 	size_t num_clusters() const { return m_clusters.size(); }
 
 	const Location& loc() const { return m_loc; }
+	const FieldPos* field_pos(const Field& field) const
+	{
+		auto it = m_field_map.find(&field);
+		return it != m_field_map.end()
+			? &it->second
+			: nullptr;
+	}
 
 	Cluster& add_cluster(const Location& loc)
 	{
 		m_clusters.emplace_back(loc);
 		return m_clusters.back();
 	}
+
+	void build_field_map();
 };
 
 class Assignment;
@@ -760,7 +760,7 @@ public:
 	const std::string& name() const { return m_name; }
 
 	const std::deque<Pool>& pools() const { return m_pools; }
-	const std::deque<Variable> vars() const { return m_vars; }
+	const std::deque<Variable>& vars() const { return m_vars; }
 
 	const std::deque<Variable>& params() const { return m_params; }
 	size_t num_params() const { return m_params.size(); }
@@ -777,8 +777,8 @@ public:
 
 	const Variable& add_parameter(std::string name, Type type, const Location& loc)
 	{
-		m_vars.emplace_back(std::move(name), std::move(type), loc);
-		return m_vars.back();
+		m_params.emplace_back(std::move(name), std::move(type), loc);
+		return m_params.back();
 	}
 
 	const Variable& add_variable(std::string name, Type type, const Location& loc)
@@ -802,6 +802,7 @@ class Class
 	std::vector<std::reference_wrapper<Pool>> m_pools;
 
 	std::unordered_map<std::string, Field> m_field_map;
+	std::unordered_map<const Field*, size_t> m_field_indices;
 	std::vector<std::reference_wrapper<Field>> m_fields;
 
 	std::unordered_map<std::string, Method> m_method_map;
@@ -854,6 +855,8 @@ public:
 		return m_layouts;
 	}
 
+	size_t index_of(const Field& field) const;
+
 	void add_layout(const Layout& layout) { m_layouts.emplace_back(layout); }
 
 	const std::string& name() const { return m_name; }
@@ -887,5 +890,7 @@ public:
 	std::pair<Layout*, bool> add_layout(
 		std::string name, const Class& for_class, const Location& loc);
 };
+
+void debug_ast(const Program& ast);
 
 } // namespace Ast

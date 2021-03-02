@@ -1,0 +1,22 @@
+class Main<p1> where
+    p1: [Main<p1>]
+{
+    f1: i32;
+    f2: bool;
+    f3: Main<p1>;
+
+    fn test() {
+        f1 = 2 as i32;
+        f2 = true;
+        f3 = this;
+
+        this.f1 = 2 as i32;
+        this.f2 = true && false;
+        this.f3 = this;
+
+        let x: i32, y: i32, z: bool;
+        x = f1;
+        y = this.f1;
+        z = this.f2 | (f1 == 0 as i32);
+    }
+}

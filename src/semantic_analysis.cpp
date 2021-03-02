@@ -218,6 +218,19 @@ static void collect_layouts(
 			}
 		}
 
+		bool fields_missing = false;
+		for (const Field& e: for_class->fields())
+		{
+			if (fields_added.find(&e) == fields_added.end()) {
+				errors.add<LayoutMissingField>(e.name(), layout.name().ident(), e.loc());
+				fields_missing = true;
+			}
+		}
+		if (fields_missing) {
+			continue;
+		}
+
+		new_layout->build_field_map();
 		for_class->add_layout(*new_layout);
 	}
 }
@@ -239,8 +252,7 @@ public:
 		: m_class(&class_scope)
 	{
 		push_scope();
-		for (const auto& e: class_scope.pools()) {
-			Pool& pool = e;
+		for (Pool& pool: class_scope.pools()) {
 			add_pool(pool.name(), pool);
 		}
 	}
@@ -249,13 +261,11 @@ public:
 		: m_class(&class_scope)
 	{
 		push_scope();
-		for (const auto& e: class_scope.pools()) {
-			Pool& pool = e;
+		for (Pool& pool: class_scope.pools()) {
 			add_pool(pool.name(), pool);
 		}
 
-		for (const auto& e: method_scope.params()) {
-			const Variable& var = e;
+		for (const Variable& var: method_scope.params()) {
 			add_variable(var.name(), var);
 		}
 	}
@@ -349,6 +359,7 @@ class TypeConstructor {
 					e.ident(), ErrorKind::POOL, e.loc());
 				return std::vector<PoolParameter>();
 			}
+			ast_params.emplace_back(PoolRef(*found_pool));
 		}
 
 		return ast_params;
@@ -373,6 +384,7 @@ class TypeConstructor {
 						pool->ident(), ErrorKind::POOL, pool->loc());
 					return std::vector<PoolParameter>();
 				}
+				ast_params.emplace_back(PoolRef(*found_pool));
 			}
 		}
 
@@ -441,8 +453,8 @@ public:
 
 	mpark::variant<mpark::monostate, LayoutType, BoundType>
 	operator()(const Cst::LayoutType& type) {
-		const auto* of_class = m_ast.find_layout(type.layout_name().ident());
-		if (of_class == nullptr) {
+		const auto* layout = m_ast.find_layout(type.layout_name().ident());
+		if (layout == nullptr) {
 			m_errors.add<MissingDefinition>(
 				type.layout_name().ident(),
 				ErrorKind::LAYOUT,
@@ -460,7 +472,7 @@ public:
 			return mpark::monostate();
 		}
 
-		return LayoutType(*of_class, std::move(params), type.loc());
+		return LayoutType(*layout, std::move(params), type.loc());
 	}
 };
 
@@ -821,11 +833,12 @@ public:
 				typechecks = false;
 				continue;
 			}
-			if (!first_pool_param_is(pool->type(), *pool)) {
+			auto type = get_type(maybe_type);
+			if (!first_pool_param_is(type, *pool)) {
 				typechecks = false;
 				continue;
 			}
-			pool->set_type(get_type(maybe_type));
+			pool->set_type(std::move(type));
 		}
 		if (!typechecks) {
 			m_scopes.pop_scope();
@@ -863,7 +876,7 @@ public:
 
 		if (!assignable_from(lhs_type, rhs_type)) {
 			m_errors.add<NonAssignableType>(
-				location(e.rhs()), to_string(lhs_type), to_string(rhs_type));
+				location(e.rhs()), to_string(rhs_type), to_string(lhs_type));
 		}
 
 		m_blocks.add<Assignment>(std::move(lhs), std::move(rhs));
@@ -969,7 +982,7 @@ public:
 		m_scopes.push_scope();
 		m_blocks.push_block();
 
-		mpark::visit(*this, e.then_branch());
+		mpark::visit(*this, e.else_branch());
 
 		auto else_branch = m_blocks.pop_block();
 		m_scopes.pop_scope();
@@ -1324,27 +1337,6 @@ public:
 		unreachable("Forgot to handle operand");
 	}
 
-	Expr operator()(const Cst::IndexExpr& e)
-	{
-		const auto* pool = m_scopes.find_pool(e.pool().ident());
-		if (pool == nullptr) {
-			m_errors.add<MissingDefinition>(
-				e.pool().ident(), ErrorKind::POOL, e.pool().loc());
-			return IntegerConst(0);
-		}
-
-		auto idx = mpark::visit(*this, e.idx());
-		auto type = expr_type(idx);
-
-		const auto* primitive_type = mpark::get_if<PrimitiveType>(&type);
-		if (primitive_type == nullptr || !is_integer(*primitive_type)) {
-			m_errors.add<ExpectedIntegerType>(location(e.idx()), to_string(type));
-			return IntegerConst(0);
-		}
-
-		return IndexExpr(*pool, std::move(idx));
-	}
-
 	Expr operator()(const Cst::VariableExpr& e)
 	{
 		const auto* var = m_scopes.find_variable(e.name().ident());
@@ -1390,8 +1382,8 @@ public:
 			if (!assignable_from(method_params[i].type(), expr_type(args[i]))) {
 				m_errors.add<NonAssignableType>(
 					location(e.params()[i]),
-					to_string(method_params[i].type()),
-					to_string(expr_type(args[i])));
+					to_string(expr_type(args[i])),
+					to_string(method_params[i].type()));
 				type_mismatch = true;
 			}
 		}
@@ -1415,7 +1407,7 @@ public:
 		if (obj_type == nullptr) {
 			m_errors.add<ExpectedObjectType>(
 				location(e.this_expr()),
-				to_string(obj_type));
+				to_string(this_type));
 			return IntegerConst(0);
 		}
 
@@ -1484,7 +1476,7 @@ public:
 		const auto& field_type = field->type();
 		const auto* as_field_obj_type = mpark::get_if<ObjectType>(&field_type);
 		if (as_field_obj_type != nullptr) {
-			type = as_field_obj_type->remap_formal_pool_params(*as_obj_type);
+			new_type = as_field_obj_type->remap_formal_pool_params(*as_obj_type);
 		} else {
 			new_type = field_type;
 		}
@@ -1526,46 +1518,9 @@ static void collect_method_bodies(
 	}
 }
 
-/*
-class MethodBodiesCollector final: public Cst::DefaultVisitor
+void run_semantic_analysis(const Cst::Program& cst, Program& dest_ast, SemanticErrorList& errors)
 {
-	void visit(const Cst::Stmt::ForeachPool& e) override
-	{
-		const auto* pool = m_symtab.find_pool(e.pool().ident());
-		if (pool == nullptr) {
-			m_errors.add<MissingDefinition>(
-				e.pool().ident(),
-				ErrorKind::POOL,
-				e.pool().loc()
-			);
-			return;
-		}
-
-		m_symtab.push_scope();
-		m_blocks.push_block();
-
-		auto& var = m_curr_method->add_variable(
-			e.var().ident(),
-			PoolTypeToObjectType::convert(pool->type()),
-			e.var().loc()
-		);
-		m_symtab.add_variable(e.var().ident(), var);
-
-		e.body().accept(*this);
-
-		auto stmts = m_blocks.pop_block();
-		m_symtab.pop_scope();
-
-		m_blocks.add<Stmt::ForeachPool>(
-			var, *pool, std::move(stmts)
-		);
-	}
-};
-*/
-
-void run_semantic_analysis(const Cst::Program& cst, Program& ast, SemanticErrorList& errors)
-{
-	Program program;
+	Program ast;
 	collect_classes_fields_pool_params(cst, ast, errors);
 	if (errors.has_errors()) {
 		return;
@@ -1591,7 +1546,7 @@ void run_semantic_analysis(const Cst::Program& cst, Program& ast, SemanticErrorL
 		return;
 	}
 
-	ast = std::move(program);
+	dest_ast = std::move(ast);
 }
 
 } // namespace Ast

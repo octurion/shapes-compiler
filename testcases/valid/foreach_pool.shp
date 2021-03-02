@@ -1,0 +1,13 @@
+class Main<p1> where
+    p1: [Main<p1>]
+{
+    f: i32;
+
+    fn sum(): i32 {
+        let sum: i32;
+        foreach x: p1 {
+            sum += x.f;
+        }
+        return sum;
+    }
+}

@@ -1,0 +1,4 @@
+class A<p1> where
+    p1: [A<p1>]
+{
+}

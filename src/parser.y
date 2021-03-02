@@ -278,16 +278,17 @@ T consume_ptr(T* ptr) {
 
 %type<identifier> identifier
 
-%left T_TIMES T_DIV
-%left T_PLUS T_MINUS
-%left T_SHL T_SHR
-%left T_AND
-%left T_XOR
-%left T_OR
+%left T_LOR
+%left T_LAND
+
 /* No associativity for comparison operators */
 %nonassoc T_EQ T_NE T_LANGLE T_LE T_RANGLE T_GE
-%left T_LAND
-%left T_LOR
+%left T_OR
+%left T_XOR
+%left T_AND
+%left T_SHL T_SHR
+%left T_PLUS T_MINUS
+%left T_TIMES T_DIV
 
 %code requires {
 #include "cst.h"

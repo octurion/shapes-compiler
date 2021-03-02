@@ -1,0 +1,6 @@
+class A<p1, p2> where
+    p1: [A<p1, p2>],
+    p2: [B<p2, p1>],
+{
+    f1: A<p1, none>;
+}
