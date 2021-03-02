@@ -12,6 +12,8 @@ jobs:
     steps:
     - uses: actions/checkout@v2
       name: Checkout repository
+      with:
+        submodules: recursive
     - name: Install dependencies
       run: sudo apt-get -y install git cmake g++ flex bison llvm-8-dev ninja-build
     - name: Build
@@ -20,3 +22,4 @@ jobs:
         cd build
         cmake -DCMAKE_BUILD_TYPE=Debug -GNinja ..
         ninja
+        ./shapes_tests
