@@ -191,6 +191,8 @@ class CodegenState
 	llvm::Type* m_f32 = nullptr;
 	llvm::Type* m_f64 = nullptr;
 
+	llvm::Type* m_intptr = nullptr;
+
 	llvm::FunctionType* m_malloc_type = nullptr;
 	llvm::Function* m_malloc = nullptr;
 
@@ -427,7 +429,7 @@ llvm::Type* CodegenState::type_of(const Ast::ObjectType& type, const ClassSpecia
 	if (as_standalone != nullptr) {
 		return as_standalone->type->getPointerTo();
 	}
-	return m_i64;
+	return m_intptr;
 }
 
 llvm::Type* CodegenState::type_of(const Ast::PrimitiveType& type, const ClassSpecialization&)
@@ -475,7 +477,7 @@ llvm::Constant* CodegenState::zero(const Ast::ObjectType& type, const ClassSpeci
 	if (as_standalone != nullptr) {
 		return llvm::ConstantPointerNull::get(as_standalone->type->getPointerTo());
 	}
-	return llvm::ConstantInt::get(m_i64, -1ull, true);
+	return llvm::ConstantInt::get(m_intptr, -1ull, true);
 }
 
 llvm::Constant* CodegenState::zero(const Ast::PrimitiveType& type, const ClassSpecialization& spec)
@@ -547,7 +549,7 @@ void CodegenState::generate_llvm_types()
 				pool_info->cluster_types.push_back(cluster_type);
 			}
 
-			std::vector<llvm::Type*> pool_fields { m_i64, m_i64 };
+			std::vector<llvm::Type*> pool_fields { m_intptr, m_intptr };
 			for (const auto& e: pool_info->cluster_types) {
 				pool_fields.push_back(e->getPointerTo());
 			}
@@ -629,7 +631,10 @@ void CodegenState::generate_llvm_function_decls()
 			llvm::IRBuilder<> builder(bb);
 			auto* class_ptr_type = as_standalone->type->getPointerTo();
 
-			auto* size = llvm::ConstantExpr::getSizeOf(as_standalone->type);
+			const auto& data_layout = m_mod->getDataLayout();
+			auto* size = llvm::ConstantInt::get(
+				data_layout.getIntPtrType(m_ctx),
+				data_layout.getStructLayout(as_standalone->type)->getSizeInBytes());
 			auto* malloc_ptr = builder.CreateCall(m_malloc, {size});
 
 			const auto& fields = specialization.clazz().fields();
@@ -681,8 +686,8 @@ void CodegenState::generate_llvm_function_decls()
 
 				auto* pool_ptr = as_pool->pool_alloc->arg_begin();
 				std::vector<llvm::Constant*> init_values = {
-					llvm::ConstantInt::get(m_i64, 0),
-					llvm::ConstantInt::get(m_i64, 0),
+					llvm::ConstantInt::get(m_intptr, 0),
+					llvm::ConstantInt::get(m_intptr, 0),
 				};
 				for (auto* e: as_pool->cluster_types) {
 					init_values.push_back(
@@ -729,7 +734,7 @@ void CodegenState::generate_llvm_function_decls()
 			}
 
 			auto* alloc_func_type = llvm::FunctionType::get(
-				m_i64, {as_pool->pool_type->getPointerTo()}, false);
+				m_intptr, {as_pool->pool_type->getPointerTo()}, false);
 			as_pool->obj_ctor = llvm::Function::Create(
 				alloc_func_type,
 				llvm::GlobalValue::ExternalLinkage,
@@ -769,11 +774,11 @@ void CodegenState::generate_llvm_function_decls()
 
 			auto* new_cap = builder.CreateShl(capacity, 1);
 			auto* new_cap_nonzero = builder.CreateICmpNE(
-				new_cap, llvm::ConstantInt::get(m_i64, 0));
+				new_cap, llvm::ConstantInt::get(m_intptr, 0));
 			new_cap = builder.CreateSelect(
 				new_cap_nonzero,
 				new_cap,
-				llvm::ConstantInt::get(m_i64, 1));
+				llvm::ConstantInt::get(m_intptr, 1));
 			builder.CreateStore(new_cap, capacity_ptr);
 
 			const auto& cluster_types = as_pool->cluster_types;
@@ -787,7 +792,11 @@ void CodegenState::generate_llvm_function_decls()
 					builder.CreateLoad(member_ptr),
 					m_i8->getPointerTo());
 
-				auto* cluster_size = llvm::ConstantExpr::getSizeOf(m_i64);
+				const auto& data_layout = m_mod->getDataLayout();
+				auto* cluster_size = llvm::ConstantInt::get(
+					data_layout.getIntPtrType(m_ctx),
+					data_layout.getTypeAllocSize(m_intptr));
+
 				auto* new_size = builder.CreateMul(new_cap, cluster_size);
 				auto* realloc = builder.CreateCall(
 					m_realloc, {old_ptr, new_size});
@@ -800,7 +809,7 @@ void CodegenState::generate_llvm_function_decls()
 			builder.SetInsertPoint(bb_alloc);
 			auto* new_idx = size;
 			builder.CreateStore(
-				builder.CreateAdd(size, llvm::ConstantInt::get(m_i64, 1)),
+				builder.CreateAdd(size, llvm::ConstantInt::get(m_intptr, 1)),
 				builder.CreateStructGEP(as_pool->pool_type, pool_ptr, 0));
 
 			const auto& clusters = layout->clusters();
@@ -1202,7 +1211,7 @@ void CodegenState::visit(const Ast::ForeachPool& e, MethodCodegenState& state)
 	auto* update_bb = llvm::BasicBlock::Create(m_ctx, "foreach_pool_update", state.llvm_func);
 	auto* exit_bb = llvm::BasicBlock::Create(m_ctx, "foreach_pool_exit", state.llvm_func);
 
-	state.builder->CreateStore(llvm::ConstantInt::get(m_i64, 0), var);
+	state.builder->CreateStore(llvm::ConstantInt::get(m_intptr, 0), var);
 	state.builder->CreateBr(cond_bb);
 
 	state.builder->SetInsertPoint(cond_bb);
@@ -1280,7 +1289,7 @@ void CodegenState::visit(const Ast::Return& e, MethodCodegenState& state)
 		auto new_spec = state.spec.specialize_type(*as_obj_type);
 
 		auto* nullptr_value = new_spec.is_pooled_type()
-			? llvm::ConstantInt::get(m_i64, -1ull, true)
+			? llvm::ConstantInt::get(m_intptr, -1ull, true)
 			: llvm::ConstantPointerNull::get(
 				llvm::cast<llvm::PointerType>(type_of(*as_obj_type, new_spec)));
 
@@ -1302,7 +1311,7 @@ void CodegenState::visit(const Ast::Return& e, MethodCodegenState& state)
 
 llvm::Value* CodegenState::visit(const Ast::IntegerConst& e, MethodCodegenState&)
 {
-	return llvm::ConstantInt::get(m_i64, e.value());
+	return llvm::ConstantInt::get(m_intptr, e.value());
 }
 
 llvm::Value* CodegenState::visit(const Ast::DoubleConst& e, MethodCodegenState&)
@@ -1470,7 +1479,7 @@ llvm::Value* CodegenState::visit(const Ast::BinaryExpr& e, MethodCodegenState& s
 		const auto new_spec = state.spec.specialize_type(obj_type);
 
 		auto* nullptr_value = new_spec.is_pooled_type()
-			? llvm::ConstantInt::get(m_i64, -1ull, true)
+			? llvm::ConstantInt::get(m_intptr, -1ull, true)
 			: llvm::ConstantPointerNull::get(
 				llvm::cast<llvm::PointerType>(type_of(obj_type, new_spec)));
 
@@ -1503,8 +1512,8 @@ llvm::Value* CodegenState::visit(const Ast::BinaryExpr& e, MethodCodegenState& s
 				? state.builder->CreateICmpEQ(lhs_value, rhs_value)
 				: state.builder->CreateICmpNE(lhs_value, rhs_value);
 		} else {
-			auto lhs_intptr = state.builder->CreatePtrToInt(lhs_value, m_i64);
-			auto rhs_intptr = state.builder->CreatePtrToInt(rhs_value, m_i64);
+			auto lhs_intptr = state.builder->CreatePtrToInt(lhs_value, m_intptr);
+			auto rhs_intptr = state.builder->CreatePtrToInt(rhs_value, m_intptr);
 			return e.op() == Ast::BinOp::EQ
 				? state.builder->CreateICmpEQ(lhs_intptr, rhs_intptr)
 				: state.builder->CreateICmpNE(lhs_intptr, rhs_intptr);
@@ -1840,8 +1849,10 @@ bool CodegenState::ir(const Ast::Program& ast)
 	mod.setDataLayout(m_target_machine->createDataLayout());
 	m_mod = &mod;
 
+	m_intptr = m_mod->getDataLayout().getIntPtrType(m_ctx);
+
 	m_malloc_type = llvm::FunctionType::get(
-		m_i8->getPointerTo(), {m_i64}, false);
+		m_i8->getPointerTo(), {m_intptr}, false);
 	m_malloc = llvm::Function::Create(
 		m_malloc_type,
 		llvm::GlobalValue::ExternalLinkage,
@@ -1851,7 +1862,7 @@ bool CodegenState::ir(const Ast::Program& ast)
 	m_malloc->addFnAttr(llvm::Attribute::NoUnwind);
 
 	m_realloc_type = llvm::FunctionType::get(
-		m_i8->getPointerTo(), {m_i8->getPointerTo(), m_i64}, false);
+		m_i8->getPointerTo(), {m_i8->getPointerTo(), m_intptr}, false);
 	m_realloc = llvm::Function::Create(
 		m_realloc_type,
 		llvm::GlobalValue::ExternalLinkage,
