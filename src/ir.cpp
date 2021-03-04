@@ -3,6 +3,8 @@
 
 #include <llvm/ADT/None.h>
 
+#include <llvm/Analysis/TypeBasedAliasAnalysis.h>
+
 #include <llvm/IR/AssemblyAnnotationWriter.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Function.h>
@@ -2192,23 +2194,27 @@ bool CodegenState::ir(const Ast::Program& ast)
 	generate_llvm_functions();
 
 	llvm::verifyModule(*m_mod, &llvm::errs());
+	auto opt_level = llvm::PassBuilder::OptimizationLevel::O3;
+
+	llvm::PassBuilder pass_builder(m_target_machine);
 
 	llvm::FunctionAnalysisManager fam;
 	llvm::LoopAnalysisManager lam;
 	llvm::CGSCCAnalysisManager cam;
 	llvm::ModuleAnalysisManager mam;
 
-	llvm::PassBuilder pass_builder(m_target_machine);
+	fam.registerPass([&] { return pass_builder.buildDefaultAAPipeline(); });
+
 	pass_builder.registerFunctionAnalyses(fam);
 	pass_builder.registerLoopAnalyses(lam);
 	pass_builder.registerCGSCCAnalyses(cam);
 	pass_builder.registerModuleAnalyses(mam);
 
 	pass_builder.crossRegisterProxies(lam, fam, cam, mam);
-	auto mod_pass_manager = pass_builder.buildPerModuleDefaultPipeline(
-		llvm::PassBuilder::O3, false);
+
+	auto mod_pass_manager =
+		pass_builder.buildPerModuleDefaultPipeline(opt_level, false);
 	mod_pass_manager.addPass(llvm::PrintModulePass(llvm::errs()));
-	mod_pass_manager.addPass(llvm::VerifierPass());
 
 	mod_pass_manager.run(*m_mod, mam);
 
