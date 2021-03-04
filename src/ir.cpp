@@ -866,6 +866,9 @@ void CodegenState::generate_llvm_function_decls()
 			info.funcs[&method] = func;
 		}
 
+		const auto& data_layout = m_mod->getDataLayout();
+		llvm::MDBuilder tbaa_builder(m_ctx);
+
 		auto* as_standalone = mpark::get_if<StandaloneSpecializationInfo>(
 			&info.type_info);
 		if (as_standalone != nullptr) {
@@ -883,7 +886,6 @@ void CodegenState::generate_llvm_function_decls()
 			llvm::IRBuilder<> builder(bb);
 			auto* class_ptr_type = as_standalone->type->getPointerTo();
 
-			const auto& data_layout = m_mod->getDataLayout();
 			auto* size = llvm::ConstantInt::get(
 				data_layout.getIntPtrType(m_ctx),
 				data_layout.getStructLayout(as_standalone->type)->getSizeInBytes());
@@ -1008,16 +1010,28 @@ void CodegenState::generate_llvm_function_decls()
 
 			llvm::Value* size_ptr;
 			llvm::Value* capacity_ptr;
-			llvm::Value* size;
-			llvm::Value* capacity;
+			llvm::Instruction* size;
+			llvm::Instruction* capacity;
 
 			llvm::IRBuilder<> builder(bb_entry);
 
 			size_ptr = builder.CreateStructGEP(as_pool->pool_type, pool_ptr, 0);
-			capacity_ptr = builder.CreateStructGEP(as_pool->pool_type, pool_ptr, 1);
-
+			const auto* pool_layout = data_layout.getStructLayout(as_pool->pool_type);
+			auto* size_tbaa_node = tbaa_builder.createTBAAStructTagNode(
+				as_pool->pool_tbaa_type,
+				m_tbaa_intptr,
+				pool_layout->getElementOffset(0));
 			size = builder.CreateLoad(size_ptr);
+			size->setMetadata(llvm::LLVMContext::MD_tbaa, size_tbaa_node);
+
+			capacity_ptr = builder.CreateStructGEP(as_pool->pool_type, pool_ptr, 1);
+			auto* capacity_tbaa_node = tbaa_builder.createTBAAStructTagNode(
+				as_pool->pool_tbaa_type,
+				m_tbaa_intptr,
+				pool_layout->getElementOffset(1));
 			capacity = builder.CreateLoad(capacity_ptr);
+			capacity->setMetadata(llvm::LLVMContext::MD_tbaa, capacity_tbaa_node);
+
 			auto* filled = builder.CreateICmpEQ(size, capacity);
 
 			builder.CreateCondBr(filled, bb_call_realloc, bb_alloc);
@@ -1031,7 +1045,8 @@ void CodegenState::generate_llvm_function_decls()
 				new_cap_nonzero,
 				new_cap,
 				llvm::ConstantInt::get(m_intptr, 1));
-			builder.CreateStore(new_cap, capacity_ptr);
+			auto* store_cap_insn = builder.CreateStore(new_cap, capacity_ptr);
+			store_cap_insn->setMetadata(llvm::LLVMContext::MD_tbaa, capacity_tbaa_node);
 
 			const auto& cluster_types = as_pool->cluster_types;
 			for (size_t i = 0; i < cluster_types.size(); i++) {
@@ -1040,9 +1055,15 @@ void CodegenState::generate_llvm_function_decls()
 
 				auto* member_ptr = builder.CreateStructGEP(
 					as_pool->pool_type, pool_ptr, i + 2);
-				auto* old_ptr = builder.CreatePointerCast(
-					builder.CreateLoad(member_ptr),
-					m_i8->getPointerTo());
+
+				auto* cluster_tbaa_node = tbaa_builder.createTBAAStructTagNode(
+					as_pool->pool_tbaa_type,
+					as_pool->cluster_tbaa_ptr_types[i],
+					pool_layout->getElementOffset(i + 2));
+				auto* old_ptr = builder.CreateLoad(member_ptr);
+				old_ptr->setMetadata(llvm::LLVMContext::MD_tbaa, cluster_tbaa_node);
+				auto* old_ptr_cast =
+					builder.CreatePointerCast(old_ptr, m_i8->getPointerTo());
 
 				const auto& data_layout = m_mod->getDataLayout();
 				auto* cluster_size = llvm::ConstantInt::get(
@@ -1051,33 +1072,57 @@ void CodegenState::generate_llvm_function_decls()
 
 				auto* new_size = builder.CreateMul(new_cap, cluster_size);
 				auto* realloc = builder.CreateCall(
-					m_realloc, {old_ptr, new_size});
-				builder.CreateStore(
+					m_realloc, {old_ptr_cast, new_size});
+				auto* store_insn = builder.CreateStore(
 					builder.CreatePointerCast(realloc, cluster_ptr_type),
 					member_ptr);
+				store_insn->setMetadata(llvm::LLVMContext::MD_tbaa, cluster_tbaa_node);
 			}
 			builder.CreateBr(bb_alloc);
 
 			builder.SetInsertPoint(bb_alloc);
 			auto* new_idx = size;
-			builder.CreateStore(
+			auto* store_size_insn = builder.CreateStore(
 				builder.CreateAdd(size, llvm::ConstantInt::get(m_intptr, 1)),
 				builder.CreateStructGEP(as_pool->pool_type, pool_ptr, 0));
+			store_size_insn->setMetadata(llvm::LLVMContext::MD_tbaa, size_tbaa_node);
 
 			const auto& clusters = layout->clusters();
 			for (size_t i = 0; i < clusters.size(); i++) {
-				std::vector<llvm::Constant*> constants;
 				const auto& fields = clusters[i].fields();
-				for (size_t j = 0; j < fields.size(); j++) {
-					constants.push_back(zero(fields[j]->type(), specialization));
-				}
+				auto* cluster_tbaa_node = tbaa_builder.createTBAAStructTagNode(
+					as_pool->pool_tbaa_type,
+					as_pool->cluster_tbaa_ptr_types[i],
+					pool_layout->getElementOffset(i + 2));
+
 				auto* cluster_ptr = builder.CreateStructGEP(
 					as_pool->pool_type, pool_ptr, i + 2);
 				auto* cluster = builder.CreateLoad(cluster_ptr);
+				cluster->setMetadata(llvm::LLVMContext::MD_tbaa, cluster_tbaa_node);
+
 				auto* offset_ptr = builder.CreateInBoundsGEP(cluster, new_idx);
-				auto* const_val = llvm::ConstantStruct::get(
-					cluster_types[i], constants);
-				builder.CreateStore(const_val, offset_ptr);
+				for (size_t j = 0; j < fields.size(); j++) {
+					auto* cluster_layout = data_layout.getStructLayout(as_pool->cluster_types[i]);
+
+					auto* tbaa_field_type = mpark::visit(
+						[this, &specialization](const auto& e) {
+							return tbaa_type_of(e, specialization);
+						}, clusters[i].fields().front()->type());
+					auto* record_tbaa_node = tbaa_builder.createTBAAStructTagNode(
+						as_pool->cluster_tbaa_types[i],
+						tbaa_field_type,
+						cluster_layout->getElementOffset(j));
+
+					auto* init_value = zero(fields[j]->type(), specialization);
+
+					auto* field_ptr = builder.CreateStructGEP(
+						as_pool->cluster_types[i], offset_ptr, j);
+					auto* record_store_insn = builder.CreateStore(init_value, field_ptr);
+					record_store_insn->setMetadata(
+						llvm::LLVMContext::MD_tbaa, record_tbaa_node);
+				}
+
+
 			}
 
 			builder.CreateRet(new_idx);
@@ -1542,9 +1587,6 @@ void CodegenState::visit(const Ast::Return& e, MethodCodegenState& state)
 	auto* value = mpark::visit([this, &state](const auto& e) {
 		return visit(e, state);
 	}, *e.expr()).to_rvalue();
-	if (Ast::is_lvalue(*e.expr())) {
-		value = state.builder->CreateLoad(value);
-	}
 	state.builder->CreateRet(value);
 
 	auto* new_bb = llvm::BasicBlock::Create(m_ctx, "after_ret", state.llvm_func);

@@ -4,11 +4,13 @@ class Main<p1> where
     f1: i32;
     f2: i32;
 
-    fn meme()
+    fn test(): i32
     {
-        f1 = 0 as i32;
-        foreach i = 0 as i32 .. 10 as i32 {
-            f1 += i;
+        let sum: i32;
+
+        sum = 0 as i32;
+        foreach o: p1 {
+            sum += f1;
         }
     }
 }
