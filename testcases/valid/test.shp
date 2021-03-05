@@ -1,18 +1,45 @@
+/*
 class Main<p1> where
     p1: [Main<p1>]
 {
-    f1: i32;
-    f2: i32;
-
-    fn test(): i32
+    fn test()
     {
-        let sum: i32;
+        pools q1: Foo<q1, q2>,
+              q2: Bar<q2, q1>;
 
-        sum = 0 as i32;
-        foreach o: p1 {
-            sum += f1;
-        }
+        let x: A<q1, q2>;
+        x = new A<q1, q2>;
+        x.init();
+    }
+}
+*/
+
+class A<p1, p2> where
+    p1: [A<p1, p2>],
+    p2: [B<p2, p1>]
+{
+    f1: i32;
+    f2: i64;
+
+    f3: B<p2, p1>;
+
+    fn init()
+    {
+        f3 = new B<p2, p1>;
+        f3.g3 = this;
     }
 }
 
-layout Foo: Main = rec{f1} + rec{f2};
+class B<q1, q2> where
+    q1: [B<q1, q2>],
+    q2: [A<q2, q1>]
+{
+    g1: i32;
+    g2: i64;
+
+    g3: A<q2, q1>;
+
+}
+
+layout Foo: A = rec{f1, f3} + rec{f2};
+layout Bar: B = rec{g1, g3} + rec{g2};

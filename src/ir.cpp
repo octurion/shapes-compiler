@@ -521,8 +521,11 @@ llvm::Type* CodegenState::type_of(const Ast::LayoutType& type, const ClassSpecia
 llvm::Type* CodegenState::type_of(const Ast::BoundType& type, const ClassSpecialization& specialization)
 {
 	auto new_spec = specialization.specialize_type(type);
-	return mpark::visit(
-		LLVMTypeFunctor(), m_specialization_info[new_spec].type_info);
+	auto* as_pool = mpark::get_if<PoolSpecializationInfo>(&m_specialization_info[new_spec].type_info);
+	if (as_pool == nullptr) {
+		return nullptr;
+	}
+	return as_pool->pool_type;
 }
 
 void CodegenState::generate_specializations(const Ast::Class& clazz)
@@ -631,16 +634,17 @@ llvm::MDNode* CodegenState::tbaa_type_of(const Ast::PrimitiveType& type, const C
 llvm::MDNode* CodegenState::tbaa_type_of(const Ast::ObjectType& type, const ClassSpecialization& specialization)
 {
 	auto new_spec = specialization.specialize_type(type);
+
 	const auto* as_standalone = mpark::get_if<StandaloneSpecializationInfo>(
 		&m_specialization_info[new_spec].type_info);
-	const auto* as_pool = mpark::get_if<StandaloneSpecializationInfo>(
+	const auto* as_pool = mpark::get_if<PoolSpecializationInfo>(
 		&m_specialization_info[new_spec].type_info);
 	if (as_standalone != nullptr) {
 		return as_standalone->tbaa_ptr_type;
 	}
 	assert_msg(as_pool != nullptr, "Neither an object nor a pool?");
 
-	return as_pool->tbaa_ptr_type;
+	return as_pool->pool_tbaa_ptr_type;
 }
 
 llvm::MDNode* CodegenState::tbaa_type_of(const Ast::VoidType&, const ClassSpecialization&)
@@ -781,7 +785,7 @@ void CodegenState::generate_llvm_types()
 				pool_layout->getElementOffset(1));
 			for (size_t i = 0; i < layout->clusters().size(); i++) {
 				auto* tbaa_ptr_type = tbaa_builder.createTBAAScalarTypeNode(
-				create_tbaa_cluster_ptr_name(spec, i), m_tbaa_root);
+					create_tbaa_cluster_ptr_name(spec, i), m_tbaa_root);
 				pool_info->cluster_tbaa_ptr_types.push_back(tbaa_ptr_type);
 
 				tbaa_fields.emplace_back(
@@ -1107,7 +1111,7 @@ void CodegenState::generate_llvm_function_decls()
 					auto* tbaa_field_type = mpark::visit(
 						[this, &specialization](const auto& e) {
 							return tbaa_type_of(e, specialization);
-						}, clusters[i].fields().front()->type());
+						}, fields[j]->type());
 					auto* record_tbaa_node = tbaa_builder.createTBAAStructTagNode(
 						as_pool->cluster_tbaa_types[i],
 						tbaa_field_type,
