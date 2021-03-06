@@ -1,0 +1,31 @@
+class Main<p1> where
+    p1: [Main<p1>]
+{
+    fn run(): i32
+    {
+        pool p: Foo<p>;
+        let o: A<p>;
+
+        o = new A<p>;
+        return o.test();
+    }
+}
+
+class A<p1> where
+    p1: [A<p1>]
+{
+    f1: i32;
+    f2: i32;
+
+    fn test(): i32
+    {
+        f1 = 0 as i32;
+        foreach i = 0 as i32 .. 10 as i32 {
+            f1 += i;
+        }
+
+        return f1;
+    }
+}
+
+layout Foo: A = rec{f1} + rec{f2};
