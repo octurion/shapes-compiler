@@ -1,0 +1,28 @@
+class Main<p1> where
+    p1: [Main<p1>]
+{
+    f1: i32;
+    f2: i32;
+
+    fn run()
+    {
+        pools q: Foo<q>;
+
+        let o1: Main<q>;
+        let o2: Main<q>;
+        o1 = new Main<q>;
+        o2 = new Main<q>;
+
+        o2.f1 = 1 as i32;
+        o2.f2 = 2 as i32;
+
+        o2.assign(o1);
+    }
+
+    fn assign(rhs: Main<p1>) {
+        f1 = rhs.f1;
+        f2 = rhs.f2;
+    }
+}
+
+layout Foo: Main = rec{f1, f2};

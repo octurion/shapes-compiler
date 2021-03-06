@@ -1438,8 +1438,8 @@ public:
 			if (!assignable_from(remapped_type, expr_type(args[i]))) {
 				m_errors.add<NonAssignableType>(
 					location(e.args()[i]),
-					to_string(method_params[i].type()),
-					to_string(expr_type(args[i])));
+					to_string(expr_type(args[i])),
+					to_string(remapped_type));
 				type_mismatch = true;
 			}
 		}
