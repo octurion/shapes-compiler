@@ -285,19 +285,19 @@ BoundType ObjectType::bound_of_param(size_t idx) const
 {
 	return extract_bound_of_param(*m_class, m_params, idx, m_loc);
 }
-ObjectType ObjectType::remap_formal_pool_params(const ObjectType& type_with_new_pools) const
+ObjectType ObjectType::remap_formal_pool_params(const ObjectType& type_with_formal_pools) const
 {
-	std::unordered_map<const Pool*, PoolParameter> mapping;
-	const auto& new_pools = type_with_new_pools.params();
-	const auto& old_pools = type_with_new_pools.of_class().pools();
+	const auto& new_pools = m_params;
+	const auto& old_pools = m_class->pools();
 
+	std::unordered_map<const Pool*, PoolParameter> mapping;
 	for (size_t i = 0; i < new_pools.size(); i++) {
 		const Pool& old = old_pools[i];
 		mapping.emplace(&old, new_pools[i]);
 	}
 
 	std::vector<PoolParameter> new_params;
-	for (const auto& e: m_params) {
+	for (const auto& e: type_with_formal_pools.m_params) {
 		const auto* as_pool = mpark::get_if<PoolRef>(&e);
 		if (as_pool == nullptr) {
 			new_params.emplace_back(None());
@@ -309,16 +309,16 @@ ObjectType ObjectType::remap_formal_pool_params(const ObjectType& type_with_new_
 		new_params.push_back(it->second);
 	}
 
-	return ObjectType(*m_class, std::move(new_params), m_loc);
+	return ObjectType(*type_with_formal_pools.m_class, std::move(new_params), m_loc);
 }
-Type ObjectType::remap_formal_pool_params(const Type& type_with_new_pools) const
+Type ObjectType::remap_formal_pool_params(const Type& type_with_formal_pools) const
 {
-	const auto* as_obj_type = mpark::get_if<ObjectType>(&type_with_new_pools);
+	const auto* as_obj_type = mpark::get_if<ObjectType>(&type_with_formal_pools);
 	if (as_obj_type != nullptr) {
 		return remap_formal_pool_params(*as_obj_type);
 	}
 
-	return type_with_new_pools;
+	return type_with_formal_pools;
 }
 
 std::ostream& operator<<(std::ostream& os, const Type& type)
