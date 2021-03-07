@@ -15,7 +15,7 @@ jobs:
       with:
         submodules: recursive
     - name: Install dependencies
-      run: sudo apt-get -y install cmake clang-3.9 clang++-3.9 g++ flex bison llvm-8-dev ninja-build
+      run: sudo apt-get -y install cmake clang-3.9 clang++-3.9 g++ flex bison llvm-8 llvm-8-dev ninja-build
     - name: Build
       run: |
         mkdir build
