@@ -15,11 +15,11 @@ jobs:
       with:
         submodules: recursive
     - name: Install dependencies
-      run: sudo apt-get -y install cmake clang-3.9 clang++-3.9 g++ flex bison llvm-8 llvm-8-dev ninja-build
+      run: sudo apt-get -y install cmake clang-8 clang++-8 g++ flex bison llvm-8 llvm-8-dev ninja-build
     - name: Build
       run: |
         mkdir build
         cd build
-        cmake -DCMAKE_C_COMPILER=clang-3.9 -DCMAKE_CXX_COMPILER=clang++-3.9 -DCMAKE_BUILD_TYPE=Debug -GNinja ..
+        cmake -DCMAKE_C_COMPILER=clang-8 -DCMAKE_CXX_COMPILER=clang++-8 -DCMAKE_BUILD_TYPE=Debug -GNinja ..
         ninja
         ./shapes_tests
