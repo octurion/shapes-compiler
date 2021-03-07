@@ -57,12 +57,7 @@ class ClassSpecialization
 				param_types.push_back(nullptr);
 				continue;
 			}
-
 			const Ast::Pool& pool = pool_ref->pool();
-			if (mpark::holds_alternative<Ast::NoneType>(pool.type())) {
-				param_types.push_back(nullptr);
-				continue;
-			}
 
 			const auto* as_layout = mpark::get_if<Ast::LayoutType>(&pool.type());
 			if (as_layout != nullptr) {
@@ -1261,14 +1256,20 @@ void CodegenState::generate_llvm_functions()
 
 void CodegenState::visit(const Ast::Assignment& e, MethodCodegenState& state)
 {
-	auto rhs = mpark::visit([this, &state](const auto& e) {
-		return visit(e, state);
-	}, e.rhs());
-	auto rhs_value = rhs.to_rvalue();
-
 	auto lhs = mpark::visit([this, &state](const auto& e) {
 		return visit(e, state);
 	}, e.lhs());
+
+	llvm::Value* rhs_value;
+
+	if (mpark::holds_alternative<Ast::NullExpr>(e.rhs())) {
+		rhs_value = llvm::Constant::getNullValue(lhs.value()->getType());
+	} else {
+		auto rhs = mpark::visit([this, &state](const auto& e) {
+			return visit(e, state);
+		}, e.rhs());
+		rhs_value = rhs.to_rvalue();
+	}
 
 	auto* insn = state.builder->CreateStore(rhs_value, lhs.value());
 	insn->setMetadata(llvm::LLVMContext::MD_tbaa, lhs.tbaa_metadata());
@@ -2030,7 +2031,7 @@ LLVMExpr CodegenState::visit(const Ast::MethodCall& e, MethodCodegenState& state
 	auto* func = m_specialization_info[new_spec].funcs[&e.method()];
 
 	auto* value = state.builder->CreateCall(func, llvm_args);
-	return LLVMExpr(state.builder, value, nullptr, true);
+	return LLVMExpr(state.builder, value, nullptr, false);
 }
 
 LLVMExpr CodegenState::visit(const Ast::FieldAccess& e, MethodCodegenState& state)
@@ -2093,7 +2094,7 @@ LLVMExpr CodegenState::visit(const Ast::FieldAccess& e, MethodCodegenState& stat
 		auto* tbaa_field_type = mpark::visit(
 			[this, &state](const auto& e) {
 				return tbaa_type_of(e, state.spec);
-			}, e.field().type());
+			}, e.type());
 
 		auto* cluster_tbaa_node = tbaa_builder.createTBAAStructTagNode(
 			as_pool->cluster_tbaa_types[indices->cluster_idx],
@@ -2109,7 +2110,7 @@ LLVMExpr CodegenState::visit(const Ast::FieldAccess& e, MethodCodegenState& stat
 	auto* tbaa_field_type = mpark::visit(
 		[this, &state](const auto& e) {
 			return tbaa_type_of(e, state.spec);
-		}, e.field().type());
+		}, e.type());
 
 	const auto* layout = data_layout.getStructLayout(as_obj->type);
 	auto* tbaa_node = tbaa_builder.createTBAAStructTagNode(
