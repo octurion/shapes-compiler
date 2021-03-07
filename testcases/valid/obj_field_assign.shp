@@ -24,7 +24,12 @@ class A<p1, p2> where
     fn init()
     {
         f3 = new B<p2, p1>;
+        f3.g3 = null;
         f3.g3 = this;
+        f3.setter_g3(this);
+
+        let o: A<p1, p2>;
+        o = f3.getter_g3();
     }
 }
 
@@ -37,6 +42,15 @@ class B<q1, q2> where
 
     g3: A<q2, q1>;
 
+    fn setter_g3(o: A<q2, q1>)
+    {
+        g3 = o;
+    }
+
+    fn getter_g3(): A<q2, q1>
+    {
+        return g3;
+    }
 }
 
 layout Foo: A = rec{f1, f3} + rec{f2};

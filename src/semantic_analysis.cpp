@@ -1476,7 +1476,7 @@ public:
 		const auto& field_type = field->type();
 		const auto* as_field_obj_type = mpark::get_if<ObjectType>(&field_type);
 		if (as_field_obj_type != nullptr) {
-			new_type = as_field_obj_type->remap_formal_pool_params(*as_obj_type);
+			new_type = as_obj_type->remap_formal_pool_params(*as_field_obj_type);
 		} else {
 			new_type = field_type;
 		}
