@@ -1,0 +1,4 @@
+class Main<p1: [Main<p1>]>
+{
+    f1: i32;
+}
