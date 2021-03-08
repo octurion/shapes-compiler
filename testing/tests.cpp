@@ -102,7 +102,9 @@ TEST_P(SemanticFail, SemanticFail) {
 std::vector<std::string> files_in_path(const char* path)
 {
 	std::string root = path;
-	root += "/";
+	if (root.empty() || root.back() != '/') {
+		root += '/';
+	}
 
 	std::vector<std::string> retval;
 	auto* dir = opendir(path);

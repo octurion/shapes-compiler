@@ -302,7 +302,8 @@ int main(int argc, char** argv)
 	}
 
 	Ir::init_llvm();
-	Ir::ir(ast);
+	std::unique_ptr<Ir::Codegen> codegen(new Ir::Codegen);
+	codegen->ir(ast);
 
 	return EXIT_SUCCESS;
 }

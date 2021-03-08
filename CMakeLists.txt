@@ -14,7 +14,7 @@ set(LLVM_PATHS "/usr/lib/llvm-8/" CACHE PATH "Path to LLVM installation")
 find_package(FLEX REQUIRED 2.6.0)
 find_package(BISON REQUIRED 3.0.4)
 find_package(LLVM REQUIRED 8.0 CONFIG PATHS ${LLVM_PATHS} NO_DEFAULT_PATH)
-llvm_map_components_to_libnames(LLVM_LIBS support core irreader passes target
+llvm_map_components_to_libnames(LLVM_LIBS support core irreader passes target interpreter
     x86asmparser x86asmprinter x86codegen x86desc x86info x86utils)
 
 set(FLEX_BISON_GENFILES_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen)
