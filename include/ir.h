@@ -4,24 +4,13 @@
 
 #include <memory>
 
+namespace llvm {
+class Module;
+};
+
 namespace Ir {
 
 void init_llvm();
-
-class Codegen
-{
-private:
-	class Impl;
-
-	std::unique_ptr<Codegen::Impl> m_impl;
-
-public:
-	Codegen();
-	~Codegen();
-
-	bool ir(const Ast::Program& ast);
-};
-
 
 class ClassSpecialization
 {
@@ -92,6 +81,35 @@ std::string create_method_name(
 	const ClassSpecialization& specialization, const Ast::Method& method);
 std::string create_pool_ctor_name(const ClassSpecialization& specialization);
 std::string create_pool_dtor_name(const ClassSpecialization& specialization);
+
+class Codegen
+{
+private:
+	class Impl;
+
+	std::unique_ptr<Codegen::Impl> m_impl;
+
+public:
+	Codegen();
+	~Codegen();
+
+	bool ir(const Ast::Program& ast);
+	bool emit(const char* filename);
+
+	std::unique_ptr<llvm::Module> get_module();
+};
+
+class CodegenInterpreter
+{
+private:
+	class Impl;
+
+	std::unique_ptr<CodegenInterpreter::Impl> m_impl;
+
+public:
+	CodegenInterpreter(Codegen& codegen);
+	~CodegenInterpreter();
+};
 
 } // namespace Ir
 

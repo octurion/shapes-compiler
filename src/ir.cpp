@@ -5,6 +5,8 @@
 
 #include <llvm/Analysis/TypeBasedAliasAnalysis.h>
 
+#include <llvm/ExecutionEngine/ExecutionEngine.h>
+
 #include <llvm/IR/AssemblyAnnotationWriter.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Function.h>
@@ -278,6 +280,9 @@ class Codegen::Impl
 
 public:
 	bool ir(const Ast::Program& ast);
+	bool emit(const char* filename);
+
+	std::unique_ptr<llvm::Module> get_module();
 };
 
 std::string create_method_name(
@@ -2182,6 +2187,11 @@ bool Codegen::Impl::ir(const Ast::Program& ast)
 	generate_llvm_functions();
 
 	llvm::verifyModule(*m_mod, &llvm::errs());
+	return true;
+}
+
+bool Codegen::Impl::emit(const char* filename)
+{
 	auto opt_level = llvm::PassBuilder::OptimizationLevel::O3;
 
 	llvm::PassBuilder pass_builder(m_target_machine);
@@ -2206,7 +2216,6 @@ bool Codegen::Impl::ir(const Ast::Program& ast)
 
 	mod_pass_manager.run(*m_mod, mam);
 
-	const char* filename = "shapes.o";
 	std::error_code EC;
 	llvm::raw_fd_ostream dest(filename, EC, llvm::sys::fs::OF_None);
 
@@ -2229,6 +2238,40 @@ bool Codegen::ir(const Ast::Program& ast)
 	m_impl.reset(new Codegen::Impl);
 
 	return m_impl->ir(ast);
+}
+
+bool Codegen::emit(const char* filename)
+{
+	return m_impl->emit(filename);
+}
+
+std::unique_ptr<llvm::Module> Codegen::Impl::get_module()
+{
+	return std::move(m_mod);
+}
+
+std::unique_ptr<llvm::Module> Codegen::get_module()
+{
+	return m_impl->get_module();
+}
+
+class CodegenInterpreter::Impl
+{
+	llvm::ExecutionEngine* m_engine;
+
+public:
+	void init(Codegen& codegen);
+};
+
+void CodegenInterpreter::Impl::init(Codegen& codegen)
+{
+	llvm::EngineBuilder builder(codegen.get_module());
+	builder.setEngineKind(llvm::EngineKind::Interpreter);
+	m_engine = builder.create();
+
+	m_engine->addGlobalMapping("malloc", (uint64_t) &malloc);
+	m_engine->addGlobalMapping("realloc", (uint64_t) &realloc);
+	m_engine->addGlobalMapping("free", (uint64_t) &free);
 }
 
 } // namespace Ir

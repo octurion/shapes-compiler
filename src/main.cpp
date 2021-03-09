@@ -302,8 +302,9 @@ int main(int argc, char** argv)
 	}
 
 	Ir::init_llvm();
-	std::unique_ptr<Ir::Codegen> codegen(new Ir::Codegen);
-	codegen->ir(ast);
+	Ir::Codegen codegen;
+	codegen.ir(ast);
+	codegen.emit("shapes.o");
 
 	return EXIT_SUCCESS;
 }
