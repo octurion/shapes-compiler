@@ -1342,7 +1342,7 @@ public:
 	{
 		const auto* var = m_scopes.find_variable(e.name().ident());
 		if (var != nullptr) {
-			return VariableExpr(*var);
+			return VariableExpr(*var, e.loc());
 		}
 
 		const auto* field = m_scopes.find_field(e.name().ident());
@@ -1576,7 +1576,7 @@ public:
 			return;
 		}
 
-		m_errors.get().add<VarMaybeUninitialized>(e.var().name(), e.var().loc());
+		m_errors.get().add<VarMaybeUninitialized>(e.var().name(), e.loc());
 	}
 
 	void operator()(const Assignment& e) {
