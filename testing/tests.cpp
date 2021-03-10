@@ -10,6 +10,10 @@
 #include "ast.h"
 #include "semantic_analysis.h"
 
+#include "ir.h"
+
+#include <llvm/ExecutionEngine/GenericValue.h>
+
 #include <dirent.h>
 
 #include <cstdio>
@@ -124,6 +128,56 @@ std::vector<std::string> files_in_path(const char* path)
 	}
 	return retval;
 };
+
+TEST(Execution, SimpleExpr) {
+	const auto* path = "../testcases/valid/simple_return.shp";
+
+	FILE* in = fopen(path, "r");
+	ASSERT_THAT(in, NotNull());
+
+	Cst::Program cst;
+	Cst::SyntaxErrorList syntax_errors;
+
+	yyscan_t scanner;
+	yylex_init(&scanner);
+	yyset_in(in, scanner);
+
+	yyparse(scanner, &cst, &syntax_errors);
+
+	yylex_destroy(scanner);
+
+	fclose(in);
+
+	ASSERT_THAT(syntax_errors.has_errors(), IsFalse());
+
+	Ast::Program ast;
+	Ast::SemanticErrorList errors;
+
+	Ast::run_semantic_analysis(cst, ast, errors);
+
+	ASSERT_THAT(errors.has_errors(), IsFalse());
+
+	const auto* clazz = ast.find_class("Main");
+	const auto* method = clazz->find_method("identity");
+
+	Ir::init_llvm();
+	Ir::Codegen codegen;
+	codegen.ir(ast);
+
+	Ir::CodegenInterpreter interpreter(codegen);
+	auto* func = interpreter.find_method(
+		Ir::ClassSpecialization(*clazz, {nullptr}), *method);
+
+	uint64_t param_value = 100;
+
+	llvm::GenericValue this_param(nullptr);
+
+	llvm::GenericValue param;
+	param.IntVal = llvm::APInt(32, param_value);
+
+	auto retval = interpreter.run_function(func, {this_param, param});
+	EXPECT_THAT(retval.IntVal, Eq(param.IntVal));
+}
 
 INSTANTIATE_TEST_SUITE_P(
 	Parser,

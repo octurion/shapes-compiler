@@ -52,7 +52,8 @@ add_executable(shapes src/main.cpp)
 
 add_executable(shapes_tests testing/tests.cpp)
 target_compile_options(shapes_tests PRIVATE -Wall -Wextra -Wpedantic -fdiagnostics-color=always)
-target_link_libraries(shapes_tests PRIVATE shapes_parser shapes_bison gtest gmock gtest_main)
+target_include_directories(shapes_tests SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS})
+target_link_libraries(shapes_tests PRIVATE shapes_parser shapes_bison gtest gmock gtest_main ${LLVM_LIBS})
 
 target_compile_options(shapes PRIVATE -Wall -Wextra -Wpedantic -fdiagnostics-color=always)
 target_link_libraries(shapes PRIVATE shapes_parser shapes_bison)

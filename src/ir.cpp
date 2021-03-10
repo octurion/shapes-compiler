@@ -6,6 +6,8 @@
 #include <llvm/Analysis/TypeBasedAliasAnalysis.h>
 
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
+#include <llvm/ExecutionEngine/GenericValue.h>
+#include <llvm/ExecutionEngine/Interpreter.h>
 
 #include <llvm/IR/AssemblyAnnotationWriter.h>
 #include <llvm/IR/BasicBlock.h>
@@ -281,6 +283,8 @@ class Codegen::Impl
 public:
 	bool ir(const Ast::Program& ast);
 	bool emit(const char* filename);
+
+	llvm::Function* find_method(const ClassSpecialization& spec, const Ast::Method& m) const;
 
 	std::unique_ptr<llvm::Module> get_module();
 };
@@ -2227,6 +2231,21 @@ bool Codegen::Impl::emit(const char* filename)
 	return true;
 }
 
+llvm::Function* Codegen::Impl::find_method(const ClassSpecialization& spec, const Ast::Method& m) const
+{
+	auto spec_it = m_specialization_info.find(spec);
+	if (spec_it == m_specialization_info.end()) {
+		return nullptr;
+	}
+
+	const auto& mapping = spec_it->second.funcs;
+	auto method_it = mapping.find(&m);
+
+	return (method_it != mapping.end())
+		? method_it->second
+		: nullptr;
+}
+
 Codegen::Codegen() {}
 Codegen::~Codegen() {}
 
@@ -2255,23 +2274,83 @@ std::unique_ptr<llvm::Module> Codegen::get_module()
 	return m_impl->get_module();
 }
 
+llvm::Function*
+Codegen::find_method(const ClassSpecialization& spec, const Ast::Method& m) const
+{
+	return m_impl->find_method(spec, m);
+}
+
 class CodegenInterpreter::Impl
 {
+	const Codegen* m_codegen;
 	llvm::ExecutionEngine* m_engine;
 
 public:
 	void init(Codegen& codegen);
+
+	llvm::GenericValue
+	run_function(llvm::Function* func, std::vector<llvm::GenericValue> values);
+
+	llvm::Function*
+	find_method(const ClassSpecialization& spec, const Ast::Method& m) const;
 };
 
 void CodegenInterpreter::Impl::init(Codegen& codegen)
 {
+	m_codegen = &codegen;
+
+	std::string error_msg;
+
 	llvm::EngineBuilder builder(codegen.get_module());
+	builder.setErrorStr(&error_msg);
 	builder.setEngineKind(llvm::EngineKind::Interpreter);
+	builder.setVerifyModules(true);
+
 	m_engine = builder.create();
+	if (!error_msg.empty()) {
+		fprintf(stderr, "Interpreter error message: %s\n", error_msg.c_str());
+	}
+
+	assert_msg(m_engine != nullptr, "Engine was not created? O_o");
 
 	m_engine->addGlobalMapping("malloc", (uint64_t) &malloc);
 	m_engine->addGlobalMapping("realloc", (uint64_t) &realloc);
 	m_engine->addGlobalMapping("free", (uint64_t) &free);
+
+	m_engine->finalizeObject();
+}
+
+llvm::GenericValue
+CodegenInterpreter::Impl::run_function(
+	llvm::Function* func, std::vector<llvm::GenericValue> values)
+{
+	return m_engine->runFunction(func, values);
+}
+
+llvm::Function*
+CodegenInterpreter::Impl::find_method(const ClassSpecialization& spec, const Ast::Method& m) const
+{
+	return m_codegen->find_method(spec, m);
+}
+
+CodegenInterpreter::CodegenInterpreter(Codegen& codegen)
+	: m_impl(new CodegenInterpreter::Impl)
+{
+	m_impl->init(codegen);
+}
+CodegenInterpreter::~CodegenInterpreter() {}
+
+llvm::GenericValue
+CodegenInterpreter::run_function(
+	llvm::Function* func, std::vector<llvm::GenericValue> values)
+{
+	return m_impl->run_function(func, values);
+}
+
+llvm::Function*
+CodegenInterpreter::find_method(const ClassSpecialization& spec, const Ast::Method& m) const
+{
+	return m_impl->find_method(spec, m);
 }
 
 } // namespace Ir

@@ -5,7 +5,10 @@
 #include <memory>
 
 namespace llvm {
+class Function;
 class Module;
+
+struct GenericValue;
 };
 
 namespace Ir {
@@ -96,6 +99,8 @@ public:
 	bool ir(const Ast::Program& ast);
 	bool emit(const char* filename);
 
+	llvm::Function* find_method(const ClassSpecialization& spec, const Ast::Method& m) const;
+
 	std::unique_ptr<llvm::Module> get_module();
 };
 
@@ -109,6 +114,11 @@ private:
 public:
 	CodegenInterpreter(Codegen& codegen);
 	~CodegenInterpreter();
+
+	llvm::Function* find_method(const ClassSpecialization& spec, const Ast::Method& m) const;
+
+	llvm::GenericValue
+	run_function(llvm::Function* func, std::vector<llvm::GenericValue> values);
 };
 
 } // namespace Ir
