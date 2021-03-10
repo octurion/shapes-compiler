@@ -13,7 +13,7 @@ class Main<p1> where
         return f;
     }
 
-    fn setter(x: i32): i32
+    fn setter(x: i32)
     {
         f = x;
     }
