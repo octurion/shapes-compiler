@@ -1,0 +1,12 @@
+class Main<p1> where
+    p1: [Main<p1>]
+{
+    f: i32;
+
+    fn getter(): i32
+    {
+        if true {
+            return f;
+        }
+    }
+}

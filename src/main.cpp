@@ -245,6 +245,14 @@ struct SemanticErrorPrinter
 			e.num_expected(), e.num_got()
 		);
 	}
+
+	void operator()(const Ast::NotAllPathsReturn& e)
+	{
+		print_loc(e.loc());
+		fprintf(stderr, ": Not all paths return a value in method '%s'.",
+			e.name().c_str()
+		);
+	}
 };
 
 int main(int argc, char** argv)

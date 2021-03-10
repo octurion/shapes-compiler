@@ -1518,6 +1518,46 @@ static void collect_method_bodies(
 	}
 }
 
+static bool ensure_all_paths_return_impl(const std::vector<Stmt>& stmts)
+{
+	for (auto it = stmts.rbegin(); it != stmts.rend(); it++) {
+		const auto& e = *it;
+
+		if (mpark::holds_alternative<Return>(e)) {
+			return true;
+		}
+
+		const auto* as_if_stmt = mpark::get_if<If>(&e);
+		if (as_if_stmt == nullptr) {
+			continue;
+		}
+
+		auto lhs = ensure_all_paths_return_impl(as_if_stmt->then_stmts());
+		auto rhs = ensure_all_paths_return_impl(as_if_stmt->else_stmts());
+
+		if (lhs && rhs) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+static void ensure_all_paths_return(Program& ast, SemanticErrorList& errors)
+{
+	for (const Class& c: ast.ordered_classes()) {
+		for (const Method& m: c.methods()) {
+			if (mpark::holds_alternative<VoidType>(m.return_type())) {
+				continue;
+			}
+
+			if (!ensure_all_paths_return_impl(m.body())) {
+				errors.add<NotAllPathsReturn>(m.name(), m.loc());
+			}
+		}
+	}
+}
+
 void run_semantic_analysis(const Cst::Program& cst, Program& dest_ast, SemanticErrorList& errors)
 {
 	Program ast;
@@ -1542,6 +1582,11 @@ void run_semantic_analysis(const Cst::Program& cst, Program& dest_ast, SemanticE
 	}
 
 	collect_method_bodies(cst, ast, errors);
+	if (errors.has_errors()) {
+		return;
+	}
+
+	ensure_all_paths_return(ast, errors);
 	if (errors.has_errors()) {
 		return;
 	}
