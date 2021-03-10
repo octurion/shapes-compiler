@@ -253,6 +253,14 @@ struct SemanticErrorPrinter
 			e.name().c_str()
 		);
 	}
+
+	void operator()(const Ast::VarMaybeUninitialized& e)
+	{
+		print_loc(e.loc());
+		fprintf(stderr, ": Variable '%s' may be used uninitialized here.",
+			e.name().c_str()
+		);
+	}
 };
 
 int main(int argc, char** argv)
