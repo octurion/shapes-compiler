@@ -14,7 +14,7 @@ set(LLVM_PATHS "/usr/lib/llvm-8/" CACHE PATH "Path to LLVM installation")
 find_package(FLEX REQUIRED 2.6.0)
 find_package(BISON REQUIRED 3.0.4)
 find_package(LLVM REQUIRED 8.0 CONFIG PATHS ${LLVM_PATHS} NO_DEFAULT_PATH)
-llvm_map_components_to_libnames(LLVM_LIBS support core irreader passes target
+llvm_map_components_to_libnames(LLVM_LIBS support core irreader passes target interpreter
     x86asmparser x86asmprinter x86codegen x86desc x86info x86utils)
 
 set(FLEX_BISON_GENFILES_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen)
@@ -52,7 +52,8 @@ add_executable(shapes src/main.cpp)
 
 add_executable(shapes_tests testing/tests.cpp)
 target_compile_options(shapes_tests PRIVATE -Wall -Wextra -Wpedantic -fdiagnostics-color=always)
-target_link_libraries(shapes_tests PRIVATE shapes_parser shapes_bison gtest gmock gtest_main)
+target_include_directories(shapes_tests SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS})
+target_link_libraries(shapes_tests PRIVATE shapes_parser shapes_bison gtest gmock gtest_main ${LLVM_LIBS})
 
 target_compile_options(shapes PRIVATE -Wall -Wextra -Wpedantic -fdiagnostics-color=always)
 target_link_libraries(shapes PRIVATE shapes_parser shapes_bison)

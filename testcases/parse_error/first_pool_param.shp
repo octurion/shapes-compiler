@@ -1,0 +1,5 @@
+class Main<p1> where
+    p1: [Main<none>]
+{
+    f1: i32;
+}

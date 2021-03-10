@@ -302,7 +302,9 @@ int main(int argc, char** argv)
 	}
 
 	Ir::init_llvm();
-	Ir::ir(ast);
+	Ir::Codegen codegen;
+	codegen.ir(ast);
+	codegen.emit("shapes.o");
 
 	return EXIT_SUCCESS;
 }

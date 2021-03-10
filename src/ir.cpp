@@ -5,6 +5,10 @@
 
 #include <llvm/Analysis/TypeBasedAliasAnalysis.h>
 
+#include <llvm/ExecutionEngine/ExecutionEngine.h>
+#include <llvm/ExecutionEngine/GenericValue.h>
+#include <llvm/ExecutionEngine/Interpreter.h>
+
 #include <llvm/IR/AssemblyAnnotationWriter.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Function.h>
@@ -34,97 +38,39 @@
 
 namespace Ir {
 
-class ClassSpecialization
+ClassSpecialization ClassSpecialization::specialize(
+	const Ast::Class& clazz,
+	const std::vector<Ast::PoolParameter>& params) const
 {
-	const Ast::Class* m_class = nullptr;
-	std::vector<const Ast::Layout*> m_pool_param_types;
+	const auto& pools = m_class->pools();
+	std::unordered_map<const Ast::Pool*, const Ast::Layout*> mapping;
+	for (size_t i = 0; i < m_pool_param_types.size(); i++) {
+		const Ast::Pool& pool = pools[i];
+		mapping[&pool] = m_pool_param_types[i];
+	}
 
-	ClassSpecialization specialize(
-		const Ast::Class& clazz,
-		const std::vector<Ast::PoolParameter>& params) const
-	{
-		const auto& pools = m_class->pools();
-		std::unordered_map<const Ast::Pool*, const Ast::Layout*> mapping;
-		for (size_t i = 0; i < m_pool_param_types.size(); i++) {
-			const Ast::Pool& pool = pools[i];
-			mapping[&pool] = m_pool_param_types[i];
+	std::vector<const Ast::Layout*> param_types;
+	for (const auto& e: params) {
+		const auto* pool_ref = mpark::get_if<Ast::PoolRef>(&e);
+		if (pool_ref == nullptr) {
+			param_types.push_back(nullptr);
+			continue;
+		}
+		const Ast::Pool& pool = pool_ref->pool();
+
+		const auto* as_layout = mpark::get_if<Ast::LayoutType>(&pool.type());
+		if (as_layout != nullptr) {
+			param_types.push_back(&as_layout->layout());
+			continue;
 		}
 
-		std::vector<const Ast::Layout*> param_types;
-		for (const auto& e: params) {
-			const auto* pool_ref = mpark::get_if<Ast::PoolRef>(&e);
-			if (pool_ref == nullptr) {
-				param_types.push_back(nullptr);
-				continue;
-			}
-			const Ast::Pool& pool = pool_ref->pool();
-
-			const auto* as_layout = mpark::get_if<Ast::LayoutType>(&pool.type());
-			if (as_layout != nullptr) {
-				param_types.push_back(&as_layout->layout());
-				continue;
-			}
-
-			auto it = mapping.find(&pool);
-			assert_msg(it != mapping.end(), "Could not find pool");
-			param_types.push_back(it->second);
-		}
-
-		return ClassSpecialization(clazz, std::move(param_types));
+		auto it = mapping.find(&pool);
+		assert_msg(it != mapping.end(), "Could not find pool");
+		param_types.push_back(it->second);
 	}
 
-public:
-	ClassSpecialization() = default;
-
-	ClassSpecialization(
-			const Ast::Class& clazz,
-			std::vector<const Ast::Layout*> pool_param_types)
-		: m_class(&clazz)
-		, m_pool_param_types(std::move(pool_param_types))
-	{}
-
-	const Ast::Class& clazz() const {
-		assert_msg(m_class != nullptr, "Invalid class specialization");
-		return *m_class;
-	}
-	const std::vector<const Ast::Layout*>& pool_param_types() const {
-		return m_pool_param_types;
-	}
-
-	const Ast::Layout* first_pool_param_spec() const {
-		assert_msg(!m_pool_param_types.empty(), "Specialization has no pool parameters");
-		return m_pool_param_types.front();
-	}
-
-	bool is_pooled_type() const {
-		assert_msg(!m_pool_param_types.empty(), "Specialization has no pool parameters");
-		return m_pool_param_types.front() != nullptr;
-	}
-
-	bool operator==(const ClassSpecialization& rhs) const {
-		return m_class == rhs.m_class
-			&& m_pool_param_types == rhs.m_pool_param_types;
-	}
-	bool operator!=(const ClassSpecialization& rhs) const {
-		return m_class != rhs.m_class
-			|| !(m_pool_param_types == rhs.m_pool_param_types);
-	}
-
-	ClassSpecialization specialize_type(const Ast::LayoutType& type) const
-	{
-		return specialize(type.for_class(), type.params());
-	}
-
-	ClassSpecialization specialize_type(const Ast::BoundType& type) const
-	{
-		return specialize(type.of_class(), type.params());
-	}
-
-	ClassSpecialization specialize_type(const Ast::ObjectType& type) const
-	{
-		return specialize(type.of_class(), type.params());
-	}
-};
+	return ClassSpecialization(clazz, std::move(param_types));
+}
 
 std::ostream& operator<<(std::ostream& os, const ClassSpecialization& specialization)
 {
@@ -214,13 +160,13 @@ public:
 	}
 };
 
-class CodegenState
+class Codegen::Impl
 {
 	llvm::LLVMContext m_ctx;
 	const llvm::Target* m_target = nullptr;
 	llvm::TargetMachine* m_target_machine = nullptr;
 
-	llvm::Module* m_mod = nullptr;
+	std::unique_ptr<llvm::Module> m_mod = nullptr;
 
 	llvm::Type* m_void = nullptr;
 	llvm::Type* m_null = nullptr;
@@ -336,6 +282,13 @@ class CodegenState
 
 public:
 	bool ir(const Ast::Program& ast);
+	bool emit(const char* filename);
+
+	llvm::Function* find_method(const ClassSpecialization& spec, const Ast::Method& m) const;
+	llvm::Function* constructor(const ClassSpecialization& spec) const;
+	llvm::Function* pool_constructor(const ClassSpecialization& spec) const;
+
+	std::unique_ptr<llvm::Module> get_module();
 };
 
 std::string create_method_name(
@@ -380,7 +333,7 @@ std::string create_pool_name(const ClassSpecialization& specialization)
 	return os.str();
 }
 
-std::string create_tbaa_pool_name(const ClassSpecialization& specialization)
+static std::string create_tbaa_pool_name(const ClassSpecialization& specialization)
 {
 	std::ostringstream os;
 	os << "_tbaa_pool" << specialization;
@@ -388,7 +341,7 @@ std::string create_tbaa_pool_name(const ClassSpecialization& specialization)
 	return os.str();
 }
 
-std::string create_tbaa_pool_ptr_name(const ClassSpecialization& specialization)
+static std::string create_tbaa_pool_ptr_name(const ClassSpecialization& specialization)
 {
 	std::ostringstream os;
 	os << "_tbaa_pool_ptr" << specialization;
@@ -404,7 +357,7 @@ std::string create_cluster_name(const ClassSpecialization& specialization, size_
 	return os.str();
 }
 
-std::string create_tbaa_cluster_name(const ClassSpecialization& specialization, size_t idx)
+static std::string create_tbaa_cluster_name(const ClassSpecialization& specialization, size_t idx)
 {
 	std::ostringstream os;
 	os << "_tbaa_cluster" << idx << "_" << specialization;
@@ -412,7 +365,7 @@ std::string create_tbaa_cluster_name(const ClassSpecialization& specialization, 
 	return os.str();
 }
 
-std::string create_tbaa_cluster_ptr_name(const ClassSpecialization& specialization, size_t idx)
+static std::string create_tbaa_cluster_ptr_name(const ClassSpecialization& specialization, size_t idx)
 {
 	std::ostringstream os;
 	os << "_tbaa_cluster_ptr" << idx << "_" << specialization;
@@ -428,7 +381,7 @@ std::string create_class_name(const ClassSpecialization& specialization)
 	return os.str();
 }
 
-std::string create_tbaa_class_name(const ClassSpecialization& specialization)
+static std::string create_tbaa_class_name(const ClassSpecialization& specialization)
 {
 	std::ostringstream os;
 	os << "_tbaa_class" << specialization;
@@ -436,7 +389,7 @@ std::string create_tbaa_class_name(const ClassSpecialization& specialization)
 	return os.str();
 }
 
-std::string create_tbaa_class_ptr_name(const ClassSpecialization& specialization)
+static std::string create_tbaa_class_ptr_name(const ClassSpecialization& specialization)
 {
 	std::ostringstream os;
 	os << "_tbaa_class_ptr" << specialization;
@@ -453,7 +406,7 @@ void init_llvm()
 	LLVMInitializeX86AsmPrinter();
 };
 
-void CodegenState::generate_specializations_impl(
+void Codegen::Impl::generate_specializations_impl(
 	const Ast::Class& clazz, std::vector<const Ast::Layout*>& curr_layouts)
 {
 	auto idx = curr_layouts.size();
@@ -494,26 +447,26 @@ struct LLVMTypeFunctor
 	}
 };
 
-llvm::Type* CodegenState::type_of(const Ast::PoolType& type, const ClassSpecialization& specialization)
+llvm::Type* Codegen::Impl::type_of(const Ast::PoolType& type, const ClassSpecialization& specialization)
 {
 	return mpark::visit([this, &specialization](const auto& e) {
 		return type_of(e, specialization);
 	}, type);
 }
 
-llvm::Type* CodegenState::type_of(const Ast::NoneType&, const ClassSpecialization&)
+llvm::Type* Codegen::Impl::type_of(const Ast::NoneType&, const ClassSpecialization&)
 {
 	return nullptr;
 }
 
-llvm::Type* CodegenState::type_of(const Ast::LayoutType& type, const ClassSpecialization& specialization)
+llvm::Type* Codegen::Impl::type_of(const Ast::LayoutType& type, const ClassSpecialization& specialization)
 {
 	auto new_spec = specialization.specialize_type(type);
 	return mpark::visit(
 		LLVMTypeFunctor(), m_specialization_info[new_spec].type_info);
 }
 
-llvm::Type* CodegenState::type_of(const Ast::BoundType& type, const ClassSpecialization& specialization)
+llvm::Type* Codegen::Impl::type_of(const Ast::BoundType& type, const ClassSpecialization& specialization)
 {
 	auto new_spec = specialization.specialize_type(type);
 	auto* as_pool = mpark::get_if<PoolSpecializationInfo>(&m_specialization_info[new_spec].type_info);
@@ -523,24 +476,24 @@ llvm::Type* CodegenState::type_of(const Ast::BoundType& type, const ClassSpecial
 	return as_pool->pool_type;
 }
 
-void CodegenState::generate_specializations(const Ast::Class& clazz)
+void Codegen::Impl::generate_specializations(const Ast::Class& clazz)
 {
 	std::vector<const Ast::Layout*> curr_layouts;
 
 	generate_specializations_impl(clazz, curr_layouts);
 }
 
-llvm::Type* CodegenState::type_of(const Ast::NullptrType&, const ClassSpecialization&)
+llvm::Type* Codegen::Impl::type_of(const Ast::NullptrType&, const ClassSpecialization&)
 {
 	unreachable("Null pointers do not have an LLVM type");
 }
 
-llvm::Type* CodegenState::type_of(const Ast::VoidType&, const ClassSpecialization&)
+llvm::Type* Codegen::Impl::type_of(const Ast::VoidType&, const ClassSpecialization&)
 {
 	return m_void;
 }
 
-llvm::Type* CodegenState::type_of(const Ast::ObjectType& type, const ClassSpecialization& specialization)
+llvm::Type* Codegen::Impl::type_of(const Ast::ObjectType& type, const ClassSpecialization& specialization)
 {
 	auto new_spec = specialization.specialize_type(type);
 	const auto* as_standalone = mpark::get_if<StandaloneSpecializationInfo>(
@@ -551,7 +504,7 @@ llvm::Type* CodegenState::type_of(const Ast::ObjectType& type, const ClassSpecia
 	return m_intptr;
 }
 
-llvm::Type* CodegenState::type_of(const Ast::PrimitiveType& type, const ClassSpecialization&)
+llvm::Type* Codegen::Impl::type_of(const Ast::PrimitiveType& type, const ClassSpecialization&)
 {
 	switch (type) {
 	case Ast::PrimitiveType::BOOL:
@@ -581,14 +534,14 @@ llvm::Type* CodegenState::type_of(const Ast::PrimitiveType& type, const ClassSpe
 	}
 }
 
-llvm::Type* CodegenState::type_of(const Ast::Type& type, const ClassSpecialization& specialization)
+llvm::Type* Codegen::Impl::type_of(const Ast::Type& type, const ClassSpecialization& specialization)
 {
 	return mpark::visit([this, &specialization](const auto& e){
 		return type_of(e, specialization);
 	}, type);
 }
 
-llvm::MDNode* CodegenState::tbaa_type_of(const Ast::PrimitiveType& type, const ClassSpecialization&)
+llvm::MDNode* Codegen::Impl::tbaa_type_of(const Ast::PrimitiveType& type, const ClassSpecialization&)
 {
 	switch (type) {
 	case Ast::PrimitiveType::BOOL:
@@ -626,7 +579,7 @@ llvm::MDNode* CodegenState::tbaa_type_of(const Ast::PrimitiveType& type, const C
 	}
 }
 
-llvm::MDNode* CodegenState::tbaa_type_of(const Ast::ObjectType& type, const ClassSpecialization& specialization)
+llvm::MDNode* Codegen::Impl::tbaa_type_of(const Ast::ObjectType& type, const ClassSpecialization& specialization)
 {
 	auto new_spec = specialization.specialize_type(type);
 
@@ -642,17 +595,17 @@ llvm::MDNode* CodegenState::tbaa_type_of(const Ast::ObjectType& type, const Clas
 	return as_pool->pool_tbaa_ptr_type;
 }
 
-llvm::MDNode* CodegenState::tbaa_type_of(const Ast::VoidType&, const ClassSpecialization&)
+llvm::MDNode* Codegen::Impl::tbaa_type_of(const Ast::VoidType&, const ClassSpecialization&)
 {
 	unreachable("`void` has no TBAA type");
 }
 
-llvm::MDNode* CodegenState::tbaa_type_of(const Ast::NullptrType&, const ClassSpecialization&)
+llvm::MDNode* Codegen::Impl::tbaa_type_of(const Ast::NullptrType&, const ClassSpecialization&)
 {
 	unreachable("`nullptr` has no TBAA type");
 }
 
-llvm::Constant* CodegenState::zero(const Ast::ObjectType& type, const ClassSpecialization& specialization)
+llvm::Constant* Codegen::Impl::zero(const Ast::ObjectType& type, const ClassSpecialization& specialization)
 {
 	auto new_spec = specialization.specialize_type(type);
 	const auto* as_standalone = mpark::get_if<StandaloneSpecializationInfo>(
@@ -663,29 +616,29 @@ llvm::Constant* CodegenState::zero(const Ast::ObjectType& type, const ClassSpeci
 	return llvm::ConstantInt::get(m_intptr, -1ull, true);
 }
 
-llvm::Constant* CodegenState::zero(const Ast::PrimitiveType& type, const ClassSpecialization& spec)
+llvm::Constant* Codegen::Impl::zero(const Ast::PrimitiveType& type, const ClassSpecialization& spec)
 {
 	return llvm::ConstantInt::get(type_of(type, spec), 0);
 }
 
-llvm::Constant* CodegenState::zero(const Ast::NullptrType&, const ClassSpecialization&)
+llvm::Constant* Codegen::Impl::zero(const Ast::NullptrType&, const ClassSpecialization&)
 {
 	unreachable("Null pointers require an explicit check for them");
 }
 
-llvm::Constant* CodegenState::zero(const Ast::VoidType&, const ClassSpecialization&)
+llvm::Constant* Codegen::Impl::zero(const Ast::VoidType&, const ClassSpecialization&)
 {
 	unreachable("Null pointers have no initial value!");
 }
 
-llvm::Constant* CodegenState::zero(const Ast::Type& type, const ClassSpecialization& specialization)
+llvm::Constant* Codegen::Impl::zero(const Ast::Type& type, const ClassSpecialization& specialization)
 {
 	return mpark::visit([this, &specialization](const auto& e){
 		return zero(e, specialization);
 	}, type);
 }
 
-void CodegenState::generate_llvm_types()
+void Codegen::Impl::generate_llvm_types()
 {
 	llvm::MDBuilder tbaa_builder(m_ctx);
 	for (auto& e: m_specialization_info) {
@@ -824,7 +777,7 @@ void CodegenState::generate_llvm_types()
 	}
 }
 
-void CodegenState::generate_llvm_function_decls()
+void Codegen::Impl::generate_llvm_function_decls()
 {
 	for (auto& e: m_specialization_info) {
 		const auto& specialization = e.first;
@@ -859,7 +812,7 @@ void CodegenState::generate_llvm_function_decls()
 				func_type,
 				llvm::GlobalValue::ExternalLinkage,
 				create_method_name(specialization, method),
-				m_mod);
+				m_mod.get());
 			func->addFnAttr(llvm::Attribute::NoUnwind);
 
 			info.funcs[&method] = func;
@@ -877,7 +830,7 @@ void CodegenState::generate_llvm_function_decls()
 					ctor_func_type,
 					llvm::GlobalValue::ExternalLinkage,
 					create_ctor_name(specialization),
-					m_mod);
+					m_mod.get());
 			as_standalone->ctor->setReturnDoesNotAlias();
 			as_standalone->ctor->addFnAttr(llvm::Attribute::NoUnwind);
 
@@ -889,27 +842,30 @@ void CodegenState::generate_llvm_function_decls()
 				data_layout.getIntPtrType(m_ctx),
 				data_layout.getStructLayout(as_standalone->type)->getSizeInBytes());
 			auto* malloc_ptr = builder.CreateCall(m_malloc, {size});
-
-			const auto& fields = specialization.clazz().fields();
-			std::vector<llvm::Constant*> constants;
-			for (size_t i = 0; i < fields.size(); i++) {
-				const Ast::Field& e = fields[i];
-				const auto& type = e.type();
-				const auto* primitive_type = mpark::get_if<Ast::PrimitiveType>(&type);
-				if (primitive_type != nullptr) {
-					constants.push_back(
-						llvm::ConstantInt::get(
-							type_of(*primitive_type, specialization), 0));
-					continue;
-				}
-
-				constants.push_back(zero(type, specialization));
-			}
-
-			auto* init = llvm::ConstantStruct::get(as_standalone->type, constants);
 			auto* retval = builder.CreatePointerCast(malloc_ptr, class_ptr_type);
 
-			builder.CreateStore(init, retval);
+			const auto* struct_layout = data_layout.getStructLayout(as_standalone->type);
+
+			const auto& fields = specialization.clazz().fields();
+			for (size_t i = 0; i < fields.size(); i++) {
+				const Ast::Field& e = fields[i];
+				auto* field_ptr =
+					builder.CreateStructGEP(as_standalone->type, retval, i);
+				auto* val = zero(e.type(), specialization);
+				auto* insn = builder.CreateStore(val, field_ptr);
+
+				auto* tbaa_field_type = mpark::visit(
+					[this, &specialization](const auto& e) {
+						return tbaa_type_of(e, specialization);
+					}, e.type());
+
+				auto* field_tbaa_node = tbaa_builder.createTBAAStructTagNode(
+					as_standalone->tbaa_type,
+					tbaa_field_type,
+					struct_layout->getElementOffset(i));
+				insn->setMetadata(llvm::LLVMContext::MD_tbaa, field_tbaa_node);
+			}
+
 			builder.CreateRet(retval);
 
 			continue;
@@ -926,7 +882,7 @@ void CodegenState::generate_llvm_function_decls()
 				pool_ctor_type,
 				llvm::GlobalValue::ExternalLinkage,
 				create_pool_ctor_name(specialization),
-				m_mod);
+				m_mod.get());
 			as_pool->pool_alloc->addFnAttr(llvm::Attribute::NoUnwind);
 
 			{
@@ -957,7 +913,7 @@ void CodegenState::generate_llvm_function_decls()
 				pool_dtor_type,
 				llvm::GlobalValue::ExternalLinkage,
 				create_pool_dtor_name(specialization),
-				m_mod);
+				m_mod.get());
 			as_pool->pool_free->addFnAttr(llvm::Attribute::NoUnwind);
 
 			{
@@ -992,7 +948,7 @@ void CodegenState::generate_llvm_function_decls()
 				alloc_func_type,
 				llvm::GlobalValue::ExternalLinkage,
 				create_ctor_name(specialization),
-				m_mod);
+				m_mod.get());
 			as_pool->obj_ctor->addFnAttr(llvm::Attribute::NoUnwind);
 
 			auto* bb_entry = llvm::BasicBlock::Create(
@@ -1157,7 +1113,7 @@ struct MethodCodegenState
 	MethodCodegenState& operator=(const MethodCodegenState&) = delete;
 };
 
-void CodegenState::generate_llvm_functions()
+void Codegen::Impl::generate_llvm_functions()
 {
 	for (auto& e: m_specialization_info) {
 		const auto& spec = e.first;
@@ -1254,7 +1210,7 @@ void CodegenState::generate_llvm_functions()
 	}
 }
 
-void CodegenState::visit(const Ast::Assignment& e, MethodCodegenState& state)
+void Codegen::Impl::visit(const Ast::Assignment& e, MethodCodegenState& state)
 {
 	auto lhs = mpark::visit([this, &state](const auto& e) {
 		return visit(e, state);
@@ -1275,7 +1231,7 @@ void CodegenState::visit(const Ast::Assignment& e, MethodCodegenState& state)
 	insn->setMetadata(llvm::LLVMContext::MD_tbaa, lhs.tbaa_metadata());
 }
 
-void CodegenState::visit(const Ast::OpAssignment& e, MethodCodegenState& state)
+void Codegen::Impl::visit(const Ast::OpAssignment& e, MethodCodegenState& state)
 {
 	auto rhs = mpark::visit([this, &state](const auto& e) {
 		return visit(e, state);
@@ -1361,7 +1317,7 @@ void CodegenState::visit(const Ast::OpAssignment& e, MethodCodegenState& state)
 	insn->setMetadata(llvm::LLVMContext::MD_tbaa, lhs.tbaa_metadata());
 }
 
-void CodegenState::visit(const Ast::If& e, MethodCodegenState& state)
+void Codegen::Impl::visit(const Ast::If& e, MethodCodegenState& state)
 {
 	auto cond = mpark::visit([this, &state](const auto& e) {
 		return visit(e, state);
@@ -1389,7 +1345,7 @@ void CodegenState::visit(const Ast::If& e, MethodCodegenState& state)
 	state.builder->SetInsertPoint(next_bb);
 }
 
-void CodegenState::visit(const Ast::While& e, MethodCodegenState& state)
+void Codegen::Impl::visit(const Ast::While& e, MethodCodegenState& state)
 {
 	auto* header_bb = llvm::BasicBlock::Create(m_ctx, "while_header", state.llvm_func);
 	auto* body_bb = llvm::BasicBlock::Create(m_ctx, "while_body", state.llvm_func);
@@ -1422,7 +1378,7 @@ void CodegenState::visit(const Ast::While& e, MethodCodegenState& state)
 	state.loop_stack.pop_back();
 }
 
-void CodegenState::visit(const Ast::ForeachRange& e, MethodCodegenState& state)
+void Codegen::Impl::visit(const Ast::ForeachRange& e, MethodCodegenState& state)
 {
 	auto type = Ast::expr_type(e.range_begin());
 	const auto* as_primitive = mpark::get_if<Ast::PrimitiveType>(&type);
@@ -1488,7 +1444,7 @@ void CodegenState::visit(const Ast::ForeachRange& e, MethodCodegenState& state)
 	state.builder->SetInsertPoint(exit_bb);
 }
 
-void CodegenState::visit(const Ast::ForeachPool& e, MethodCodegenState& state)
+void Codegen::Impl::visit(const Ast::ForeachPool& e, MethodCodegenState& state)
 {
 	auto* pool = state.local_pools[&e.pool()];
 	if (pool == nullptr) {
@@ -1537,7 +1493,7 @@ void CodegenState::visit(const Ast::ForeachPool& e, MethodCodegenState& state)
 	state.builder->SetInsertPoint(exit_bb);
 }
 
-void CodegenState::visit(const Ast::ExprStmt& e, MethodCodegenState& state)
+void Codegen::Impl::visit(const Ast::ExprStmt& e, MethodCodegenState& state)
 {
 	if (mpark::holds_alternative<Ast::NullExpr>(e.expr())) {
 		return;
@@ -1547,7 +1503,7 @@ void CodegenState::visit(const Ast::ExprStmt& e, MethodCodegenState& state)
 	}, e.expr());
 }
 
-void CodegenState::visit(const Ast::Break&, MethodCodegenState& state)
+void Codegen::Impl::visit(const Ast::Break&, MethodCodegenState& state)
 {
 	assert_msg(!state.loop_stack.empty(), "Must be inside loop");
 
@@ -1558,7 +1514,7 @@ void CodegenState::visit(const Ast::Break&, MethodCodegenState& state)
 	state.builder->SetInsertPoint(bb);
 }
 
-void CodegenState::visit(const Ast::Continue&, MethodCodegenState& state)
+void Codegen::Impl::visit(const Ast::Continue&, MethodCodegenState& state)
 {
 	assert_msg(!state.loop_stack.empty(), "Must be inside loop");
 
@@ -1569,7 +1525,7 @@ void CodegenState::visit(const Ast::Continue&, MethodCodegenState& state)
 	state.builder->SetInsertPoint(bb);
 }
 
-void CodegenState::visit(const Ast::Return& e, MethodCodegenState& state)
+void Codegen::Impl::visit(const Ast::Return& e, MethodCodegenState& state)
 {
 	if (e.expr() == nullptr) {
 		state.builder->CreateRetVoid();
@@ -1598,35 +1554,35 @@ void CodegenState::visit(const Ast::Return& e, MethodCodegenState& state)
 	state.builder->SetInsertPoint(new_bb);
 }
 
-LLVMExpr CodegenState::visit(const Ast::IntegerConst& e, MethodCodegenState& state)
+LLVMExpr Codegen::Impl::visit(const Ast::IntegerConst& e, MethodCodegenState& state)
 {
 	auto* value = llvm::ConstantInt::get(m_intptr, e.value());
 	return LLVMExpr(state.builder, value, nullptr, false);
 }
 
-LLVMExpr CodegenState::visit(const Ast::DoubleConst& e, MethodCodegenState& state)
+LLVMExpr Codegen::Impl::visit(const Ast::DoubleConst& e, MethodCodegenState& state)
 {
 	auto* value = llvm::ConstantFP::get(m_f64, e.value());
 	return LLVMExpr(state.builder, value, nullptr, false);
 }
 
-LLVMExpr CodegenState::visit(const Ast::BooleanConst& e, MethodCodegenState& state)
+LLVMExpr Codegen::Impl::visit(const Ast::BooleanConst& e, MethodCodegenState& state)
 {
 	auto* value = llvm::ConstantInt::get(m_i1, e.value());
 	return LLVMExpr(state.builder, value, nullptr, false);
 }
 
-LLVMExpr CodegenState::visit(const Ast::NullExpr&, MethodCodegenState&)
+LLVMExpr Codegen::Impl::visit(const Ast::NullExpr&, MethodCodegenState&)
 {
 	unreachable("You must check explicitly for null expressions");
 }
 
-LLVMExpr CodegenState::visit(const Ast::ThisExpr&, MethodCodegenState& state)
+LLVMExpr Codegen::Impl::visit(const Ast::ThisExpr&, MethodCodegenState& state)
 {
 	return LLVMExpr(state.builder, state.llvm_func->arg_begin(), nullptr, false);
 }
 
-LLVMExpr CodegenState::visit(const Ast::CastExpr& e, MethodCodegenState& state)
+LLVMExpr Codegen::Impl::visit(const Ast::CastExpr& e, MethodCodegenState& state)
 {
 	auto* value = mpark::visit([this, &state](const auto& e) {
 		return visit(e, state);
@@ -1715,7 +1671,7 @@ LLVMExpr CodegenState::visit(const Ast::CastExpr& e, MethodCodegenState& state)
 	}
 }
 
-LLVMExpr CodegenState::visit(const Ast::UnaryExpr& e, MethodCodegenState& state)
+LLVMExpr Codegen::Impl::visit(const Ast::UnaryExpr& e, MethodCodegenState& state)
 {
 	auto* value = mpark::visit([this, &state](const auto& e) {
 		return visit(e, state);
@@ -1743,7 +1699,7 @@ LLVMExpr CodegenState::visit(const Ast::UnaryExpr& e, MethodCodegenState& state)
 	}
 }
 
-LLVMExpr CodegenState::visit(const Ast::BinaryExpr& e, MethodCodegenState& state)
+LLVMExpr Codegen::Impl::visit(const Ast::BinaryExpr& e, MethodCodegenState& state)
 {
 	if (e.op() == Ast::BinOp::EQ || e.op() == Ast::BinOp::NE) {
 		auto lhs_type = Ast::expr_type(e.lhs());
@@ -1974,14 +1930,14 @@ LLVMExpr CodegenState::visit(const Ast::BinaryExpr& e, MethodCodegenState& state
 	}
 }
 
-LLVMExpr CodegenState::visit(const Ast::VariableExpr& e, MethodCodegenState& state)
+LLVMExpr Codegen::Impl::visit(const Ast::VariableExpr& e, MethodCodegenState& state)
 {
 	auto* value = state.local_vars[&e.var()];
 	assert_msg(value != nullptr, "Local variable does not exist? O_o");
 	return LLVMExpr(state.builder, value, nullptr, true);
 }
 
-LLVMExpr CodegenState::visit(const Ast::MethodCall& e, MethodCodegenState& state)
+LLVMExpr Codegen::Impl::visit(const Ast::MethodCall& e, MethodCodegenState& state)
 {
 	std::vector<llvm::Value*> llvm_args;
 
@@ -2034,7 +1990,7 @@ LLVMExpr CodegenState::visit(const Ast::MethodCall& e, MethodCodegenState& state
 	return LLVMExpr(state.builder, value, nullptr, false);
 }
 
-LLVMExpr CodegenState::visit(const Ast::FieldAccess& e, MethodCodegenState& state)
+LLVMExpr Codegen::Impl::visit(const Ast::FieldAccess& e, MethodCodegenState& state)
 {
 	auto* value = mpark::visit([this, &state](const auto& e) {
 		return visit(e, state);
@@ -2122,7 +2078,7 @@ LLVMExpr CodegenState::visit(const Ast::FieldAccess& e, MethodCodegenState& stat
 	return LLVMExpr(state.builder, field_ptr, tbaa_node, true);
 }
 
-LLVMExpr CodegenState::visit(const Ast::NewExpr& e, MethodCodegenState& state)
+LLVMExpr Codegen::Impl::visit(const Ast::NewExpr& e, MethodCodegenState& state)
 {
 	auto new_spec = state.spec.specialize_type(e.type());
 	auto& info = m_specialization_info[new_spec];
@@ -2149,9 +2105,9 @@ LLVMExpr CodegenState::visit(const Ast::NewExpr& e, MethodCodegenState& state)
 	return LLVMExpr(state.builder, retval, nullptr, false);
 }
 
-bool CodegenState::ir(const Ast::Program& ast)
+bool Codegen::Impl::ir(const Ast::Program& ast)
 {
-	CodegenState state;
+	Codegen::Impl state;
 	std::string error;
 	m_target = llvm::TargetRegistry::lookupTarget("x86_64-unknown-linux-gnu", error);
 
@@ -2181,9 +2137,8 @@ bool CodegenState::ir(const Ast::Program& ast)
 	m_f32 = llvm::Type::getFloatTy(m_ctx);
 	m_f64 = llvm::Type::getDoubleTy(m_ctx);
 
-	llvm::Module mod("shapes", m_ctx);
-	mod.setDataLayout(m_target_machine->createDataLayout());
-	m_mod = &mod;
+	m_mod.reset(new llvm::Module("shapes", m_ctx));
+	m_mod->setDataLayout(m_target_machine->createDataLayout());
 
 	const auto& data_layout = m_mod->getDataLayout();
 	m_intptr = data_layout.getIntPtrType(m_ctx);
@@ -2194,7 +2149,7 @@ bool CodegenState::ir(const Ast::Program& ast)
 		m_malloc_type,
 		llvm::GlobalValue::ExternalLinkage,
 		"malloc",
-		m_mod);
+		m_mod.get());
 	m_malloc->setReturnDoesNotAlias();
 	m_malloc->addFnAttr(llvm::Attribute::NoUnwind);
 
@@ -2204,7 +2159,7 @@ bool CodegenState::ir(const Ast::Program& ast)
 		m_realloc_type,
 		llvm::GlobalValue::ExternalLinkage,
 		"realloc",
-		m_mod);
+		m_mod.get());
 	m_realloc->setReturnDoesNotAlias();
 	m_realloc->addFnAttr(llvm::Attribute::NoUnwind);
 
@@ -2214,7 +2169,7 @@ bool CodegenState::ir(const Ast::Program& ast)
 		m_free_type,
 		llvm::GlobalValue::ExternalLinkage,
 		"free",
-		m_mod);
+		m_mod.get());
 	m_free->addFnAttr(llvm::Attribute::NoUnwind);
 
 	llvm::MDBuilder tbaa_builder(m_ctx);
@@ -2241,6 +2196,11 @@ bool CodegenState::ir(const Ast::Program& ast)
 	generate_llvm_functions();
 
 	llvm::verifyModule(*m_mod, &llvm::errs());
+	return true;
+}
+
+bool Codegen::Impl::emit(const char* filename)
+{
 	auto opt_level = llvm::PassBuilder::OptimizationLevel::O3;
 
 	llvm::PassBuilder pass_builder(m_target_machine);
@@ -2265,7 +2225,6 @@ bool CodegenState::ir(const Ast::Program& ast)
 
 	mod_pass_manager.run(*m_mod, mam);
 
-	const char* filename = "shapes.o";
 	std::error_code EC;
 	llvm::raw_fd_ostream dest(filename, EC, llvm::sys::fs::OF_None);
 
@@ -2277,10 +2236,203 @@ bool CodegenState::ir(const Ast::Program& ast)
 	return true;
 }
 
-bool ir(const Ast::Program& ast)
+llvm::Function* Codegen::Impl::find_method(const ClassSpecialization& spec, const Ast::Method& m) const
 {
-	CodegenState state;
-	return state.ir(ast);
+	auto spec_it = m_specialization_info.find(spec);
+	if (spec_it == m_specialization_info.end()) {
+		return nullptr;
+	}
+
+	const auto& mapping = spec_it->second.funcs;
+	auto method_it = mapping.find(&m);
+
+	return (method_it != mapping.end())
+		? method_it->second
+		: nullptr;
+}
+
+llvm::Function*
+Codegen::Impl::constructor(const ClassSpecialization& spec) const
+{
+	auto it = m_specialization_info.find(spec);
+	if (it == m_specialization_info.end()) {
+		return nullptr;
+	}
+
+	struct Functor {
+		llvm::Function* operator()(const StandaloneSpecializationInfo& info) {
+			return info.ctor;
+		}
+		llvm::Function* operator()(const PoolSpecializationInfo& info) {
+			return info.obj_ctor;
+		}
+	};
+
+	return mpark::visit(Functor(), it->second.type_info);
+}
+
+llvm::Function*
+Codegen::Impl::pool_constructor(const ClassSpecialization& spec) const
+{
+	auto it = m_specialization_info.find(spec);
+	if (it == m_specialization_info.end()) {
+		return nullptr;
+	}
+
+	const auto* as_pool = mpark::get_if<PoolSpecializationInfo>(&it->second.type_info);
+	if (as_pool == nullptr) {
+		return nullptr;
+	}
+
+	return as_pool->pool_alloc;
+}
+
+Codegen::Codegen() {}
+Codegen::~Codegen() {}
+
+bool Codegen::ir(const Ast::Program& ast)
+{
+	if (m_impl != nullptr) {
+		return false;
+	}
+	m_impl.reset(new Codegen::Impl);
+
+	return m_impl->ir(ast);
+}
+
+bool Codegen::emit(const char* filename)
+{
+	return m_impl->emit(filename);
+}
+
+std::unique_ptr<llvm::Module> Codegen::Impl::get_module()
+{
+	return std::move(m_mod);
+}
+
+std::unique_ptr<llvm::Module> Codegen::get_module()
+{
+	return m_impl->get_module();
+}
+
+llvm::Function*
+Codegen::find_method(const ClassSpecialization& spec, const Ast::Method& m) const
+{
+	return m_impl->find_method(spec, m);
+}
+
+class CodegenInterpreter::Impl
+{
+	const Codegen* m_codegen;
+	llvm::ExecutionEngine* m_engine;
+
+public:
+	void init(Codegen& codegen);
+
+	llvm::GenericValue
+	run_function(llvm::Function* func, std::vector<llvm::GenericValue> values);
+
+	llvm::Function*
+	find_method(const ClassSpecialization& spec, const Ast::Method& m) const;
+
+	llvm::Function* constructor(const ClassSpecialization& spec) const;
+	llvm::Function* pool_constructor(const ClassSpecialization& spec) const;
+};
+
+llvm::Function* Codegen::constructor(const ClassSpecialization& spec) const
+{
+	return m_impl->constructor(spec);
+}
+
+llvm::Function* Codegen::pool_constructor(const ClassSpecialization& spec) const
+{
+	return m_impl->pool_constructor(spec);
+}
+
+void CodegenInterpreter::Impl::init(Codegen& codegen)
+{
+	m_codegen = &codegen;
+
+	std::string error_msg;
+
+	llvm::EngineBuilder builder(codegen.get_module());
+	builder.setErrorStr(&error_msg);
+	builder.setEngineKind(llvm::EngineKind::Interpreter);
+	builder.setVerifyModules(true);
+
+	m_engine = builder.create();
+	if (!error_msg.empty()) {
+		fprintf(stderr, "Interpreter error message: %s\n", error_msg.c_str());
+	}
+
+	assert_msg(m_engine != nullptr, "Engine was not created? O_o");
+
+	m_engine->addGlobalMapping("malloc", (uint64_t) &malloc);
+	m_engine->addGlobalMapping("realloc", (uint64_t) &realloc);
+	m_engine->addGlobalMapping("free", (uint64_t) &free);
+
+	m_engine->finalizeObject();
+}
+
+llvm::GenericValue
+CodegenInterpreter::Impl::run_function(
+	llvm::Function* func, std::vector<llvm::GenericValue> values)
+{
+	return m_engine->runFunction(func, values);
+}
+
+llvm::Function*
+CodegenInterpreter::Impl::find_method(const ClassSpecialization& spec, const Ast::Method& m) const
+{
+	return m_codegen->find_method(spec, m);
+}
+
+llvm::Function*
+CodegenInterpreter::Impl::constructor(const ClassSpecialization& spec) const
+{
+	return m_codegen->constructor(spec);
+}
+
+llvm::Function*
+CodegenInterpreter::Impl::pool_constructor(const ClassSpecialization& spec) const
+{
+	return m_codegen->pool_constructor(spec);
+}
+
+CodegenInterpreter::CodegenInterpreter()
+	: m_impl(new CodegenInterpreter::Impl)
+{
+}
+CodegenInterpreter::~CodegenInterpreter() {}
+
+void CodegenInterpreter::init(Codegen& codegen)
+{
+	m_impl->init(codegen);
+}
+
+llvm::GenericValue
+CodegenInterpreter::run_function(
+	llvm::Function* func, std::vector<llvm::GenericValue> values)
+{
+	return m_impl->run_function(func, values);
+}
+
+llvm::Function*
+CodegenInterpreter::find_method(const ClassSpecialization& spec, const Ast::Method& m) const
+{
+	return m_impl->find_method(spec, m);
+}
+
+llvm::Function*
+CodegenInterpreter::constructor(const ClassSpecialization& spec) const
+{
+	return m_impl->constructor(spec);
+}
+
+llvm::Function*
+CodegenInterpreter::pool_constructor(const ClassSpecialization& spec) const
+{
+	return m_impl->pool_constructor(spec);
 }
 
 } // namespace Ir
