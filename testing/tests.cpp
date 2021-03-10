@@ -173,12 +173,14 @@ TEST_F(ExecutionTest, SimpleReturn) {
 	const auto* clazz = m_ast.find_class("Main");
 	const auto* method = clazz->find_method("identity");
 
-	auto* func = m_codegen_interpreter.find_method(
-		Ir::ClassSpecialization(*clazz, {nullptr}), *method);
+	Ir::ClassSpecialization spec(*clazz, {nullptr});
+
+	auto* ctor = m_codegen_interpreter.constructor(spec);
+	auto this_param = m_codegen_interpreter.run_function(ctor, {});
+
+	auto* func = m_codegen_interpreter.find_method(spec, *method);
 
 	uint64_t param_value = 100;
-
-	llvm::GenericValue this_param(nullptr);
 
 	llvm::GenericValue param;
 	param.IntVal = llvm::APInt(32, param_value);
@@ -191,23 +193,53 @@ TEST_F(ExecutionTest, ForeachLoop) {
 	const auto* clazz = m_ast.find_class("Main");
 	const auto* method = clazz->find_method("foreach_loop");
 
-	auto* func = m_codegen_interpreter.find_method(
-		Ir::ClassSpecialization(*clazz, {nullptr}), *method);
+	Ir::ClassSpecialization spec(*clazz, {nullptr});
+
+	auto* ctor = m_codegen_interpreter.constructor(spec);
+	auto this_param = m_codegen_interpreter.run_function(ctor, {});
+
+	auto* func = m_codegen_interpreter.find_method(spec, *method);
 
 	uint64_t begin = 20;
 	uint64_t end = 30;
 
-	llvm::GenericValue this_param(nullptr);
-
 	llvm::GenericValue param_begin;
-	llvm::GenericValue param_end;
-
 	param_begin.IntVal = llvm::APInt(32, begin);
+
+	llvm::GenericValue param_end;
 	param_end.IntVal = llvm::APInt(32, end);
 
 	auto retval = m_codegen_interpreter.run_function(
 		func, {this_param, param_begin, param_end});
 	EXPECT_THAT(retval.IntVal, Eq(llvm::APInt(32, 245)));
+}
+
+TEST_F(ExecutionTest, GetterSetter) {
+	const auto* clazz = m_ast.find_class("Main");
+	const auto* getter = clazz->find_method("getter");
+	const auto* setter = clazz->find_method("setter");
+
+	Ir::ClassSpecialization spec(*clazz, {nullptr});
+
+	auto* ctor = m_codegen_interpreter.constructor(spec);
+	auto this_param = m_codegen_interpreter.run_function(ctor, {});
+
+	auto* getter_func = m_codegen_interpreter.find_method(spec, *getter);
+	auto* setter_func = m_codegen_interpreter.find_method(spec, *setter);
+
+	auto getter_retval1 = m_codegen_interpreter.run_function(
+		getter_func, {this_param});
+	EXPECT_THAT(getter_retval1.IntVal, Eq(llvm::APInt(32, 0)));
+
+	llvm::GenericValue setval;
+	setval.IntVal = llvm::APInt(32, 200);
+
+	m_codegen_interpreter.run_function(setter_func, {this_param, setval});
+
+	auto getter_retval2 = m_codegen_interpreter.run_function(
+		getter_func, {this_param});
+
+	EXPECT_THAT(getter_retval2.IntVal, Eq(setval.IntVal));
 }
 
 INSTANTIATE_TEST_SUITE_P(

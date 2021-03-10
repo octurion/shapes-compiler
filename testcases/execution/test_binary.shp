@@ -8,6 +8,16 @@ class Main<p1> where
         return x;
     }
 
+    fn getter(): i32
+    {
+        return f;
+    }
+
+    fn setter(x: i32): i32
+    {
+        f = x;
+    }
+
     fn foreach_loop(begin: i32, end: i32): i32
     {
         let sum: i32;

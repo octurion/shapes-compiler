@@ -285,6 +285,8 @@ public:
 	bool emit(const char* filename);
 
 	llvm::Function* find_method(const ClassSpecialization& spec, const Ast::Method& m) const;
+	llvm::Function* constructor(const ClassSpecialization& spec) const;
+	llvm::Function* pool_constructor(const ClassSpecialization& spec) const;
 
 	std::unique_ptr<llvm::Module> get_module();
 };
@@ -840,27 +842,30 @@ void Codegen::Impl::generate_llvm_function_decls()
 				data_layout.getIntPtrType(m_ctx),
 				data_layout.getStructLayout(as_standalone->type)->getSizeInBytes());
 			auto* malloc_ptr = builder.CreateCall(m_malloc, {size});
-
-			const auto& fields = specialization.clazz().fields();
-			std::vector<llvm::Constant*> constants;
-			for (size_t i = 0; i < fields.size(); i++) {
-				const Ast::Field& e = fields[i];
-				const auto& type = e.type();
-				const auto* primitive_type = mpark::get_if<Ast::PrimitiveType>(&type);
-				if (primitive_type != nullptr) {
-					constants.push_back(
-						llvm::ConstantInt::get(
-							type_of(*primitive_type, specialization), 0));
-					continue;
-				}
-
-				constants.push_back(zero(type, specialization));
-			}
-
-			auto* init = llvm::ConstantStruct::get(as_standalone->type, constants);
 			auto* retval = builder.CreatePointerCast(malloc_ptr, class_ptr_type);
 
-			builder.CreateStore(init, retval);
+			const auto* struct_layout = data_layout.getStructLayout(as_standalone->type);
+
+			const auto& fields = specialization.clazz().fields();
+			for (size_t i = 0; i < fields.size(); i++) {
+				const Ast::Field& e = fields[i];
+				auto* field_ptr =
+					builder.CreateStructGEP(as_standalone->type, retval, i);
+				auto* val = zero(e.type(), specialization);
+				auto* insn = builder.CreateStore(val, field_ptr);
+
+				auto* tbaa_field_type = mpark::visit(
+					[this, &specialization](const auto& e) {
+						return tbaa_type_of(e, specialization);
+					}, e.type());
+
+				auto* field_tbaa_node = tbaa_builder.createTBAAStructTagNode(
+					as_standalone->tbaa_type,
+					tbaa_field_type,
+					struct_layout->getElementOffset(i));
+				insn->setMetadata(llvm::LLVMContext::MD_tbaa, field_tbaa_node);
+			}
+
 			builder.CreateRet(retval);
 
 			continue;
@@ -2246,6 +2251,42 @@ llvm::Function* Codegen::Impl::find_method(const ClassSpecialization& spec, cons
 		: nullptr;
 }
 
+llvm::Function*
+Codegen::Impl::constructor(const ClassSpecialization& spec) const
+{
+	auto it = m_specialization_info.find(spec);
+	if (it == m_specialization_info.end()) {
+		return nullptr;
+	}
+
+	struct Functor {
+		llvm::Function* operator()(const StandaloneSpecializationInfo& info) {
+			return info.ctor;
+		}
+		llvm::Function* operator()(const PoolSpecializationInfo& info) {
+			return info.obj_ctor;
+		}
+	};
+
+	return mpark::visit(Functor(), it->second.type_info);
+}
+
+llvm::Function*
+Codegen::Impl::pool_constructor(const ClassSpecialization& spec) const
+{
+	auto it = m_specialization_info.find(spec);
+	if (it == m_specialization_info.end()) {
+		return nullptr;
+	}
+
+	const auto* as_pool = mpark::get_if<PoolSpecializationInfo>(&it->second.type_info);
+	if (as_pool == nullptr) {
+		return nullptr;
+	}
+
+	return as_pool->pool_alloc;
+}
+
 Codegen::Codegen() {}
 Codegen::~Codegen() {}
 
@@ -2293,7 +2334,20 @@ public:
 
 	llvm::Function*
 	find_method(const ClassSpecialization& spec, const Ast::Method& m) const;
+
+	llvm::Function* constructor(const ClassSpecialization& spec) const;
+	llvm::Function* pool_constructor(const ClassSpecialization& spec) const;
 };
+
+llvm::Function* Codegen::constructor(const ClassSpecialization& spec) const
+{
+	return m_impl->constructor(spec);
+}
+
+llvm::Function* Codegen::pool_constructor(const ClassSpecialization& spec) const
+{
+	return m_impl->pool_constructor(spec);
+}
 
 void CodegenInterpreter::Impl::init(Codegen& codegen)
 {
@@ -2333,6 +2387,18 @@ CodegenInterpreter::Impl::find_method(const ClassSpecialization& spec, const Ast
 	return m_codegen->find_method(spec, m);
 }
 
+llvm::Function*
+CodegenInterpreter::Impl::constructor(const ClassSpecialization& spec) const
+{
+	return m_codegen->constructor(spec);
+}
+
+llvm::Function*
+CodegenInterpreter::Impl::pool_constructor(const ClassSpecialization& spec) const
+{
+	return m_codegen->pool_constructor(spec);
+}
+
 CodegenInterpreter::CodegenInterpreter()
 	: m_impl(new CodegenInterpreter::Impl)
 {
@@ -2355,6 +2421,18 @@ llvm::Function*
 CodegenInterpreter::find_method(const ClassSpecialization& spec, const Ast::Method& m) const
 {
 	return m_impl->find_method(spec, m);
+}
+
+llvm::Function*
+CodegenInterpreter::constructor(const ClassSpecialization& spec) const
+{
+	return m_impl->constructor(spec);
+}
+
+llvm::Function*
+CodegenInterpreter::pool_constructor(const ClassSpecialization& spec) const
+{
+	return m_impl->pool_constructor(spec);
 }
 
 } // namespace Ir

@@ -100,6 +100,8 @@ public:
 	bool emit(const char* filename);
 
 	llvm::Function* find_method(const ClassSpecialization& spec, const Ast::Method& m) const;
+	llvm::Function* constructor(const ClassSpecialization& spec) const;
+	llvm::Function* pool_constructor(const ClassSpecialization& spec) const;
 
 	std::unique_ptr<llvm::Module> get_module();
 };
@@ -118,6 +120,8 @@ public:
 	void init(Codegen& codegen);
 
 	llvm::Function* find_method(const ClassSpecialization& spec, const Ast::Method& m) const;
+	llvm::Function* constructor(const ClassSpecialization& spec) const;
+	llvm::Function* pool_constructor(const ClassSpecialization& spec) const;
 
 	llvm::GenericValue
 	run_function(llvm::Function* func, std::vector<llvm::GenericValue> values);
