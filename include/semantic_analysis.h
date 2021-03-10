@@ -444,6 +444,21 @@ public:
 	size_t num_got() const { return m_num_got; }
 };
 
+class NotAllPathsReturn
+{
+	std::string m_name;
+	Location m_loc;
+
+public:
+	NotAllPathsReturn(std::string name, const Location& loc)
+		: m_name(std::move(name))
+		, m_loc(loc)
+	{}
+
+	const std::string& name() const { return m_name; }
+	const Location& loc() const { return m_loc; }
+};
+
 using SemanticError = mpark::variant<
 	DuplicateDefinition,
 	MissingDefinition,
@@ -468,7 +483,8 @@ using SemanticError = mpark::variant<
 	ReturnWithExpression,
 	ReturnWithoutExpression,
 	NotLvalue,
-	IncorrectArgsNumber>;
+	IncorrectArgsNumber,
+	NotAllPathsReturn>;
 
 class SemanticErrorList
 {
