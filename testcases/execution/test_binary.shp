@@ -1,0 +1,19 @@
+class Main<p1> where
+    p1: [Main<p1>]
+{
+    f: i32;
+
+    fn identity(x: i32): i32
+    {
+        return x;
+    }
+
+    fn foreach_loop(begin: i32, end: i32): i32
+    {
+        let sum: i32;
+        foreach i = begin .. end {
+            sum += i;
+        }
+        return sum;
+    }
+}

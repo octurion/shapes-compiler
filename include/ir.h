@@ -112,8 +112,10 @@ private:
 	std::unique_ptr<CodegenInterpreter::Impl> m_impl;
 
 public:
-	CodegenInterpreter(Codegen& codegen);
+	CodegenInterpreter();
 	~CodegenInterpreter();
+
+	void init(Codegen& codegen);
 
 	llvm::Function* find_method(const ClassSpecialization& spec, const Ast::Method& m) const;
 

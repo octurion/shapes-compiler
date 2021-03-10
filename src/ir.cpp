@@ -2333,12 +2333,16 @@ CodegenInterpreter::Impl::find_method(const ClassSpecialization& spec, const Ast
 	return m_codegen->find_method(spec, m);
 }
 
-CodegenInterpreter::CodegenInterpreter(Codegen& codegen)
+CodegenInterpreter::CodegenInterpreter()
 	: m_impl(new CodegenInterpreter::Impl)
+{
+}
+CodegenInterpreter::~CodegenInterpreter() {}
+
+void CodegenInterpreter::init(Codegen& codegen)
 {
 	m_impl->init(codegen);
 }
-CodegenInterpreter::~CodegenInterpreter() {}
 
 llvm::GenericValue
 CodegenInterpreter::run_function(

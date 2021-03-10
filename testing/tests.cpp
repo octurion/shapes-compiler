@@ -129,43 +129,51 @@ std::vector<std::string> files_in_path(const char* path)
 	return retval;
 };
 
-TEST(Execution, SimpleExpr) {
-	const auto* path = "../testcases/valid/simple_return.shp";
+class ExecutionTest: public Test
+{
+protected:
+	Ast::Program m_ast;
+	Ir::Codegen m_codegen;
+	Ir::CodegenInterpreter m_codegen_interpreter;
 
-	FILE* in = fopen(path, "r");
-	ASSERT_THAT(in, NotNull());
+public:
+	void SetUp() override
+	{
+		// TODO: Make a global test environment for this?
+		Ir::init_llvm();
 
-	Cst::Program cst;
-	Cst::SyntaxErrorList syntax_errors;
+		const auto* path = "../testcases/execution/test_binary.shp";
 
-	yyscan_t scanner;
-	yylex_init(&scanner);
-	yyset_in(in, scanner);
+		FILE* in = fopen(path, "r");
 
-	yyparse(scanner, &cst, &syntax_errors);
+		Cst::Program cst;
+		Cst::SyntaxErrorList syntax_errors;
 
-	yylex_destroy(scanner);
+		yyscan_t scanner;
+		yylex_init(&scanner);
+		yyset_in(in, scanner);
 
-	fclose(in);
+		yyparse(scanner, &cst, &syntax_errors);
 
-	ASSERT_THAT(syntax_errors.has_errors(), IsFalse());
+		yylex_destroy(scanner);
 
-	Ast::Program ast;
-	Ast::SemanticErrorList errors;
+		fclose(in);
 
-	Ast::run_semantic_analysis(cst, ast, errors);
+		Ast::SemanticErrorList errors;
 
-	ASSERT_THAT(errors.has_errors(), IsFalse());
+		Ast::run_semantic_analysis(cst, m_ast, errors);
 
-	const auto* clazz = ast.find_class("Main");
+		m_codegen.ir(m_ast);
+
+		m_codegen_interpreter.init(m_codegen);
+	}
+};
+
+TEST_F(ExecutionTest, SimpleReturn) {
+	const auto* clazz = m_ast.find_class("Main");
 	const auto* method = clazz->find_method("identity");
 
-	Ir::init_llvm();
-	Ir::Codegen codegen;
-	codegen.ir(ast);
-
-	Ir::CodegenInterpreter interpreter(codegen);
-	auto* func = interpreter.find_method(
+	auto* func = m_codegen_interpreter.find_method(
 		Ir::ClassSpecialization(*clazz, {nullptr}), *method);
 
 	uint64_t param_value = 100;
@@ -175,8 +183,31 @@ TEST(Execution, SimpleExpr) {
 	llvm::GenericValue param;
 	param.IntVal = llvm::APInt(32, param_value);
 
-	auto retval = interpreter.run_function(func, {this_param, param});
+	auto retval = m_codegen_interpreter.run_function(func, {this_param, param});
 	EXPECT_THAT(retval.IntVal, Eq(param.IntVal));
+}
+
+TEST_F(ExecutionTest, ForeachLoop) {
+	const auto* clazz = m_ast.find_class("Main");
+	const auto* method = clazz->find_method("foreach_loop");
+
+	auto* func = m_codegen_interpreter.find_method(
+		Ir::ClassSpecialization(*clazz, {nullptr}), *method);
+
+	uint64_t begin = 20;
+	uint64_t end = 30;
+
+	llvm::GenericValue this_param(nullptr);
+
+	llvm::GenericValue param_begin;
+	llvm::GenericValue param_end;
+
+	param_begin.IntVal = llvm::APInt(32, begin);
+	param_end.IntVal = llvm::APInt(32, end);
+
+	auto retval = m_codegen_interpreter.run_function(
+		func, {this_param, param_begin, param_end});
+	EXPECT_THAT(retval.IntVal, Eq(llvm::APInt(32, 245)));
 }
 
 INSTANTIATE_TEST_SUITE_P(
