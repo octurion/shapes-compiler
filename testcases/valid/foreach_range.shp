@@ -5,6 +5,8 @@ class Main<p1> where
 
     fn sum(): u64 {
         let sum: u64;
+
+        sum = 0;
         foreach x = 0 .. 100 {
             sum += x;
         }

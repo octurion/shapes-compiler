@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <sstream>
+#include <unordered_set>
 
 namespace Ast {
 
@@ -1341,7 +1342,7 @@ public:
 	{
 		const auto* var = m_scopes.find_variable(e.name().ident());
 		if (var != nullptr) {
-			return VariableExpr(*var);
+			return VariableExpr(*var, e.loc());
 		}
 
 		const auto* field = m_scopes.find_field(e.name().ident());
@@ -1518,6 +1519,164 @@ static void collect_method_bodies(
 	}
 }
 
+class VarsInitFunctor
+{
+	std::unordered_set<const Variable*> m_set_vars;
+	std::reference_wrapper<SemanticErrorList> m_errors;
+
+public:
+	VarsInitFunctor(SemanticErrorList& errors)
+		: m_errors(errors)
+	{}
+
+	void add_param(const Variable* var)
+	{
+		m_set_vars.insert(var);
+	}
+
+	void operator()(const IntegerConst&) {}
+	void operator()(const DoubleConst&) {}
+	void operator()(const BooleanConst&) {}
+	void operator()(const NullExpr&) {}
+	void operator()(const ThisExpr&) {}
+	void operator()(const NewExpr&) {}
+
+	void operator()(const CastExpr& e)
+	{
+		mpark::visit(*this, e.expr());
+	}
+
+	void operator()(const UnaryExpr& e)
+	{
+		mpark::visit(*this, e.expr());
+	}
+
+	void operator()(const BinaryExpr& e)
+	{
+		mpark::visit(*this, e.lhs());
+		mpark::visit(*this, e.rhs());
+	}
+
+	void operator()(const MethodCall& e)
+	{
+		mpark::visit(*this, e.this_expr());
+		for (const auto& arg: e.args()) {
+			mpark::visit(*this, arg);
+		}
+	}
+
+	void operator()(const FieldAccess& e)
+	{
+		mpark::visit(*this, e.expr());
+	}
+
+	void operator()(const VariableExpr& e)
+	{
+		if (m_set_vars.find(&e.var()) != m_set_vars.end()) {
+			return;
+		}
+
+		m_errors.get().add<VarMaybeUninitialized>(e.var().name(), e.loc());
+	}
+
+	void operator()(const Assignment& e) {
+		mpark::visit(*this, e.rhs());
+
+		const auto* as_var = mpark::get_if<VariableExpr>(&e.lhs());
+		if (as_var != nullptr) {
+			m_set_vars.insert(&as_var->var());
+		} else {
+			mpark::visit(*this, e.lhs());
+		}
+	}
+
+	void operator()(const OpAssignment& e) {
+		mpark::visit(*this, e.lhs());
+		mpark::visit(*this, e.rhs());
+	}
+
+	void operator()(const If& e) {
+		mpark::visit(*this, e.cond());
+
+		auto lhs_functor = *this;
+		for (const auto& e: e.then_stmts()) {
+			mpark::visit(lhs_functor, e);
+		}
+
+		auto rhs_functor = *this;
+		for (const auto& e: e.else_stmts()) {
+			mpark::visit(rhs_functor, e);
+		}
+
+		bool cmp = lhs_functor.m_set_vars.size() < rhs_functor.m_set_vars.size();
+		const auto& smallest = cmp ? lhs_functor : rhs_functor;
+		const auto& largest = cmp ? rhs_functor : lhs_functor;
+
+		for (const auto& e: smallest.m_set_vars) {
+			if (largest.m_set_vars.find(e) != largest.m_set_vars.end()) {
+				m_set_vars.insert(e);
+			}
+		}
+	}
+
+	void operator()(const While& e) {
+		mpark::visit(*this, e.cond());
+
+		auto functor = *this;
+		for (const auto& e: e.body()) {
+			mpark::visit(functor, e);
+		}
+	}
+
+	void operator()(const ForeachRange& e) {
+		mpark::visit(*this, e.range_begin());
+		mpark::visit(*this, e.range_end());
+
+		auto functor = *this;
+		functor.m_set_vars.insert(&e.var());
+		for (const auto& e: e.body()) {
+			mpark::visit(functor, e);
+		}
+	}
+
+	void operator()(const ForeachPool& e) {
+		auto functor = *this;
+		functor.m_set_vars.insert(&e.var());
+		for (const auto& e: e.body()) {
+			mpark::visit(functor, e);
+		}
+	}
+
+	void operator()(const ExprStmt& e) {
+		mpark::visit(*this, e.expr());
+	}
+
+	void operator()(const Break&) {}
+	void operator()(const Continue&) {}
+
+	void operator()(const Return& e) {
+		if (e.expr() != nullptr) {
+			mpark::visit(*this, *e.expr());
+		}
+	}
+};
+
+static void ensure_all_vars_init(const Program& ast, SemanticErrorList& errors)
+{
+	for (const Class& c: ast.ordered_classes()) {
+		for (const Method& m: c.methods()) {
+			VarsInitFunctor functor(errors);
+			for (const auto& param: m.params()) {
+				functor.add_param(&param);
+			}
+
+			for (const auto& stmt: m.body()) {
+				mpark::visit(functor, stmt);
+			}
+		}
+	}
+}
+
 static bool ensure_all_paths_return_impl(const std::vector<Stmt>& stmts)
 {
 	for (auto it = stmts.rbegin(); it != stmts.rend(); it++) {
@@ -1586,6 +1745,7 @@ void run_semantic_analysis(const Cst::Program& cst, Program& dest_ast, SemanticE
 		return;
 	}
 
+	ensure_all_vars_init(ast, errors);
 	ensure_all_paths_return(ast, errors);
 	if (errors.has_errors()) {
 		return;

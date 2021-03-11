@@ -456,13 +456,16 @@ public:
 class VariableExpr
 {
 	const Variable& m_var;
+	Location m_loc;
 
 public:
-	explicit VariableExpr(const Variable& var)
+	explicit VariableExpr(const Variable& var, const Location& loc)
 		: m_var(var)
+		, m_loc(loc)
 	{}
 
 	const Variable& var() const { return m_var; }
+	const Location& loc() const { return m_loc; }
 	const Type& type() const { return m_var.type(); }
 	bool is_lvalue() const { return true; }
 };

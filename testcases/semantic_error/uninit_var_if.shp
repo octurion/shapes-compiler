@@ -1,0 +1,15 @@
+class Main<p1> where
+    p1: [Main<p1>]
+{
+    f: i32;
+
+    fn foo(): u64 {
+        let n: u64;
+        if false {
+            return n;
+        } else {
+            n = 2;
+            return n;
+        }
+    }
+}

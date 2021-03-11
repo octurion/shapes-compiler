@@ -21,6 +21,8 @@ class Main<p1> where
     fn foreach_loop(begin: i32, end: i32): i32
     {
         let sum: i32;
+
+        sum = 0 as i32;
         foreach i = begin .. end {
             sum += i;
         }

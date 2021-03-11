@@ -459,6 +459,21 @@ public:
 	const Location& loc() const { return m_loc; }
 };
 
+class VarMaybeUninitialized
+{
+	std::string m_name;
+	Location m_loc;
+
+public:
+	VarMaybeUninitialized(std::string name, const Location& loc)
+		: m_name(std::move(name))
+		, m_loc(loc)
+	{}
+
+	const std::string& name() const { return m_name; }
+	const Location& loc() const { return m_loc; }
+};
+
 using SemanticError = mpark::variant<
 	DuplicateDefinition,
 	MissingDefinition,
@@ -484,7 +499,8 @@ using SemanticError = mpark::variant<
 	ReturnWithoutExpression,
 	NotLvalue,
 	IncorrectArgsNumber,
-	NotAllPathsReturn>;
+	NotAllPathsReturn,
+	VarMaybeUninitialized>;
 
 class SemanticErrorList
 {

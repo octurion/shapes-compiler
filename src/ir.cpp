@@ -1298,14 +1298,20 @@ void Codegen::Impl::visit(const Ast::OpAssignment& e, MethodCodegenState& state)
 		break;
 	}
 	case Ast::BinOp::SHL: {
-		value = state.builder->CreateShl(lhs_value, rhs_value);
+		// LLVM requires shift operands to be of the same type
+		auto* shift_amount = state.builder->CreateZExtOrTrunc(
+			rhs_value, lhs_value->getType());
+		value = state.builder->CreateShl(lhs_value, shift_amount);
 		break;
 	}
 	case Ast::BinOp::SHR: {
+		// LLVM requires shift operands to be of the same type
+		auto* shift_amount = state.builder->CreateZExtOrTrunc(
+			rhs_value, lhs_value->getType());
 		if (Ast::is_signed_integer(*as_primitive)) {
-			value = state.builder->CreateAShr(lhs_value, rhs_value);
+			value = state.builder->CreateAShr(lhs_value, shift_amount);
 		} else {
-			value = state.builder->CreateLShr(lhs_value, rhs_value);
+			value = state.builder->CreateLShr(lhs_value, shift_amount);
 		}
 		break;
 	}
