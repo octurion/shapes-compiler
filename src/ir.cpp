@@ -894,16 +894,39 @@ void Codegen::Impl::generate_llvm_function_decls()
 					"Pool constructor has no arguments?");
 
 				auto* pool_ptr = as_pool->pool_alloc->arg_begin();
-				std::vector<llvm::Constant*> init_values = {
-					llvm::ConstantInt::get(m_intptr, 0),
-					llvm::ConstantInt::get(m_intptr, 0),
-				};
-				for (auto* e: as_pool->cluster_types) {
-					init_values.push_back(
-						llvm::Constant::getNullValue(e->getPointerTo()));
+				auto* size_ptr = builder.CreateStructGEP(as_pool->pool_type, pool_ptr, 0);
+				const auto* pool_layout = data_layout.getStructLayout(as_pool->pool_type);
+				auto* size_tbaa_node = tbaa_builder.createTBAAStructTagNode(
+					as_pool->pool_tbaa_type,
+					m_tbaa_intptr,
+					pool_layout->getElementOffset(0));
+				auto* size_insn = builder.CreateStore(
+					llvm::ConstantInt::get(m_intptr, 0), size_ptr);
+				size_insn->setMetadata(llvm::LLVMContext::MD_tbaa, size_tbaa_node);
+
+				auto* capacity_ptr = builder.CreateStructGEP(as_pool->pool_type, pool_ptr, 1);
+				auto* capacity_tbaa_node = tbaa_builder.createTBAAStructTagNode(
+					as_pool->pool_tbaa_type,
+					m_tbaa_intptr,
+					pool_layout->getElementOffset(1));
+				auto* capacity_insn = builder.CreateStore(
+					llvm::ConstantInt::get(m_intptr, 0), capacity_ptr);
+				capacity_insn->setMetadata(llvm::LLVMContext::MD_tbaa, capacity_tbaa_node);
+
+				for (size_t i = 0; i < as_pool->cluster_types.size(); i++) {
+					auto* ptr_type = as_pool->cluster_types[i]->getPointerTo();
+
+					auto* cluster_ptr = builder.CreateStructGEP(
+						as_pool->pool_type, pool_ptr, i + 2);
+					auto* cluster_tbaa_node = tbaa_builder.createTBAAStructTagNode(
+						as_pool->pool_tbaa_type,
+						as_pool->cluster_tbaa_ptr_types[i],
+						pool_layout->getElementOffset(i + 2));
+					auto* store_insn = builder.CreateStore(
+						llvm::Constant::getNullValue(ptr_type), cluster_ptr);
+					store_insn->setMetadata(
+						llvm::LLVMContext::MD_tbaa, cluster_tbaa_node);
 				}
-				auto* init = llvm::ConstantStruct::get(as_pool->pool_type, init_values);
-				builder.CreateStore(init, pool_ptr);
 				builder.CreateRetVoid();
 			}
 
@@ -1123,6 +1146,7 @@ void Codegen::Impl::generate_llvm_functions()
 
 			MethodCodegenState state;
 			state.spec = spec;
+			state.method = &method;
 			state.llvm_func = llvm_func;
 
 			auto* bb = llvm::BasicBlock::Create(m_ctx, "entry", llvm_func);
@@ -1535,26 +1559,15 @@ void Codegen::Impl::visit(const Ast::Return& e, MethodCodegenState& state)
 {
 	if (e.expr() == nullptr) {
 		state.builder->CreateRetVoid();
-		return;
-	}
-
-	if (mpark::holds_alternative<Ast::NullExpr>(*e.expr())) {
+	} else if (mpark::holds_alternative<Ast::NullExpr>(*e.expr())) {
 		auto* as_obj_type = mpark::get_if<Ast::ObjectType>(&state.method->return_type());
-		auto new_spec = state.spec.specialize_type(*as_obj_type);
-
-		auto* nullptr_value = new_spec.is_pooled_type()
-			? llvm::ConstantInt::get(m_intptr, -1ull, true)
-			: llvm::ConstantPointerNull::get(
-				llvm::cast<llvm::PointerType>(type_of(*as_obj_type, new_spec)));
-
-		state.builder->CreateRet(nullptr_value);
-		return;
+		state.builder->CreateRet(zero(*as_obj_type, state.spec));
+	} else {
+		auto* value = mpark::visit([this, &state](const auto& e) {
+			return visit(e, state);
+		}, *e.expr()).to_rvalue();
+		state.builder->CreateRet(value);
 	}
-
-	auto* value = mpark::visit([this, &state](const auto& e) {
-		return visit(e, state);
-	}, *e.expr()).to_rvalue();
-	state.builder->CreateRet(value);
 
 	auto* new_bb = llvm::BasicBlock::Create(m_ctx, "after_ret", state.llvm_func);
 	state.builder->SetInsertPoint(new_bb);
@@ -1733,12 +1746,7 @@ LLVMExpr Codegen::Impl::visit(const Ast::BinaryExpr& e, MethodCodegenState& stat
 		const auto* as_rhs_obj = mpark::get_if<Ast::ObjectType>(&rhs_type);
 
 		const auto& obj_type = as_lhs_obj != nullptr ? *as_lhs_obj : *as_rhs_obj;
-		const auto new_spec = state.spec.specialize_type(obj_type);
-
-		auto* nullptr_value = new_spec.is_pooled_type()
-			? llvm::ConstantInt::get(m_intptr, -1ull, true)
-			: llvm::ConstantPointerNull::get(
-				llvm::cast<llvm::PointerType>(type_of(obj_type, new_spec)));
+		auto* nullptr_value = zero(obj_type, state.spec);
 
 		llvm::Value* lhs_value;
 		if (mpark::holds_alternative<Ast::NullptrType>(lhs_type)) {

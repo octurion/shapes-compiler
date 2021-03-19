@@ -29,3 +29,60 @@ class Main<p1> where
         return sum;
     }
 }
+
+class A<q1, q2> where
+    q1: [A<q1, q2>],
+    q2: [B<q2, q1>]
+{
+    f: B<q2, q1>;
+    fv: i32;
+
+    fn is_null(): bool
+    {
+        return f == null;
+    }
+
+    fn make_twin(value: i32)
+    {
+        f = new B<q2, q1>;
+        f.g = this;
+        f.gv = value;
+    }
+
+    fn twin_getter(): i32
+    {
+        if f == null {
+            return -1 as i32;
+        }
+
+        return f.gv;
+    }
+
+    fn twin_setter(new_value: i32)
+    {
+        if f == null {
+            return;
+        }
+
+        f.gv = new_value;
+    }
+
+    fn getter(): i32
+    {
+        return fv;
+    }
+
+    fn setter(new_value: i32)
+    {
+        fv = new_value;
+    }
+}
+
+class B<r1, r2> where
+    r1: [B<r1, r2>],
+    r2: [A<r2, r1>]
+{
+    g: A<r2, r1>;
+    gv: i32;
+}
+layout LB: B = rec{g} + rec{gv};
