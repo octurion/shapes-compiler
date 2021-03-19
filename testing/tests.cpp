@@ -242,6 +242,48 @@ TEST_F(ExecutionTest, GetterSetter) {
 	EXPECT_THAT(getter_retval2.IntVal, Eq(setval.IntVal));
 }
 
+TEST_F(ExecutionTest, MutualGetterSetter) {
+	const auto* clazz = m_ast.find_class("A");
+
+	const auto* make_twin = clazz->find_method("make_twin");
+	const auto* getter = clazz->find_method("twin_getter");
+
+	const auto* layout = m_ast.find_layout("LB");
+
+	Ir::ClassSpecialization spec(*clazz, {nullptr, layout});
+	Ir::ClassSpecialization twin_spec(layout->for_class(), {layout, nullptr});
+
+	struct DummyPool {
+		uintptr_t size;
+		uintptr_t capacity;
+		void* cluster0;
+		uint32_t* cluster1;
+	};
+	DummyPool dummy_pool;
+
+	auto* pool_ctor = m_codegen_interpreter.pool_constructor(twin_spec);
+	llvm::GenericValue pool_ptr(&dummy_pool);
+
+	m_codegen_interpreter.run_function(pool_ctor, {pool_ptr});
+
+	auto* ctor = m_codegen_interpreter.constructor(spec);
+	auto this_param = m_codegen_interpreter.run_function(ctor, {pool_ptr});
+
+	auto* getter_func = m_codegen_interpreter.find_method(spec, *getter);
+	auto* make_twin_func = m_codegen_interpreter.find_method(spec, *make_twin);
+
+	llvm::GenericValue setval;
+	setval.IntVal = llvm::APInt(32, 200);
+
+	m_codegen_interpreter.run_function(make_twin_func, {this_param, setval, pool_ptr});
+
+	auto getter_retval = m_codegen_interpreter.run_function(
+		getter_func, {this_param, pool_ptr});
+
+	EXPECT_THAT(getter_retval.IntVal, Eq(setval.IntVal));
+	EXPECT_THAT(dummy_pool.cluster1[0], Eq(200));
+}
+
 INSTANTIATE_TEST_SUITE_P(
 	Parser,
 	SyntaxFail,

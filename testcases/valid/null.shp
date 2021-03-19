@@ -1,0 +1,25 @@
+class Main<p1> where
+    p1: [Main<p1>]
+{
+    f: Main<p1>;
+
+    fn setter_null()
+    {
+        f = null;
+    }
+
+    fn setter(x: Main<p1>)
+    {
+        f = x;
+        this.f = x;
+    }
+
+    fn getter(): Main<p1>
+    {
+        if f == null {
+            return null;
+        }
+
+        return f;
+    }
+}

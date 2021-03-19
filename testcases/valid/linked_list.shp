@@ -1,0 +1,42 @@
+class List<p1, p2> where
+    p1: [List<p1, p2>],
+    p2: [ListElem<p2>],
+{
+    next: List<p1, p2>;
+    item: ListElem<p2>;
+
+    fn set_item(new_item: ListElem<p2>)
+    {
+        item = new_item;
+    }
+
+    fn cons(head_item: ListElem<p2>, tail: List<p1, p2>): List<p1, p2>
+    {
+        let retval: List<p1, p2>;
+        retval = new List<p1, p2>;
+
+        retval.next = tail;
+        retval.item = head_item;
+
+        return retval;
+    }
+}
+
+class ListElem<p> where
+    p: [ListElem<p>]
+{
+    value: i32;
+
+    fn setter(value: i32)
+    {
+        this.value = value;
+    }
+
+    fn getter(): i32
+    {
+        return value;
+    }
+}
+
+layout SoaList: List = rec{next} + rec{item};
+layout AosList: List = rec{next, item};
