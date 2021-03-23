@@ -9,6 +9,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+option(COVERAGE_REPORT "Enable coverage report" OFF)
+
+set(DEFAULT_FLAGS -Wall -Wextra -Wpedantic -fdiagnostics-color=always
+    CACHE STRING "Default command line arguments to pass in all cases")
 set(LLVM_PATHS "/usr/lib/llvm-8/" CACHE PATH "Path to LLVM installation")
 
 find_package(FLEX REQUIRED 2.6.0)
@@ -28,6 +32,10 @@ bison_target(parser src/parser.y
     COMPILE_FLAGS "-Wall -v")
 add_flex_bison_dependency(lexer parser)
 
+if(COVERAGE_REPORT)
+    set(COVERAGE_FLAGS -fprofile-instr-generate -fcoverage-mapping)
+endif()
+
 add_library(shapes_parser
     src/cst.cpp
     src/ast.cpp
@@ -37,23 +45,23 @@ add_library(shapes_parser
 
 add_subdirectory(lib/googletest)
 
-target_compile_options(shapes_parser PRIVATE -Wall -Wextra -Wpedantic -fdiagnostics-color=always)
+target_compile_options(shapes_parser PRIVATE ${DEFAULT_FLAGS} ${COVERAGE_FLAGS})
 target_compile_definitions(shapes_parser PRIVATE ${LLVM_DEFINITIONS})
 
 target_include_directories(shapes_parser SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS})
 target_include_directories(shapes_parser PUBLIC include)
-target_link_libraries(shapes_parser PRIVATE ${LLVM_LIBS})
+target_link_libraries(shapes_parser PRIVATE ${COVERAGE_FLAGS} ${LLVM_LIBS})
 
 add_library(shapes_bison ${FLEX_lexer_OUTPUTS} ${BISON_parser_OUTPUTS})
 target_include_directories(shapes_bison SYSTEM PUBLIC ${FLEX_BISON_GENFILES_DIR})
-target_link_libraries(shapes_bison PUBLIC shapes_parser)
+target_link_libraries(shapes_bison PUBLIC ${COVERAGE_FLAGS} shapes_parser)
 
 add_executable(shapes src/main.cpp)
 
 add_executable(shapes_tests testing/tests.cpp)
-target_compile_options(shapes_tests PRIVATE -Wall -Wextra -Wpedantic -fdiagnostics-color=always)
+target_compile_options(shapes_tests PRIVATE ${DEFAULT_FLAGS} ${COVERAGE_FLAGS})
 target_include_directories(shapes_tests SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS})
-target_link_libraries(shapes_tests PRIVATE shapes_parser shapes_bison gtest gmock gtest_main ${LLVM_LIBS})
+target_link_libraries(shapes_tests PRIVATE ${COVERAGE_FLAGS} shapes_parser shapes_bison gtest gmock gtest_main ${LLVM_LIBS})
 
-target_compile_options(shapes PRIVATE -Wall -Wextra -Wpedantic -fdiagnostics-color=always)
-target_link_libraries(shapes PRIVATE shapes_parser shapes_bison)
+target_compile_options(shapes PRIVATE ${DEFAULT_FLAGS})
+target_link_libraries(shapes PRIVATE ${COVERAGE_FLAGS} shapes_parser shapes_bison)
