@@ -91,6 +91,15 @@ static BoundType extract_bound_of_param(
 	return BoundType(bound_type->of_class(), std::move(new_params), loc);
 }
 
+PrimitiveType InvalidExpr::type() const
+{
+	unreachable("This is a propagated semantic error expression");
+}
+bool InvalidExpr::is_lvalue() const
+{
+	unreachable("This is a propagated semantic error expression");
+}
+
 bool PoolRef::operator==(const PoolRef& rhs) const {
 	return m_pool == rhs.m_pool;
 }
@@ -668,6 +677,12 @@ public:
 		} else {
 			fprintf(stderr, "Pool: %s (no type)\n", pool.name().c_str());
 		}
+	}
+
+	void operator()(const InvalidExpr&)
+	{
+		emit_indentation();
+		fprintf(stderr, "Invalid expression\n");
 	}
 
 	void operator()(const IntegerConst& expr)

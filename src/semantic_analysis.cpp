@@ -97,6 +97,11 @@ static std::string to_string(const T& value) {
 	return os.str();
 }
 
+static bool invalid(const Expr& expr)
+{
+	return mpark::holds_alternative<InvalidExpr>(expr);
+}
+
 static void collect_classes_fields_pool_params(
 	const Cst::Program& cst, Program& ast, SemanticErrorList& errors)
 {
@@ -887,6 +892,10 @@ public:
 		auto lhs = mpark::visit(*this, e.lhs());
 		auto rhs = mpark::visit(*this, e.rhs());
 
+		if (invalid(lhs) || invalid(rhs)) {
+			return;
+		}
+
 		auto op = to_ast_binop(e.op());
 
 		if (!is_lvalue(lhs)) {
@@ -964,6 +973,10 @@ public:
 
 	void operator()(const Cst::IfStmt& e) {
 		auto cond = mpark::visit(*this, e.cond());
+		if (invalid(cond)) {
+			cond = BooleanConst(true);
+		}
+
 		auto type = expr_type(cond);
 		if (type != Type(PrimitiveType::BOOL)) {
 			m_errors.add<IncorrectType>(
@@ -996,6 +1009,10 @@ public:
 
 	void operator()(const Cst::WhileStmt& e) {
 		auto cond = mpark::visit(*this, e.cond());
+		if (invalid(cond)) {
+			cond = BooleanConst(true);
+		}
+
 		auto type = expr_type(cond);
 		if (type != Type(PrimitiveType::BOOL)) {
 			m_errors.add<IncorrectType>(
@@ -1022,6 +1039,10 @@ public:
 	void operator()(const Cst::ForeachRange& e) {
 		auto begin = mpark::visit(*this, e.range_begin());
 		auto end = mpark::visit(*this, e.range_end());
+
+		if (invalid(begin) || invalid(end)) {
+			return;
+		}
 
 		auto begin_type = expr_type(begin);
 		auto end_type = expr_type(end);
@@ -1095,6 +1116,9 @@ public:
 
 	void operator()(const Cst::ExprStmt& e) {
 		auto expr = mpark::visit(*this, e.expr());
+		if (invalid(expr)) {
+			return;
+		}
 		m_blocks.add<ExprStmt>(std::move(expr));
 	}
 
@@ -1123,6 +1147,10 @@ public:
 		}
 
 		auto expr = mpark::visit(*this, e.expr());
+		if (invalid(expr)) {
+			return;
+		}
+
 		auto type = expr_type(expr);
 		if (!assignable_from(ret_type, type)) {
 			m_errors.add<NonAssignableType>(
@@ -1147,12 +1175,12 @@ public:
 			value = std::stoull(e.value());
 		} catch (...) {
 			m_errors.add<IntegerOutOfBounds>(e.loc());
-			return IntegerConst(0);
+			return InvalidExpr();
 		}
 
 		if (value > UINT64_MAX) {
 			m_errors.add<IntegerOutOfBounds>(e.loc());
-			return IntegerConst(0);
+			return InvalidExpr();
 		}
 
 		return IntegerConst(value);
@@ -1182,10 +1210,14 @@ public:
 	{
 		TypeConstructor type_ctor(m_ast, m_scopes, m_errors);
 		auto expr = mpark::visit(*this, e.expr());
+		if (invalid(expr)) {
+			return InvalidExpr();
+		}
+
 		auto type = expr_type(expr);
 		if (!mpark::holds_alternative<PrimitiveType>(type)) {
 			m_errors.add<ExpectedPrimitiveType>(location(e.expr()), to_string(type));
-			return IntegerConst(0);
+			return InvalidExpr();
 		}
 
 		return CastExpr(std::move(expr), get_primitive_type(e.type()));
@@ -1194,18 +1226,22 @@ public:
 	Expr operator()(const Cst::UnaryExpr& e)
 	{
 		auto expr = mpark::visit(*this, e.expr());
+		if (invalid(expr)) {
+			return InvalidExpr();
+		}
+
 		auto type = expr_type(expr);
 
 		if (!mpark::holds_alternative<PrimitiveType>(type)) {
 			m_errors.add<ExpectedPrimitiveType>(location(e.expr()), to_string(type));
-			return IntegerConst(0);
+			return InvalidExpr();
 		}
 
 		auto op = to_ast_unop(e.op());
 		const auto* primitive_type = mpark::get_if<PrimitiveType>(&type);
 		if (is_bitwise_operator(op) && is_floating_point(*primitive_type)) {
 			m_errors.add<ExpectedIntegerType>(location(e.expr()), to_string(type));
-			return IntegerConst(0);
+			return InvalidExpr();
 		}
 
 		return UnaryExpr(op, std::move(expr));
@@ -1215,6 +1251,10 @@ public:
 	{
 		auto lhs = mpark::visit(*this, e.lhs());
 		auto rhs = mpark::visit(*this, e.rhs());
+
+		if (invalid(lhs) || invalid(rhs)) {
+			return InvalidExpr();
+		}
 
 		auto lhs_type = expr_type(lhs);
 		auto rhs_type = expr_type(rhs);
@@ -1230,12 +1270,12 @@ public:
 			if (lhs_primitive == nullptr) {
 				m_errors.add<ExpectedPrimitiveType>(
 					location(e.lhs()), to_string(lhs_type));
-				return IntegerConst(0);
+				return InvalidExpr();
 			}
 			if (lhs_type != rhs_type) {
 				m_errors.add<IncorrectType>(
 					location(e.rhs()), to_string(lhs_type), to_string(rhs_type));
-				return IntegerConst(0);
+				return InvalidExpr();
 			}
 			return BinaryExpr(std::move(lhs), op, std::move(rhs), *lhs_primitive);
 		}
@@ -1247,12 +1287,12 @@ public:
 			if (lhs_primitive == nullptr || is_floating_point(*lhs_primitive)) {
 				m_errors.add<ExpectedIntegerType>(
 					location(e.lhs()), to_string(lhs_type));
-				return IntegerConst(0);
+				return InvalidExpr();
 			}
 			if (lhs_type != rhs_type) {
 				m_errors.add<IncorrectType>(
 					location(e.rhs()), to_string(lhs_type), to_string(rhs_type));
-				return IntegerConst(0);
+				return InvalidExpr();
 			}
 			return BinaryExpr(std::move(lhs), op, std::move(rhs), *lhs_primitive);
 		}
@@ -1263,13 +1303,13 @@ public:
 			if (lhs_primitive == nullptr || !is_integer(*lhs_primitive)) {
 				m_errors.add<ExpectedIntegerType>(
 					location(e.lhs()), to_string(lhs_type));
-				return IntegerConst(0);
+				return InvalidExpr();
 			}
 			const auto* rhs_primitive = mpark::get_if<PrimitiveType>(&rhs_type);
 			if (rhs_primitive == nullptr || !is_integer(*rhs_primitive)) {
 				m_errors.add<ExpectedIntegerType>(
 					location(e.rhs()), to_string(rhs_type));
-				return IntegerConst(0);
+				return InvalidExpr();
 			}
 			return BinaryExpr(std::move(lhs), op, std::move(rhs), *lhs_primitive);
 		}
@@ -1280,14 +1320,14 @@ public:
 			if (lhs_primitive == nullptr || *lhs_primitive != PrimitiveType::BOOL) {
 				m_errors.add<ExpectedBooleanType>(
 					location(e.lhs()), to_string(lhs_type));
-				return IntegerConst(0);
+				return InvalidExpr();
 			}
 
 			const auto* rhs_primitive = mpark::get_if<PrimitiveType>(&rhs_type);
 			if (rhs_primitive == nullptr || *rhs_primitive != PrimitiveType::BOOL) {
 				m_errors.add<ExpectedBooleanType>(
 					location(e.rhs()), to_string(rhs_type));
-				return IntegerConst(0);
+				return InvalidExpr();
 			}
 			return BinaryExpr(std::move(lhs), op, std::move(rhs), PrimitiveType::BOOL);
 		}
@@ -1297,7 +1337,7 @@ public:
 			if (mpark::holds_alternative<PrimitiveType>(lhs_type) && lhs_type != rhs_type) {
 				m_errors.add<IncorrectType>(
 					location(e.rhs()), to_string(lhs_type), to_string(rhs_type));
-				return IntegerConst(0);
+				return InvalidExpr();
 			}
 			bool lhs_is_null = mpark::holds_alternative<NullptrType>(lhs_type);
 			bool rhs_is_null = mpark::holds_alternative<NullptrType>(rhs_type);
@@ -1309,7 +1349,7 @@ public:
 				if (lhs_type != rhs_type) {
 					m_errors.add<IncorrectType>(
 						location(e.rhs()), to_string(lhs_type), to_string(rhs_type));
-					return IntegerConst(0);
+					return InvalidExpr();
 				}
 			}
 
@@ -1324,12 +1364,12 @@ public:
 			if (lhs_primitive == nullptr || is_floating_point(*lhs_primitive)) {
 				m_errors.add<ExpectedIntegerType>(
 					location(e.lhs()), to_string(lhs_type));
-				return IntegerConst(0);
+				return InvalidExpr();
 			}
 			if (lhs_type != rhs_type) {
 				m_errors.add<IncorrectType>(
 					location(e.rhs()), to_string(lhs_type), to_string(rhs_type));
-				return IntegerConst(0);
+				return InvalidExpr();
 			}
 			return BinaryExpr(std::move(lhs), op, std::move(rhs), PrimitiveType::BOOL);
 		}
@@ -1355,7 +1395,7 @@ public:
 
 		m_errors.add<MissingDefinition>(
 			e.name().ident(), ErrorKind::VARIABLE, e.name().loc());
-		return IntegerConst(0);
+		return InvalidExpr();
 	}
 
 	Expr operator()(const Cst::MethodCall& e)
@@ -1364,18 +1404,22 @@ public:
 		if (method == nullptr) {
 			m_errors.add<MissingDefinition>(
 				e.name().ident(), ErrorKind::METHOD, e.name().loc());
-			return IntegerConst(0);
+			return InvalidExpr();
 		}
 		const auto& method_params = method->params();
 
 		std::vector<Expr> args;
 		for (const auto& cst_arg: e.params()) {
-			args.emplace_back(mpark::visit(*this, cst_arg));
+			auto arg = mpark::visit(*this, cst_arg);
+			if (invalid(arg)) {
+				continue;
+			}
+			args.emplace_back(std::move(arg));
 		}
 		if (args.size() != method_params.size()) {
 			m_errors.add<IncorrectArgsNumber>(
 				e.loc(), method_params.size(), args.size());
-			return IntegerConst(0);
+			return InvalidExpr();
 		}
 
 		bool type_mismatch = false;
@@ -1390,7 +1434,7 @@ public:
 		}
 
 		if (type_mismatch) {
-			return IntegerConst(0);
+			return InvalidExpr();
 		}
 
 		return MethodCall(
@@ -1403,13 +1447,17 @@ public:
 	Expr operator()(const Cst::MemberMethodCall& e)
 	{
 		auto this_expr = mpark::visit(*this, e.this_expr());
+		if (invalid(this_expr)) {
+			return InvalidExpr();
+		}
+
 		auto this_type = expr_type(this_expr);
 		const auto* obj_type = mpark::get_if<ObjectType>(&this_type);
 		if (obj_type == nullptr) {
 			m_errors.add<ExpectedObjectType>(
 				location(e.this_expr()),
 				to_string(this_type));
-			return IntegerConst(0);
+			return InvalidExpr();
 		}
 
 		const auto& clazz = obj_type->of_class();
@@ -1418,18 +1466,22 @@ public:
 		if (method == nullptr) {
 			m_errors.add<MissingDefinition>(
 				e.name().ident(), ErrorKind::METHOD, e.name().loc());
-			return IntegerConst(0);
+			return InvalidExpr();
 		}
 		const auto& method_params = method->params();
 
 		std::vector<Expr> args;
 		for (const auto& cst_arg: e.args()) {
-			args.emplace_back(mpark::visit(*this, cst_arg));
+			auto arg = mpark::visit(*this, cst_arg);
+			if (invalid(arg)) {
+				continue;
+			}
+			args.emplace_back(std::move(arg));
 		}
 		if (args.size() != method_params.size()) {
 			m_errors.add<IncorrectArgsNumber>(
 				e.loc(), method_params.size(), args.size());
-			return IntegerConst(0);
+			return InvalidExpr();
 		}
 
 		bool type_mismatch = false;
@@ -1446,7 +1498,7 @@ public:
 		}
 
 		if (type_mismatch) {
-			return IntegerConst(0);
+			return InvalidExpr();
 		}
 
 		return MethodCall(
@@ -1459,18 +1511,22 @@ public:
 	Expr operator()(const Cst::FieldAccess& e)
 	{
 		auto expr = mpark::visit(*this, e.expr());
+		if (invalid(expr)) {
+			return InvalidExpr();
+		}
+
 		auto type = expr_type(expr);
 		const auto* as_obj_type = mpark::get_if<ObjectType>(&type);
 		if (as_obj_type == nullptr) {
 			m_errors.add<ExpectedObjectType>(location(e.expr()), to_string(type));
-			return IntegerConst(0);
+			return InvalidExpr();
 		}
 
 		const auto* field = as_obj_type->of_class().find_field(e.field().ident());
 		if (field == nullptr) {
 			m_errors.add<MissingDefinition>(
 				e.field().ident(), ErrorKind::FIELD, e.field().loc());
-			return IntegerConst(0);
+			return InvalidExpr();
 		}
 
 		Type new_type;
@@ -1492,7 +1548,7 @@ public:
 		auto maybe_type = type_ctor(e.type());
 		auto* type = mpark::get_if<ObjectType>(&maybe_type);
 		if (type == nullptr) {
-			return IntegerConst(0);
+			return InvalidExpr();
 		}
 
 		return NewExpr(std::move(*type));
@@ -1534,6 +1590,10 @@ public:
 		m_set_vars.insert(var);
 	}
 
+	void operator()(const InvalidExpr&)
+	{
+		unreachable("AST should not have any invalid expressions at this point");
+	}
 	void operator()(const IntegerConst&) {}
 	void operator()(const DoubleConst&) {}
 	void operator()(const BooleanConst&) {}

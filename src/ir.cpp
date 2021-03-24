@@ -267,6 +267,7 @@ class Codegen::Impl
 	void visit(const Ast::Return& e, MethodCodegenState& state);
 
 	LLVMExpr visit(const Ast::Expr& e, MethodCodegenState& state);
+	LLVMExpr visit(const Ast::InvalidExpr& e, MethodCodegenState& state);
 	LLVMExpr visit(const Ast::IntegerConst& e, MethodCodegenState& state);
 	LLVMExpr visit(const Ast::DoubleConst& e, MethodCodegenState& state);
 	LLVMExpr visit(const Ast::BooleanConst& e, MethodCodegenState& state);
@@ -1238,6 +1239,11 @@ LLVMExpr Codegen::Impl::visit(const Ast::Expr& e, MethodCodegenState& state)
 	return mpark::visit([this, &state](const auto& e) {
 		return this->visit(e, state);
 	}, e);
+}
+
+LLVMExpr Codegen::Impl::visit(const Ast::InvalidExpr&, MethodCodegenState&)
+{
+	unreachable("AST should have no invalid expression nodes");
 }
 
 void Codegen::Impl::visit(const Ast::Assignment& e, MethodCodegenState& state)
