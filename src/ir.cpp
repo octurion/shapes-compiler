@@ -454,7 +454,7 @@ struct LLVMTypeFunctor
 llvm::Type* Codegen::Impl::type_of(const Ast::PoolType& type, const ClassSpecialization& specialization)
 {
 	return mpark::visit([this, &specialization](const auto& e) {
-		return type_of(e, specialization);
+		return this->type_of(e, specialization);
 	}, type);
 }
 
@@ -544,14 +544,14 @@ llvm::Type* Codegen::Impl::type_of(const Ast::PrimitiveType& type, const ClassSp
 llvm::Type* Codegen::Impl::type_of(const Ast::Type& type, const ClassSpecialization& specialization)
 {
 	return mpark::visit([this, &specialization](const auto& e){
-		return type_of(e, specialization);
+		return this->type_of(e, specialization);
 	}, type);
 }
 
 llvm::MDNode* Codegen::Impl::tbaa_type_of(const Ast::Type& type, const ClassSpecialization& specialization)
 {
 	return mpark::visit([this, &specialization](const auto& e){
-		return tbaa_type_of(e, specialization);
+		return this->tbaa_type_of(e, specialization);
 	}, type);
 }
 
@@ -654,7 +654,7 @@ llvm::Constant* Codegen::Impl::zero(const Ast::VoidType&, const ClassSpecializat
 llvm::Constant* Codegen::Impl::zero(const Ast::Type& type, const ClassSpecialization& specialization)
 {
 	return mpark::visit([this, &specialization](const auto& e){
-		return zero(e, specialization);
+		return this->zero(e, specialization);
 	}, type);
 }
 
@@ -1141,9 +1141,9 @@ void Codegen::Impl::generate_llvm_functions()
 {
 	for (auto& e: m_specialization_info) {
 		const auto& spec = e.first;
-		for (auto& e: e.second.funcs) {
-			const auto& method = *e.first;
-			auto* llvm_func = e.second;
+		for (auto& func: e.second.funcs) {
+			const auto& method = *func.first;
+			auto* llvm_func = func.second;
 
 			MethodCodegenState state;
 			state.spec = spec;
@@ -1236,7 +1236,7 @@ void Codegen::Impl::generate_llvm_functions()
 LLVMExpr Codegen::Impl::visit(const Ast::Expr& e, MethodCodegenState& state)
 {
 	return mpark::visit([this, &state](const auto& e) {
-		return visit(e, state);
+		return this->visit(e, state);
 	}, e);
 }
 
@@ -1338,7 +1338,7 @@ void Codegen::Impl::visit(const Ast::OpAssignment& e, MethodCodegenState& state)
 
 void Codegen::Impl::visit(const Ast::Stmt& stmt, MethodCodegenState& state)
 {
-	mpark::visit([this, &state](const auto& e) { visit(e, state); }, stmt);
+	mpark::visit([this, &state](const auto& e) { this->visit(e, state); }, stmt);
 }
 
 void Codegen::Impl::visit(const Ast::If& e, MethodCodegenState& state)

@@ -1599,13 +1599,13 @@ public:
 		mpark::visit(*this, e.cond());
 
 		auto lhs_functor = *this;
-		for (const auto& e: e.then_stmts()) {
-			mpark::visit(lhs_functor, e);
+		for (const auto& stmt: e.then_stmts()) {
+			mpark::visit(lhs_functor, stmt);
 		}
 
 		auto rhs_functor = *this;
-		for (const auto& e: e.else_stmts()) {
-			mpark::visit(rhs_functor, e);
+		for (const auto& stmt: e.else_stmts()) {
+			mpark::visit(rhs_functor, stmt);
 		}
 
 		bool cmp = lhs_functor.m_set_vars.size() < rhs_functor.m_set_vars.size();
@@ -1623,8 +1623,8 @@ public:
 		mpark::visit(*this, e.cond());
 
 		auto functor = *this;
-		for (const auto& e: e.body()) {
-			mpark::visit(functor, e);
+		for (const auto& stmt: e.body()) {
+			mpark::visit(functor, stmt);
 		}
 	}
 
@@ -1634,16 +1634,16 @@ public:
 
 		auto functor = *this;
 		functor.m_set_vars.insert(&e.var());
-		for (const auto& e: e.body()) {
-			mpark::visit(functor, e);
+		for (const auto& stmt: e.body()) {
+			mpark::visit(functor, stmt);
 		}
 	}
 
 	void operator()(const ForeachPool& e) {
 		auto functor = *this;
 		functor.m_set_vars.insert(&e.var());
-		for (const auto& e: e.body()) {
-			mpark::visit(functor, e);
+		for (const auto& stmt: e.body()) {
+			mpark::visit(functor, stmt);
 		}
 	}
 
