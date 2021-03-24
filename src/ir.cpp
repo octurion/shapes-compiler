@@ -234,6 +234,8 @@ class Codegen::Impl
 		const Ast::Type& type, const ClassSpecialization& specialization);
 
 	llvm::MDNode* tbaa_type_of(
+		const Ast::Type& type, const ClassSpecialization& specialization);
+	llvm::MDNode* tbaa_type_of(
 		const Ast::PrimitiveType& type, const ClassSpecialization& specialization);
 	llvm::MDNode* tbaa_type_of(
 		const Ast::ObjectType& type, const ClassSpecialization& specialization);
@@ -252,6 +254,7 @@ class Codegen::Impl
 	llvm::Constant* zero(
 		const Ast::Type& type, const ClassSpecialization& specialization);
 
+	void visit(const Ast::Stmt& stmt, MethodCodegenState& state);
 	void visit(const Ast::Assignment& e, MethodCodegenState& state);
 	void visit(const Ast::OpAssignment& e, MethodCodegenState& state);
 	void visit(const Ast::If& e, MethodCodegenState& state);
@@ -263,6 +266,7 @@ class Codegen::Impl
 	void visit(const Ast::Continue& e, MethodCodegenState& state);
 	void visit(const Ast::Return& e, MethodCodegenState& state);
 
+	LLVMExpr visit(const Ast::Expr& e, MethodCodegenState& state);
 	LLVMExpr visit(const Ast::IntegerConst& e, MethodCodegenState& state);
 	LLVMExpr visit(const Ast::DoubleConst& e, MethodCodegenState& state);
 	LLVMExpr visit(const Ast::BooleanConst& e, MethodCodegenState& state);
@@ -404,7 +408,7 @@ void init_llvm()
 	LLVMInitializeX86TargetMC();
 	LLVMInitializeX86AsmParser();
 	LLVMInitializeX86AsmPrinter();
-};
+}
 
 void Codegen::Impl::generate_specializations_impl(
 	const Ast::Class& clazz, std::vector<const Ast::Layout*>& curr_layouts)
@@ -531,6 +535,9 @@ llvm::Type* Codegen::Impl::type_of(const Ast::PrimitiveType& type, const ClassSp
 
 	case Ast::PrimitiveType::F64:
 		return m_f64;
+
+	default:
+		unreachable("Did you introduce an additional case?");
 	}
 }
 
@@ -538,6 +545,13 @@ llvm::Type* Codegen::Impl::type_of(const Ast::Type& type, const ClassSpecializat
 {
 	return mpark::visit([this, &specialization](const auto& e){
 		return type_of(e, specialization);
+	}, type);
+}
+
+llvm::MDNode* Codegen::Impl::tbaa_type_of(const Ast::Type& type, const ClassSpecialization& specialization)
+{
+	return mpark::visit([this, &specialization](const auto& e){
+		return tbaa_type_of(e, specialization);
 	}, type);
 }
 
@@ -576,6 +590,9 @@ llvm::MDNode* Codegen::Impl::tbaa_type_of(const Ast::PrimitiveType& type, const 
 
 	case Ast::PrimitiveType::F64:
 		return m_tbaa_f64;
+
+	default:
+		unreachable("Did you introduce an additional case?");
 	}
 }
 
@@ -618,6 +635,9 @@ llvm::Constant* Codegen::Impl::zero(const Ast::ObjectType& type, const ClassSpec
 
 llvm::Constant* Codegen::Impl::zero(const Ast::PrimitiveType& type, const ClassSpecialization& spec)
 {
+	if (Ast::is_floating_point(type)) {
+		return llvm::ConstantFP::get(type_of(type, spec), 0.0);
+	}
 	return llvm::ConstantInt::get(type_of(type, spec), 0);
 }
 
@@ -683,10 +703,7 @@ void Codegen::Impl::generate_llvm_types()
 				const auto& cluster = clusters[i];
 				std::vector<llvm::Type*> cluster_fields;
 				for (const Ast::Field* e: cluster.fields()) {
-					auto* type = mpark::visit(
-						[this, &spec](const auto& e) {
-							return type_of(e, spec);
-					}, e->type());
+					auto* type = type_of(e->type(), spec);
 					cluster_fields.push_back(type);
 				}
 
@@ -702,10 +719,7 @@ void Codegen::Impl::generate_llvm_types()
 				std::vector<std::pair<llvm::MDNode*, uint64_t>> tbaa_fields;
 				for (size_t j = 0; j < cluster.fields().size(); j++) {
 					const Ast::Field* e = cluster.fields()[j];
-					auto* tbaa_type = mpark::visit(
-						[this, &spec](const auto& e) {
-							return tbaa_type_of(e, spec);
-					}, e->type());
+					auto* tbaa_type = tbaa_type_of(e->type(), spec);
 
 					tbaa_fields.emplace_back(
 						tbaa_type, cluster_layout->getElementOffset(j));
@@ -750,10 +764,7 @@ void Codegen::Impl::generate_llvm_types()
 			const auto& ast_fields = spec.clazz().fields();
 			std::vector<llvm::Type*> fields;
 			for (const Ast::Field& e: ast_fields) {
-				auto* type = mpark::visit(
-					[this, &spec](const auto& e) {
-						return type_of(e, spec);
-				}, e.type());
+				auto* type = type_of(e.type(), spec);
 				fields.push_back(type);
 			}
 
@@ -764,10 +775,7 @@ void Codegen::Impl::generate_llvm_types()
 			std::vector<std::pair<llvm::MDNode*, uint64_t>> tbaa_fields;
 			for (size_t i = 0; i < ast_fields.size(); i++) {
 				const Ast::Field& field = ast_fields[i];
-				auto* tbaa_type = mpark::visit(
-					[this, &spec](const auto& e) {
-						return tbaa_type_of(e, spec);
-				}, field.type());
+				auto* tbaa_type = tbaa_type_of(field.type(), spec);
 				tbaa_fields.emplace_back(
 					tbaa_type, struct_layout->getElementOffset(i));
 			}
@@ -854,10 +862,7 @@ void Codegen::Impl::generate_llvm_function_decls()
 				auto* val = zero(e.type(), specialization);
 				auto* insn = builder.CreateStore(val, field_ptr);
 
-				auto* tbaa_field_type = mpark::visit(
-					[this, &specialization](const auto& e) {
-						return tbaa_type_of(e, specialization);
-					}, e.type());
+				auto* tbaa_field_type = tbaa_type_of(e.type(), specialization);
 
 				auto* field_tbaa_node = tbaa_builder.createTBAAStructTagNode(
 					as_standalone->tbaa_type,
@@ -1082,10 +1087,8 @@ void Codegen::Impl::generate_llvm_function_decls()
 				for (size_t j = 0; j < fields.size(); j++) {
 					auto* cluster_layout = data_layout.getStructLayout(as_pool->cluster_types[i]);
 
-					auto* tbaa_field_type = mpark::visit(
-						[this, &specialization](const auto& e) {
-							return tbaa_type_of(e, specialization);
-						}, fields[j]->type());
+					auto* tbaa_field_type = tbaa_type_of(
+						fields[j]->type(), specialization);
 					auto* record_tbaa_node = tbaa_builder.createTBAAStructTagNode(
 						as_pool->cluster_tbaa_types[i],
 						tbaa_field_type,
@@ -1099,8 +1102,6 @@ void Codegen::Impl::generate_llvm_function_decls()
 					record_store_insn->setMetadata(
 						llvm::LLVMContext::MD_tbaa, record_tbaa_node);
 				}
-
-
 			}
 
 			builder.CreateRet(new_idx);
@@ -1205,9 +1206,7 @@ void Codegen::Impl::generate_llvm_functions()
 			}
 
 			for (const auto& stmt: method.body()) {
-				mpark::visit([this, &state](const auto& e) {
-					this->visit(e, state);
-				}, stmt);
+				visit(stmt, state);
 			}
 
 			if (mpark::holds_alternative<Ast::VoidType>(method.return_type())) {
@@ -1234,20 +1233,23 @@ void Codegen::Impl::generate_llvm_functions()
 	}
 }
 
+LLVMExpr Codegen::Impl::visit(const Ast::Expr& e, MethodCodegenState& state)
+{
+	return mpark::visit([this, &state](const auto& e) {
+		return visit(e, state);
+	}, e);
+}
+
 void Codegen::Impl::visit(const Ast::Assignment& e, MethodCodegenState& state)
 {
-	auto lhs = mpark::visit([this, &state](const auto& e) {
-		return visit(e, state);
-	}, e.lhs());
+	auto lhs = visit(e.lhs(), state);
 
 	llvm::Value* rhs_value;
 
 	if (mpark::holds_alternative<Ast::NullExpr>(e.rhs())) {
 		rhs_value = llvm::Constant::getNullValue(lhs.value()->getType());
 	} else {
-		auto rhs = mpark::visit([this, &state](const auto& e) {
-			return visit(e, state);
-		}, e.rhs());
+		auto rhs = visit(e.rhs(), state);
 		rhs_value = rhs.to_rvalue();
 	}
 
@@ -1257,15 +1259,10 @@ void Codegen::Impl::visit(const Ast::Assignment& e, MethodCodegenState& state)
 
 void Codegen::Impl::visit(const Ast::OpAssignment& e, MethodCodegenState& state)
 {
-	auto rhs = mpark::visit([this, &state](const auto& e) {
-		return visit(e, state);
-	}, e.rhs());
-	auto* rhs_value = rhs.to_rvalue();
+	auto lhs = visit(e.lhs(), state);
+	auto* lhs_value = lhs.to_rvalue();
 
-	auto lhs = mpark::visit([this, &state](const auto& e) {
-		return visit(e, state);
-	}, e.lhs());
-	auto lhs_value = lhs.to_rvalue();
+	auto* rhs_value = visit(e.rhs(), state).to_rvalue();
 
 	auto type = Ast::expr_type(e.lhs());
 	const auto* as_primitive = mpark::get_if<Ast::PrimitiveType>(&type);
@@ -1276,27 +1273,21 @@ void Codegen::Impl::visit(const Ast::OpAssignment& e, MethodCodegenState& state)
 	llvm::Value* value;
 	switch (e.op()) {
 	case Ast::BinOp::PLUS: {
-		if (is_floating_point) {
-			value = state.builder->CreateFAdd(lhs_value, rhs_value);
-		} else {
-			value = state.builder->CreateAdd(lhs_value, rhs_value);
-		}
+		value = is_floating_point
+			? state.builder->CreateFAdd(lhs_value, rhs_value)
+			: state.builder->CreateAdd(lhs_value, rhs_value);
 		break;
 	}
 	case Ast::BinOp::MINUS: {
-		if (is_floating_point) {
-			value = state.builder->CreateFSub(lhs_value, rhs_value);
-		} else {
-			value = state.builder->CreateSub(lhs_value, rhs_value);
-		}
+		value = is_floating_point
+			? state.builder->CreateFSub(lhs_value, rhs_value)
+			: state.builder->CreateSub(lhs_value, rhs_value);
 		break;
 	}
 	case Ast::BinOp::TIMES: {
-		if (is_floating_point) {
-			value = state.builder->CreateFMul(lhs_value, rhs_value);
-		} else {
-			value = state.builder->CreateMul(lhs_value, rhs_value);
-		}
+		value = is_floating_point
+			? state.builder->CreateFMul(lhs_value, rhs_value)
+			: state.builder->CreateMul(lhs_value, rhs_value);
 		break;
 	}
 	case Ast::BinOp::DIV: {
@@ -1332,11 +1323,9 @@ void Codegen::Impl::visit(const Ast::OpAssignment& e, MethodCodegenState& state)
 		// LLVM requires shift operands to be of the same type
 		auto* shift_amount = state.builder->CreateZExtOrTrunc(
 			rhs_value, lhs_value->getType());
-		if (Ast::is_signed_integer(*as_primitive)) {
-			value = state.builder->CreateAShr(lhs_value, shift_amount);
-		} else {
-			value = state.builder->CreateLShr(lhs_value, shift_amount);
-		}
+		value = Ast::is_signed_integer(*as_primitive)
+			? state.builder->CreateAShr(lhs_value, shift_amount)
+			: state.builder->CreateLShr(lhs_value, shift_amount);
 		break;
 	}
 	default:
@@ -1347,12 +1336,14 @@ void Codegen::Impl::visit(const Ast::OpAssignment& e, MethodCodegenState& state)
 	insn->setMetadata(llvm::LLVMContext::MD_tbaa, lhs.tbaa_metadata());
 }
 
+void Codegen::Impl::visit(const Ast::Stmt& stmt, MethodCodegenState& state)
+{
+	mpark::visit([this, &state](const auto& e) { visit(e, state); }, stmt);
+}
+
 void Codegen::Impl::visit(const Ast::If& e, MethodCodegenState& state)
 {
-	auto cond = mpark::visit([this, &state](const auto& e) {
-		return visit(e, state);
-	}, e.cond());
-	auto cond_value = cond.to_rvalue();
+	auto cond_value = visit(e.cond(), state).to_rvalue();
 
 	auto* then_bb = llvm::BasicBlock::Create(m_ctx, "if_then", state.llvm_func);
 	auto* else_bb = llvm::BasicBlock::Create(m_ctx, "if_else", state.llvm_func);
@@ -1362,13 +1353,13 @@ void Codegen::Impl::visit(const Ast::If& e, MethodCodegenState& state)
 
 	state.builder->SetInsertPoint(then_bb);
 	for (const auto& stmt: e.then_stmts()) {
-		mpark::visit([this, &state](const auto& e) { visit(e, state); }, stmt);
+		visit(stmt, state);
 	}
 	state.builder->CreateBr(next_bb);
 
 	state.builder->SetInsertPoint(else_bb);
 	for (const auto& stmt: e.else_stmts()) {
-		mpark::visit([this, &state](const auto& e) { visit(e, state); }, stmt);
+		visit(stmt, state);
 	}
 	state.builder->CreateBr(next_bb);
 
@@ -1391,16 +1382,14 @@ void Codegen::Impl::visit(const Ast::While& e, MethodCodegenState& state)
 	state.builder->CreateBr(header_bb);
 	state.builder->SetInsertPoint(header_bb);
 
-	auto cond = mpark::visit([this, &state](const auto& e) {
-		return visit(e, state);
-	}, e.cond());
+	auto cond = visit(e.cond(), state);
 	auto* cond_value = cond.to_rvalue();
 
 	state.builder->CreateCondBr(cond_value, body_bb, exit_bb);
 
 	state.builder->SetInsertPoint(body_bb);
 	for (const auto& stmt: e.body()) {
-		mpark::visit([this, &state](const auto& e) { visit(e, state); }, stmt);
+		visit(stmt, state);
 	}
 	state.builder->CreateBr(header_bb);
 
@@ -1416,13 +1405,8 @@ void Codegen::Impl::visit(const Ast::ForeachRange& e, MethodCodegenState& state)
 
 	bool is_signed = Ast::is_signed_integer(*as_primitive);
 
-	auto* range_begin = mpark::visit([this, &state](const auto& e) {
-		return visit(e, state);
-	}, e.range_begin()).to_rvalue();
-
-	auto* range_end = mpark::visit([this, &state](const auto& e) {
-		return visit(e, state);
-	}, e.range_end()).to_rvalue();
+	auto* range_begin = visit(e.range_begin(), state).to_rvalue();
+	auto* range_end = visit(e.range_end(), state).to_rvalue();
 
 	auto* var = state.local_vars[&e.var()];
 	assert_msg(var != nullptr, "No LLVM variable for loop");
@@ -1457,7 +1441,7 @@ void Codegen::Impl::visit(const Ast::ForeachRange& e, MethodCodegenState& state)
 	state.builder->SetInsertPoint(body_bb);
 
 	for (const auto& stmt: e.body()) {
-		mpark::visit([this, &state](const auto& e) { visit(e, state); }, stmt);
+		visit(stmt, state);
 	}
 	state.builder->CreateBr(update_bb);
 
@@ -1508,7 +1492,7 @@ void Codegen::Impl::visit(const Ast::ForeachPool& e, MethodCodegenState& state)
 
 	state.builder->SetInsertPoint(body_bb);
 	for (const auto& stmt: e.body()) {
-		mpark::visit([this, &state](const auto& e) { visit(e, state); }, stmt);
+		visit(stmt, state);
 	}
 	state.builder->CreateBr(update_bb);
 
@@ -1528,9 +1512,7 @@ void Codegen::Impl::visit(const Ast::ExprStmt& e, MethodCodegenState& state)
 	if (mpark::holds_alternative<Ast::NullExpr>(e.expr())) {
 		return;
 	}
-	mpark::visit([this, &state](const auto& e) {
-		return visit(e, state);
-	}, e.expr());
+	visit(e.expr(), state);
 }
 
 void Codegen::Impl::visit(const Ast::Break&, MethodCodegenState& state)
@@ -1563,9 +1545,7 @@ void Codegen::Impl::visit(const Ast::Return& e, MethodCodegenState& state)
 		auto* as_obj_type = mpark::get_if<Ast::ObjectType>(&state.method->return_type());
 		state.builder->CreateRet(zero(*as_obj_type, state.spec));
 	} else {
-		auto* value = mpark::visit([this, &state](const auto& e) {
-			return visit(e, state);
-		}, *e.expr()).to_rvalue();
+		auto* value = visit(*e.expr(), state).to_rvalue();
 		state.builder->CreateRet(value);
 	}
 
@@ -1603,9 +1583,7 @@ LLVMExpr Codegen::Impl::visit(const Ast::ThisExpr&, MethodCodegenState& state)
 
 LLVMExpr Codegen::Impl::visit(const Ast::CastExpr& e, MethodCodegenState& state)
 {
-	auto* value = mpark::visit([this, &state](const auto& e) {
-		return visit(e, state);
-	}, e.expr()).to_rvalue();
+	auto* value = visit(e.expr(), state).to_rvalue();
 
 	auto type = Ast::expr_type(e.expr());
 	auto dest_type = e.type();
@@ -1692,9 +1670,7 @@ LLVMExpr Codegen::Impl::visit(const Ast::CastExpr& e, MethodCodegenState& state)
 
 LLVMExpr Codegen::Impl::visit(const Ast::UnaryExpr& e, MethodCodegenState& state)
 {
-	auto* value = mpark::visit([this, &state](const auto& e) {
-		return visit(e, state);
-	}, e.expr()).to_rvalue();
+	auto* value = visit(e.expr(), state).to_rvalue();
 
 	auto type = Ast::expr_type(e.expr());
 	auto* src_type = mpark::get_if<Ast::PrimitiveType>(&type);
@@ -1715,6 +1691,9 @@ LLVMExpr Codegen::Impl::visit(const Ast::UnaryExpr& e, MethodCodegenState& state
 		assert_msg(!Ast::is_floating_point(*src_type), "Can't be a float");
 		return LLVMExpr(state.builder, state.builder->CreateNot(value), nullptr, false);
 	}
+
+	default:
+		unreachable("Did you introduce an additional case?");
 	}
 }
 
@@ -1724,21 +1703,26 @@ LLVMExpr Codegen::Impl::visit(const Ast::BinaryExpr& e, MethodCodegenState& stat
 		auto lhs_type = Ast::expr_type(e.lhs());
 		auto rhs_type = Ast::expr_type(e.rhs());
 
+		auto int_predicate = e.op() == Ast::BinOp::EQ
+			? llvm::CmpInst::ICMP_EQ
+			: llvm::CmpInst::ICMP_NE;
+
 		const auto* as_primitive = mpark::get_if<Ast::PrimitiveType>(&lhs_type);
 		if (as_primitive != nullptr) {
-			auto* lhs_value = mpark::visit([this, &state](const auto& e) {
-				return visit(e, state);
-			}, e.lhs()).to_rvalue();
-
-			auto* rhs_value = mpark::visit([this, &state](const auto& e) {
-				return visit(e, state);
-			}, e.rhs()).to_rvalue();
+			auto* lhs_value = visit(e.lhs(), state).to_rvalue();
+			auto* rhs_value = visit(e.rhs(), state).to_rvalue();
 
 			if (Ast::is_floating_point(*as_primitive)) {
-				auto* value = state.builder->CreateFCmpUEQ(lhs_value, rhs_value);
+				auto float_predicate = e.op() == Ast::BinOp::EQ
+					? llvm::CmpInst::FCMP_UEQ
+					: llvm::CmpInst::FCMP_UNE;
+
+				auto* value = state.builder->CreateFCmp(
+					float_predicate, lhs_value, rhs_value);
 				return LLVMExpr(state.builder, value, nullptr, false);
 			}
-			auto* value = state.builder->CreateICmpEQ(lhs_value, rhs_value);
+			auto* value =
+				state.builder->CreateICmp(int_predicate, lhs_value, rhs_value);
 			return LLVMExpr(state.builder, value, nullptr, false);
 		}
 
@@ -1748,42 +1732,27 @@ LLVMExpr Codegen::Impl::visit(const Ast::BinaryExpr& e, MethodCodegenState& stat
 		const auto& obj_type = as_lhs_obj != nullptr ? *as_lhs_obj : *as_rhs_obj;
 		auto* nullptr_value = zero(obj_type, state.spec);
 
-		llvm::Value* lhs_value;
-		if (mpark::holds_alternative<Ast::NullptrType>(lhs_type)) {
-			lhs_value = nullptr_value;
-		} else {
-			lhs_value = mpark::visit([this, &state](const auto& e) {
-				return visit(e, state);
-			}, e.lhs()).to_rvalue();
-		}
-
-		llvm::Value* rhs_value;
-		if (mpark::holds_alternative<Ast::NullptrType>(rhs_type)) {
-			rhs_value = nullptr_value;
-		} else {
-			rhs_value = mpark::visit([this, &state](const auto& e) {
-				return visit(e, state);
-			}, e.rhs()).to_rvalue();
-		}
+		auto* lhs_value = mpark::holds_alternative<Ast::NullptrType>(lhs_type)
+			? nullptr_value
+			: visit(e.lhs(), state).to_rvalue();
+		auto* rhs_value = mpark::holds_alternative<Ast::NullptrType>(rhs_type)
+			? nullptr_value
+			: visit(e.rhs(), state).to_rvalue();
 
 		if (lhs_value->getType()->isIntegerTy()) {
-			auto* value = e.op() == Ast::BinOp::EQ
-				? state.builder->CreateICmpEQ(lhs_value, rhs_value)
-				: state.builder->CreateICmpNE(lhs_value, rhs_value);
+			auto* value = state.builder->CreateICmp(
+				int_predicate, lhs_value, rhs_value);
 			return LLVMExpr(state.builder, value, nullptr, false);
 		} else {
 			auto lhs_intptr = state.builder->CreatePtrToInt(lhs_value, m_intptr);
 			auto rhs_intptr = state.builder->CreatePtrToInt(rhs_value, m_intptr);
-			auto* value = e.op() == Ast::BinOp::EQ
-				? state.builder->CreateICmpEQ(lhs_intptr, rhs_intptr)
-				: state.builder->CreateICmpNE(lhs_intptr, rhs_intptr);
+			auto* value = state.builder->CreateICmp(
+				int_predicate, lhs_intptr, rhs_intptr);
 			return LLVMExpr(state.builder, value, nullptr, false);
 		}
 	}
 
-	auto* lhs_value = mpark::visit([this, &state](const auto& e) {
-		return visit(e, state);
-	}, e.lhs()).to_rvalue();
+	auto* lhs_value = visit(e.lhs(), state).to_rvalue();
 
 	if (e.op() == Ast::BinOp::LAND || e.op() == Ast::BinOp::LOR) {
 		auto* curr_bb = state.builder->GetInsertBlock();
@@ -1797,9 +1766,7 @@ LLVMExpr Codegen::Impl::visit(const Ast::BinaryExpr& e, MethodCodegenState& stat
 		}
 		state.builder->SetInsertPoint(else_bb);
 
-		auto* rhs_value = mpark::visit([this, &state](const auto& e) {
-			return visit(e, state);
-		}, e.rhs()).to_rvalue();
+		auto* rhs_value = visit(e.rhs(), state).to_rvalue();
 
 		state.builder->CreateBr(next_bb);
 
@@ -1816,13 +1783,18 @@ LLVMExpr Codegen::Impl::visit(const Ast::BinaryExpr& e, MethodCodegenState& stat
 		return LLVMExpr(state.builder, phi, nullptr, false);
 	}
 
-	auto* rhs_value = mpark::visit([this, &state](const auto& e) {
-		return visit(e, state);
-	}, e.rhs()).to_rvalue();
+	auto* rhs_value = visit(e.rhs(), state).to_rvalue();
 
-	bool is_floating_point = Ast::is_floating_point(e.type());
-	bool is_signed = Ast::is_signed_integer(e.type());
+	auto lhs_type = Ast::expr_type(e.lhs());
+	const auto* as_primitive = mpark::get_if<Ast::PrimitiveType>(&lhs_type);
+	assert_msg(
+		as_primitive != nullptr,
+		"Remaining binary expression kinds operate on primitives");
 
+	bool is_floating_point = Ast::is_floating_point(*as_primitive);
+	bool is_signed = Ast::is_signed_integer(*as_primitive);
+
+	llvm::Value* value;
 	switch (e.op()) {
 	case Ast::BinOp::EQ:
 	case Ast::BinOp::NE:
@@ -1834,114 +1806,98 @@ LLVMExpr Codegen::Impl::visit(const Ast::BinaryExpr& e, MethodCodegenState& stat
 
 	case Ast::BinOp::PLUS: {
 		if (is_floating_point) {
-			auto* value = state.builder->CreateFAdd(lhs_value, rhs_value);
+			value = state.builder->CreateFAdd(lhs_value, rhs_value);
 			return LLVMExpr(state.builder, value, nullptr, false);
 		}
-		auto* value = state.builder->CreateAdd(lhs_value, rhs_value);
+		value = state.builder->CreateAdd(lhs_value, rhs_value);
 		return LLVMExpr(state.builder, value, nullptr, false);
 	}
 	case Ast::BinOp::MINUS: {
 		if (is_floating_point) {
-			auto* value = state.builder->CreateFSub(lhs_value, rhs_value);
+			value = state.builder->CreateFSub(lhs_value, rhs_value);
 			return LLVMExpr(state.builder, value, nullptr, false);
 		}
-		auto* value = state.builder->CreateSub(lhs_value, rhs_value);
+		value = state.builder->CreateSub(lhs_value, rhs_value);
 		return LLVMExpr(state.builder, value, nullptr, false);
 	}
 	case Ast::BinOp::TIMES: {
 		if (is_floating_point) {
-			auto* value = state.builder->CreateFMul(lhs_value, rhs_value);
+			value = state.builder->CreateFMul(lhs_value, rhs_value);
 			return LLVMExpr(state.builder, value, nullptr, false);
 		}
-		auto* value = state.builder->CreateMul(lhs_value, rhs_value);
+		value = state.builder->CreateMul(lhs_value, rhs_value);
 		return LLVMExpr(state.builder, value, nullptr, false);
 	}
 	case Ast::BinOp::DIV: {
 		if (is_floating_point) {
-			auto* value = state.builder->CreateFDiv(lhs_value, rhs_value);
+			value = state.builder->CreateFDiv(lhs_value, rhs_value);
 			return LLVMExpr(state.builder, value, nullptr, false);
 		} else if (is_signed) {
-			auto* value = state.builder->CreateSDiv(lhs_value, rhs_value);
+			value = state.builder->CreateSDiv(lhs_value, rhs_value);
 			return LLVMExpr(state.builder, value, nullptr, false);
 		} else {
-			auto* value = state.builder->CreateUDiv(lhs_value, rhs_value);
+			value = state.builder->CreateUDiv(lhs_value, rhs_value);
 			return LLVMExpr(state.builder, value, nullptr, false);
 		}
 	}
 	case Ast::BinOp::AND: {
-		auto* value = state.builder->CreateAnd(lhs_value, rhs_value);
-		return LLVMExpr(state.builder, value, nullptr, false);
+		value = state.builder->CreateAnd(lhs_value, rhs_value);
+		break;
 	}
 	case Ast::BinOp::OR: {
-		auto* value = state.builder->CreateOr(lhs_value, rhs_value);
-		return LLVMExpr(state.builder, value, nullptr, false);
+		value = state.builder->CreateOr(lhs_value, rhs_value);
+		break;
 	}
 	case Ast::BinOp::XOR: {
-		auto* value = state.builder->CreateXor(lhs_value, rhs_value);
-		return LLVMExpr(state.builder, value, nullptr, false);
+		value = state.builder->CreateXor(lhs_value, rhs_value);
+		break;
 	}
 	case Ast::BinOp::SHL: {
-		auto* value = state.builder->CreateShl(lhs_value, rhs_value);
-		return LLVMExpr(state.builder, value, nullptr, false);
+		value = state.builder->CreateShl(lhs_value, rhs_value);
+		break;
 	}
 	case Ast::BinOp::SHR: {
-		if (is_signed) {
-			auto* value = state.builder->CreateAShr(lhs_value, rhs_value);
-			return LLVMExpr(state.builder, value, nullptr, false);
-		} else {
-			auto* value = state.builder->CreateLShr(lhs_value, rhs_value);
-			return LLVMExpr(state.builder, value, nullptr, false);
-		}
+		value = is_signed
+			? state.builder->CreateAShr(lhs_value, rhs_value)
+			: state.builder->CreateLShr(lhs_value, rhs_value);
+		break;
 	}
-	case Ast::BinOp::LE: {
-		if (is_floating_point) {
-			auto* value = state.builder->CreateFCmpULE(lhs_value, rhs_value);
-			return LLVMExpr(state.builder, value, nullptr, false);
-		} else if (is_signed) {
-			auto* value = state.builder->CreateICmpSLE(lhs_value, rhs_value);
-			return LLVMExpr(state.builder, value, nullptr, false);
-		} else {
-			auto* value = state.builder->CreateICmpULE(lhs_value, rhs_value);
-			return LLVMExpr(state.builder, value, nullptr, false);
-		}
-	}
-	case Ast::BinOp::LT: {
-		if (is_floating_point) {
-			auto* value = state.builder->CreateFCmpULT(lhs_value, rhs_value);
-			return LLVMExpr(state.builder, value, nullptr, false);
-		} else if (is_signed) {
-			auto* value = state.builder->CreateICmpSLT(lhs_value, rhs_value);
-			return LLVMExpr(state.builder, value, nullptr, false);
-		} else {
-			auto* value = state.builder->CreateICmpULT(lhs_value, rhs_value);
-			return LLVMExpr(state.builder, value, nullptr, false);
-		}
-	}
-	case Ast::BinOp::GE: {
-		if (is_floating_point) {
-			auto* value = state.builder->CreateFCmpUGE(lhs_value, rhs_value);
-			return LLVMExpr(state.builder, value, nullptr, false);
-		} else if (is_signed) {
-			auto* value = state.builder->CreateICmpSGE(lhs_value, rhs_value);
-			return LLVMExpr(state.builder, value, nullptr, false);
-		} else {
-			auto* value = state.builder->CreateICmpUGE(lhs_value, rhs_value);
-			return LLVMExpr(state.builder, value, nullptr, false);
-		}
-	}
+	case Ast::BinOp::LE:
+	case Ast::BinOp::LT:
+	case Ast::BinOp::GE:
 	case Ast::BinOp::GT: {
-		if (is_floating_point) {
-			auto* value = state.builder->CreateFCmpUGT(lhs_value, rhs_value);
-			return LLVMExpr(state.builder, value, nullptr, false);
-		} else if (is_signed) {
-			auto* value = state.builder->CreateICmpSGT(lhs_value, rhs_value);
-			return LLVMExpr(state.builder, value, nullptr, false);
+		llvm::ICmpInst::Predicate int_pred;
+		llvm::ICmpInst::Predicate uint_pred;
+		llvm::ICmpInst::Predicate float_pred;
+		if (e.op() == Ast::BinOp::LE) {
+			int_pred = llvm::ICmpInst::ICMP_SLE;
+			uint_pred = llvm::ICmpInst::ICMP_ULE;
+			float_pred = llvm::ICmpInst::FCMP_ULE;
+		} else if (e.op() == Ast::BinOp::LT) {
+			int_pred = llvm::ICmpInst::ICMP_SLT;
+			uint_pred = llvm::ICmpInst::ICMP_ULT;
+			float_pred = llvm::ICmpInst::FCMP_ULT;
+		} else if (e.op() == Ast::BinOp::GE) {
+			int_pred = llvm::ICmpInst::ICMP_SGE;
+			uint_pred = llvm::ICmpInst::ICMP_UGE;
+			float_pred = llvm::ICmpInst::FCMP_UGE;
 		} else {
-			auto* value = state.builder->CreateICmpUGT(lhs_value, rhs_value);
-			return LLVMExpr(state.builder, value, nullptr, false);
+			int_pred = llvm::ICmpInst::ICMP_SGT;
+			uint_pred = llvm::ICmpInst::ICMP_UGT;
+			float_pred = llvm::ICmpInst::FCMP_UGT;
 		}
+
+		if (is_floating_point) {
+			value = state.builder->CreateFCmp(float_pred, lhs_value, rhs_value);
+		} else if (is_signed) {
+			value = state.builder->CreateICmp(int_pred, lhs_value, rhs_value);
+		} else {
+			value = state.builder->CreateICmp(uint_pred, lhs_value, rhs_value);
+		}
+		break;
 	}
 	}
+	return LLVMExpr(state.builder, value, nullptr, false);
 }
 
 LLVMExpr Codegen::Impl::visit(const Ast::VariableExpr& e, MethodCodegenState& state)
@@ -1955,9 +1911,7 @@ LLVMExpr Codegen::Impl::visit(const Ast::MethodCall& e, MethodCodegenState& stat
 {
 	std::vector<llvm::Value*> llvm_args;
 
-	auto* this_value = mpark::visit([this, &state](const auto& e) {
-		return visit(e, state);
-	}, e.this_expr()).to_rvalue();
+	auto* this_value = visit(e.this_expr(), state).to_rvalue();
 	llvm_args.push_back(this_value);
 
 	for (size_t i = 0; i < e.args().size(); i++) {
@@ -1971,9 +1925,7 @@ LLVMExpr Codegen::Impl::visit(const Ast::MethodCall& e, MethodCodegenState& stat
 			continue;
 		}
 
-		auto* llvm_arg = mpark::visit([this, &state](const auto& e) {
-			return visit(e, state);
-		}, arg).to_rvalue();
+		auto* llvm_arg = visit(arg, state).to_rvalue();
 		llvm_args.push_back(llvm_arg);
 	}
 
@@ -2006,9 +1958,7 @@ LLVMExpr Codegen::Impl::visit(const Ast::MethodCall& e, MethodCodegenState& stat
 
 LLVMExpr Codegen::Impl::visit(const Ast::FieldAccess& e, MethodCodegenState& state)
 {
-	auto* value = mpark::visit([this, &state](const auto& e) {
-		return visit(e, state);
-	}, e.expr()).to_rvalue();
+	auto* value = visit(e.expr(), state).to_rvalue();
 
 	const auto& data_layout = m_mod->getDataLayout();
 	llvm::MDBuilder tbaa_builder(m_ctx);
@@ -2061,10 +2011,7 @@ LLVMExpr Codegen::Impl::visit(const Ast::FieldAccess& e, MethodCodegenState& sta
 		auto* field_ptr = state.builder->CreateStructGEP(
 			cluster_type, record_ptr, indices->pos);
 
-		auto* tbaa_field_type = mpark::visit(
-			[this, &state](const auto& e) {
-				return tbaa_type_of(e, state.spec);
-			}, e.type());
+		auto* tbaa_field_type = tbaa_type_of(e.type(), state.spec);
 
 		auto* cluster_tbaa_node = tbaa_builder.createTBAAStructTagNode(
 			as_pool->cluster_tbaa_types[indices->cluster_idx],
@@ -2077,10 +2024,7 @@ LLVMExpr Codegen::Impl::visit(const Ast::FieldAccess& e, MethodCodegenState& sta
 	auto idx = new_spec.clazz().index_of(e.field());
 	assert_msg(idx != (size_t)-1, "Field not belonging to class?");
 
-	auto* tbaa_field_type = mpark::visit(
-		[this, &state](const auto& e) {
-			return tbaa_type_of(e, state.spec);
-		}, e.type());
+	auto* tbaa_field_type = tbaa_type_of(e.type(), state.spec);
 
 	const auto* layout = data_layout.getStructLayout(as_obj->type);
 	auto* tbaa_node = tbaa_builder.createTBAAStructTagNode(
@@ -2198,6 +2142,9 @@ bool Codegen::Impl::ir(const Ast::Program& ast)
 	m_tbaa_u32 = tbaa_builder.createTBAAScalarTypeNode("u32", m_tbaa_root);
 	m_tbaa_i64 = tbaa_builder.createTBAAScalarTypeNode("i64", m_tbaa_root);
 	m_tbaa_u64 = tbaa_builder.createTBAAScalarTypeNode("u64", m_tbaa_root);
+
+	m_tbaa_f32 = tbaa_builder.createTBAAScalarTypeNode("f32", m_tbaa_root);
+	m_tbaa_f64 = tbaa_builder.createTBAAScalarTypeNode("f64", m_tbaa_root);
 
 	m_tbaa_intptr = tbaa_builder.createTBAAScalarTypeNode("intptr", m_tbaa_root);
 

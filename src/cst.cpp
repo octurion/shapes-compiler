@@ -193,7 +193,6 @@ ForeachPool::ForeachPool(Identifier var, Identifier pool, Stmt body)
 {}
 const Stmt& ForeachPool::body() const { return *m_body; }
 
-Block::Block() = default;
 Block::Block(std::vector<Stmt> stmts)
 	: m_stmts(std::move(stmts))
 {}

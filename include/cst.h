@@ -310,6 +310,12 @@ class CastExpr
 public:
 	CastExpr(Expr expr, PrimitiveType type, const Location& loc);
 
+	CastExpr(const CastExpr&) = delete;
+	CastExpr& operator=(const CastExpr&) = delete;
+
+	CastExpr(CastExpr&&) = default;
+	CastExpr& operator=(CastExpr&&) = default;
+
 	const Expr& expr() const;
 	const Location& loc() const { return m_loc; }
 	const PrimitiveType& type() const { return m_type; }
@@ -324,6 +330,12 @@ class BinaryExpr
 
 public:
 	BinaryExpr(Expr lhs, BinOp op, Expr rhs, const Location& loc);
+
+	BinaryExpr(const BinaryExpr&) = delete;
+	BinaryExpr& operator=(const BinaryExpr&) = delete;
+
+	BinaryExpr(BinaryExpr&&) = default;
+	BinaryExpr& operator=(BinaryExpr&&) = default;
 
 	const Expr& lhs() const;
 	const Expr& rhs() const;
@@ -356,6 +368,12 @@ class UnaryExpr
 public:
 	UnaryExpr(UnOp op, Expr expr, const Location& loc);
 
+	UnaryExpr(const UnaryExpr&) = delete;
+	UnaryExpr& operator=(const UnaryExpr&) = delete;
+
+	UnaryExpr(UnaryExpr&&) = default;
+	UnaryExpr& operator=(UnaryExpr&&) = default;
+
 	const Expr& expr() const;
 	UnOp op() const { return m_op; }
 	const Location& loc() const { return m_loc; }
@@ -369,6 +387,12 @@ class MethodCall
 
 public:
 	MethodCall(Identifier name, std::vector<Expr> params, const Location& loc);
+
+	MethodCall(const MethodCall&) = delete;
+	MethodCall& operator=(const MethodCall&) = delete;
+
+	MethodCall(MethodCall&&) = default;
+	MethodCall& operator=(MethodCall&&) = default;
 
 	const Identifier& name() const { return m_name; }
 	const Location& loc() const { return m_loc; }
@@ -392,6 +416,12 @@ public:
 			std::vector<Expr> args,
 			const Location& loc);
 
+	MemberMethodCall(const MemberMethodCall&) = delete;
+	MemberMethodCall& operator=(const MemberMethodCall&) = delete;
+
+	MemberMethodCall(MemberMethodCall&&) = default;
+	MemberMethodCall& operator=(MemberMethodCall&&) = default;
+
 	const Expr& this_expr() const;
 	const Identifier& name() const { return m_name; }
 	const Location& loc() const { return m_loc; }
@@ -408,6 +438,12 @@ class FieldAccess
 
 public:
 	FieldAccess(Expr expr, Identifier field, const Location& loc);
+
+	FieldAccess(const FieldAccess&) = delete;
+	FieldAccess& operator=(const FieldAccess&) = delete;
+
+	FieldAccess(FieldAccess&&) = default;
+	FieldAccess& operator=(FieldAccess&&) = default;
 
 	const Expr& expr() const;
 	const Identifier& field() const { return m_field; }
@@ -446,8 +482,8 @@ class Return;
 class ReturnVoid;
 
 using Stmt = mpark::variant<Noop, VariableDeclarations, PoolDeclarations,
-	  Assignment, OpAssignment, IfStmt, WhileStmt, ForeachRange, ForeachPool, Block,
-	  ExprStmt, Break, Continue, Return, ReturnVoid>;
+	  Assignment, OpAssignment, IfStmt, WhileStmt, ForeachRange, ForeachPool,
+	  Block, ExprStmt, Break, Continue, Return, ReturnVoid>;
 
 class Noop {};
 
@@ -570,8 +606,12 @@ class Block
 	std::vector<Stmt> m_stmts;
 
 public:
-	Block();
+	Block() = default;
 	explicit Block(std::vector<Stmt> stmts);
+
+	// No clue why gcc requires this for compilation
+	Block(Block&&) = default;
+	Block& operator=(Block&&) = default;
 
 	const std::vector<Stmt>& stmts() const { return m_stmts; }
 

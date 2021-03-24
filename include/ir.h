@@ -9,7 +9,7 @@ class Function;
 class Module;
 
 struct GenericValue;
-};
+}
 
 namespace Ir {
 
