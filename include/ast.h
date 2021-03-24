@@ -330,28 +330,32 @@ public:
 class IntegerConst
 {
 	uint64_t m_value = 0;
+	PrimitiveType m_type;
 
 public:
-	explicit IntegerConst(uint64_t value)
+	explicit IntegerConst(uint64_t value, PrimitiveType type)
 		: m_value(value)
+		, m_type(type)
 	{}
 
 	uint64_t value() const { return m_value; }
-	PrimitiveType type() const { return PrimitiveType::U64; }
+	PrimitiveType type() const { return m_type; }
 	bool is_lvalue() const { return false; }
 };
 
 class DoubleConst
 {
 	double m_value = 0;
+	PrimitiveType m_type;
 
 public:
-	explicit DoubleConst(double value)
+	explicit DoubleConst(double value, PrimitiveType type)
 		: m_value(value)
+		, m_type(type)
 	{}
 
 	double value() const { return m_value; }
-	PrimitiveType type() const { return PrimitiveType::F64; }
+	PrimitiveType type() const { return m_type; }
 	bool is_lvalue() const { return false; }
 };
 
