@@ -57,6 +57,9 @@ const char* kind_str(Ast::ErrorKind kind)
 
 	case Ast::ErrorKind::METHOD:
 		return "Method";
+
+	default:
+		unreachable("Did you introduce an additional error type?");
 	}
 }
 

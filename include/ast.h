@@ -675,7 +675,7 @@ public:
 
 class ForeachRange
 {
-	const Variable& m_var;
+	std::reference_wrapper<const Variable> m_var;
 	Expr m_range_begin;
 	Expr m_range_end;
 	std::vector<Stmt> m_body;
@@ -696,12 +696,16 @@ public:
 
 class ForeachPool
 {
-	const Variable& m_var;
-	const Pool& m_pool;
+	std::reference_wrapper<const Variable> m_var;
+	std::reference_wrapper<const Pool> m_pool;
 	std::vector<Stmt> m_body;
 
 public:
 	ForeachPool(const Variable& var, const Pool& pool, std::vector<Stmt> body);
+
+	// No clue why gcc requires this for compilation
+	ForeachPool(ForeachPool&&) = default;
+	ForeachPool& operator=(ForeachPool&&) = default;
 
 	const Variable& var() const { return m_var;  }
 	const Pool& pool()    const { return m_pool; }

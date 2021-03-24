@@ -127,7 +127,7 @@ std::vector<std::string> files_in_path(const char* path)
 		retval.push_back(root + dp->d_name);
 	}
 	return retval;
-};
+}
 
 class ExecutionTest: public Test
 {
