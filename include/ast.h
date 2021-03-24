@@ -299,6 +299,7 @@ public:
 	const Location& loc() const { return m_loc; }
 };
 
+class InvalidExpr;
 class IntegerConst;
 class DoubleConst;
 class BooleanConst;
@@ -313,11 +314,18 @@ class FieldAccess;
 class NewExpr;
 
 using Expr = mpark::variant<
-	IntegerConst, DoubleConst, BooleanConst, NullExpr, ThisExpr, CastExpr,
-	UnaryExpr, BinaryExpr, VariableExpr, MethodCall, FieldAccess,
+	InvalidExpr, IntegerConst, DoubleConst, BooleanConst, NullExpr, ThisExpr,
+	CastExpr, UnaryExpr, BinaryExpr, VariableExpr, MethodCall, FieldAccess,
 	NewExpr>;
 Type expr_type(const Expr& expr);
 bool is_lvalue(const Expr& expr);
+
+class InvalidExpr
+{
+public:
+	PrimitiveType type() const;
+	bool is_lvalue() const;
+};
 
 class IntegerConst
 {
