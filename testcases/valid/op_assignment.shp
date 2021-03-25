@@ -10,11 +10,11 @@ class Main<p1> where
         y = x;
         z = x;
 
-        f1 = 5 as i32;
-        x += f1 * 2 as i32;
+        f1 = 5;
+        x += f1 * 2;
         y -= x;
         z &= -x;
-        x ^= -1 as i32;
+        x ^= -1;
 
         y |= x;
         z <<= 2;

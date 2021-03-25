@@ -25,7 +25,7 @@ static const IntegerLiteralInfo INT_LITERAL_INFO[] = {
 	{"u32", PrimitiveType::U32, UINT32_MAX},
 	{"i64", PrimitiveType::I64, INT64_MAX},
 	{"u64", PrimitiveType::U64, UINT64_MAX},
-	{"", PrimitiveType::U64, UINT64_MAX},
+	{"", PrimitiveType::I32, INT32_MAX},
 };
 
 static PrimitiveType get_primitive_type(Cst::PrimitiveType type)

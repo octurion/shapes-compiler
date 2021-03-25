@@ -6,7 +6,7 @@ class Main<p1> where
     fn getter(): i32
     {
         return f;
-        f = 0 as i32;
+        f = 0;
     }
 
     fn getter2(): i32
@@ -15,7 +15,7 @@ class Main<p1> where
             return f;
         }
 
-        return 0 as i32;
+        return 0;
     }
 
     fn getter3(): i32
@@ -23,7 +23,7 @@ class Main<p1> where
         if true {
             return f;
         } else {
-            return 0 as i32;
+            return 0;
         }
     }
 
@@ -33,7 +33,7 @@ class Main<p1> where
             return f;
         } else {
             if false {
-                return 0 as i32;
+                return 0;
             } else {
                 return f + f;
             }
