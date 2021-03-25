@@ -220,6 +220,7 @@ public:
 
 class IntegerConst;
 class BooleanConst;
+class DoubleConst;
 class NullExpr;
 class ThisExpr;
 class CastExpr;
@@ -231,8 +232,8 @@ class MemberMethodCall;
 class FieldAccess;
 class NewExpr;
 
-using Expr = mpark::variant<IntegerConst, BooleanConst, NullExpr, ThisExpr,
-	  CastExpr, UnaryExpr, BinaryExpr, VariableExpr, MethodCall,
+using Expr = mpark::variant<IntegerConst, DoubleConst, BooleanConst, NullExpr,
+	  ThisExpr, CastExpr, UnaryExpr, BinaryExpr, VariableExpr, MethodCall,
 	  MemberMethodCall, FieldAccess, NewExpr>;
 const Location& location(const Expr& expr);
 
@@ -253,6 +254,21 @@ class IntegerConst
 
 public:
 	explicit IntegerConst(std::string value, const Location& loc)
+		: m_value(std::move(value))
+		, m_loc(loc)
+	{}
+
+	const std::string& value() const { return m_value; }
+	const Location& loc() const { return m_loc; }
+};
+
+class DoubleConst
+{
+	std::string m_value;
+	Location m_loc;
+
+public:
+	explicit DoubleConst(std::string value, const Location& loc)
 		: m_value(std::move(value))
 		, m_loc(loc)
 	{}

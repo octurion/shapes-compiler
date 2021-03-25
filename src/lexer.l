@@ -23,6 +23,13 @@ DIGIT [0-9]
 ALPHA [a-zA-Z_]
 ALNUM [0-9a-zA-Z_]
 
+DEC_LITERAL {DIGIT}+
+
+INT_SUFFIX "i8"|"u8"|"i16"|"u16"|"i32"|"u32"|"i64"|"u64"
+FLOAT_SUFFIX "f32"|"f64"
+
+EXP [Ee][+-]?{DIGIT}+
+
 NON_PRINT_ASCII [\x00-\x1F\x7F]
 
 %%
@@ -77,9 +84,17 @@ NON_PRINT_ASCII [\x00-\x1F\x7F]
 	return T_IDENT;
 }
 
-{DIGIT}+ {
+{DEC_LITERAL}{INT_SUFFIX}? {
 	yylval->str = new std::string(yytext, yyleng);
 	return T_INT_CONST;
+}
+
+{DEC_LITERAL}"." |
+{DEC_LITERAL}{EXP} |
+{DEC_LITERAL}"."{DEC_LITERAL}{EXP}? |
+{DEC_LITERAL}("."{DEC_LITERAL})?{EXP}?{FLOAT_SUFFIX} {
+	yylval->str = new std::string(yytext, yyleng);
+	return T_DOUBLE_CONST;
 }
 
 "==" { return T_EQ; }

@@ -112,8 +112,9 @@ T consume_ptr(T* ptr) {
 
 /* List of all tokens (fed into lex) */
 
-%token<str> T_IDENT     "identifier"
-%token<str> T_INT_CONST "integer constant"
+%token<str> T_IDENT        "identifier"
+%token<str> T_INT_CONST    "integer constant"
+%token<str> T_DOUBLE_CONST "floating-point constant"
 
 %token T_CLASS  "class"
 %token T_EXPORT "export"
@@ -558,6 +559,9 @@ expr
 	}
 	| T_INT_CONST {
 		$$ = new Cst::Expr(Cst::IntegerConst(consume_ptr($1), make_loc(@$)));
+	}
+	| T_DOUBLE_CONST {
+		$$ = new Cst::Expr(Cst::DoubleConst(consume_ptr($1), make_loc(@$)));
 	}
 	| T_THIS  { $$ = new Cst::Expr(Cst::ThisExpr(make_loc(@$))); }
 	| T_NULL  { $$ = new Cst::Expr(Cst::NullExpr(make_loc(@$))); }

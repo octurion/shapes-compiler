@@ -13,8 +13,8 @@ class Main<p1> where
         o1 = new Main<q>;
         o2 = new Main<q>;
 
-        o2.f1 = 1 as i32;
-        o2.f2 = 2 as i32;
+        o2.f1 = 1;
+        o2.f2 = 2;
 
         o2.assign(o1);
     }

@@ -201,6 +201,18 @@ public:
 	const Location& loc() const { return m_loc; }
 };
 
+class DoubleOutOfBounds
+{
+	Location m_loc;
+
+public:
+	explicit DoubleOutOfBounds(const Location& loc)
+		: m_loc(loc)
+	{}
+
+	const Location& loc() const { return m_loc; }
+};
+
 class IncorrectFirstPoolParameter
 {
 	Location m_loc;
@@ -485,6 +497,7 @@ using SemanticError = mpark::variant<
 	EmptyCluster,
 	NotInsideLoop,
 	IntegerOutOfBounds,
+	DoubleOutOfBounds,
 	IncorrectFirstPoolParameter,
 	IncorrectType,
 	IncompatibleBound,

@@ -3,8 +3,8 @@ class Main<p1> where
 {
     f: i32;
 
-    fn sum(): u64 {
-        let sum: u64;
+    fn sum(): i32 {
+        let sum: i32;
 
         sum = 0;
         foreach x = 0 .. 100 {

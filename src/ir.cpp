@@ -1561,13 +1561,13 @@ void Codegen::Impl::visit(const Ast::Return& e, MethodCodegenState& state)
 
 LLVMExpr Codegen::Impl::visit(const Ast::IntegerConst& e, MethodCodegenState& state)
 {
-	auto* value = llvm::ConstantInt::get(m_intptr, e.value());
+	auto* value = llvm::ConstantInt::get(type_of(e.type(), state.spec), e.value());
 	return LLVMExpr(state.builder, value, nullptr, false);
 }
 
 LLVMExpr Codegen::Impl::visit(const Ast::DoubleConst& e, MethodCodegenState& state)
 {
-	auto* value = llvm::ConstantFP::get(m_f64, e.value());
+	auto* value = llvm::ConstantFP::get(type_of(e.type(), state.spec), e.value());
 	return LLVMExpr(state.builder, value, nullptr, false);
 }
 

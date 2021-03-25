@@ -140,7 +140,13 @@ struct SemanticErrorPrinter
 	void operator()(const Ast::IntegerOutOfBounds& e)
 	{
 		print_loc(e.loc());
-		fprintf(stderr, ": Integer constant can't fit into a 64-bit unsigned integer.");
+		fprintf(stderr, ": Integer constant is too large.");
+	}
+
+	void operator()(const Ast::DoubleOutOfBounds& e)
+	{
+		print_loc(e.loc());
+		fprintf(stderr, ": Floating point constant is too large.");
 	}
 
 	void operator()(const Ast::IncorrectFirstPoolParameter& e)

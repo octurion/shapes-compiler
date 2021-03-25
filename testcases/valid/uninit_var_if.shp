@@ -3,8 +3,8 @@ class Main<p1> where
 {
     f: i32;
 
-    fn foo(): u64 {
-        let n: u64;
+    fn foo(): i32 {
+        let n: i32;
         if false {
             n = 0;
             return n + 2;

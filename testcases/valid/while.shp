@@ -5,8 +5,8 @@ class Main<p1> where
 
     fn test(x: i32)
     {
-        while x > 0 as i32 {
-            this.f += 1 as i32;
+        while x > 0 {
+            this.f += 1;
             x >>= 1;
         }
     }

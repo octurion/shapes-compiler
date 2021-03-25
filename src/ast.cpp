@@ -688,7 +688,8 @@ public:
 	void operator()(const IntegerConst& expr)
 	{
 		emit_indentation();
-		fprintf(stderr, "Integer constant: %" PRIu64 "\n", expr.value());
+		fprintf(stderr, "Integer constant: %" PRIu64 " (type: %s)\n",
+				expr.value(), to_string(expr.type()).c_str());
 	}
 
 	void operator()(const DoubleConst& expr)

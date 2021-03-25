@@ -5,12 +5,12 @@ class Main<p1> where
 
     fn test() {
         if this.f1 == f1 {
-            f1 = 0 as i32;
+            f1 = 0;
         } else {
-            this.f1 = 5 as i32;
+            this.f1 = 5;
         }
 
-        let x: u64;
+        let x: i32;
         x = 5;
         if x != 4 {
             x = -2;

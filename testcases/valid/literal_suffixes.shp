@@ -1,0 +1,31 @@
+class Main<p1> where
+    p1: [Main<p1>]
+{
+    f1: i32;
+
+    fn run()
+    {
+        let x: i32;
+        x = 0;
+        x = 2i32;
+
+        let y: u16;
+        y = 5u16;
+
+        let z: bool;
+        z = y == 7u16;
+
+        let a: f32;
+        a = 2f32;
+        a = 3.0f32;
+        a = 2e+3f32 * 1E-9f32;
+
+        let b: f64;
+        b = 0.2;
+        b = 3f64;
+        b = 4e-3;
+
+        1e2 == 1e-3;
+        a != b as f32;
+    }
+}
