@@ -22,7 +22,7 @@ class Main<p1> where
     {
         let sum: i32;
 
-        sum = 0 as i32;
+        sum = 0;
         foreach i = begin .. end {
             sum += i;
         }
@@ -52,7 +52,7 @@ class A<q1, q2> where
     fn twin_getter(): i32
     {
         if f == null {
-            return -1 as i32;
+            return -1;
         }
 
         return f.gv;

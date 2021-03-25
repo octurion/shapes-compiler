@@ -1,10 +1,32 @@
 #include "semantic_analysis.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <sstream>
 #include <unordered_set>
 
 namespace Ast {
+
+struct IntegerLiteralInfo
+{
+	const char* suffix;
+	PrimitiveType type;
+	uint64_t max_value;
+};
+
+static const IntegerLiteralInfo INT_LITERAL_INFO[] = {
+	{"i8", PrimitiveType::I8, INT8_MAX},
+	{"u8", PrimitiveType::U8, UINT8_MAX},
+	{"i16", PrimitiveType::I16, INT16_MAX},
+	{"u16", PrimitiveType::U16, UINT16_MAX},
+	{"i32", PrimitiveType::I32, INT32_MAX},
+	{"u32", PrimitiveType::U32, UINT32_MAX},
+	{"i64", PrimitiveType::I64, INT64_MAX},
+	{"u64", PrimitiveType::U64, UINT64_MAX},
+	{"", PrimitiveType::I32, INT32_MAX},
+};
 
 static PrimitiveType get_primitive_type(Cst::PrimitiveType type)
 {
@@ -1169,21 +1191,62 @@ public:
 	}
 
 	Expr operator()(const Cst::IntegerConst& e) {
-		unsigned long long value = 0;
+		unsigned long long value;
+		size_t idx;
 
+		const auto& str = e.value();
 		try {
-			value = std::stoull(e.value());
+			value = std::stoull(str, &idx);
 		} catch (...) {
 			m_errors.add<IntegerOutOfBounds>(e.loc());
 			return InvalidExpr();
 		}
 
-		if (value > UINT64_MAX) {
+		auto* suffix_begin = &str[idx];
+		auto it = std::find_if(
+			std::begin(INT_LITERAL_INFO), std::end(INT_LITERAL_INFO),
+			[=](const IntegerLiteralInfo& info) {
+				return strcmp(suffix_begin, info.suffix) == 0;
+			});
+		assert_msg(it != std::end(INT_LITERAL_INFO), "Missing integer literal suffix?");
+
+		if (value > it->max_value) {
 			m_errors.add<IntegerOutOfBounds>(e.loc());
 			return InvalidExpr();
 		}
 
-		return IntegerConst(value);
+		return IntegerConst(value, it->type);
+	}
+
+	Expr operator()(const Cst::DoubleConst& e) {
+		double value;
+		size_t idx;
+
+		const auto& str = e.value();
+		try {
+			value = std::stod(e.value(), &idx);
+		} catch (...) {
+			m_errors.add<DoubleOutOfBounds>(e.loc());
+			return InvalidExpr();
+		}
+
+		if (!std::isfinite(value)) {
+			m_errors.add<DoubleOutOfBounds>(e.loc());
+			return InvalidExpr();
+		}
+
+		auto* suffix_begin = &str[idx];
+		if (strcmp(suffix_begin, "f32") == 0) {
+			float actual_value = value;
+
+			if (!std::isfinite(actual_value)) {
+				m_errors.add<DoubleOutOfBounds>(e.loc());
+				return InvalidExpr();
+			}
+			return DoubleConst(value, PrimitiveType::F32);
+		}
+
+		return DoubleConst(value, PrimitiveType::F64);
 	}
 
 	Expr operator()(const Cst::BooleanConst& e)
