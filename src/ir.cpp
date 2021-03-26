@@ -409,6 +409,14 @@ void init_llvm()
 	LLVMInitializeX86TargetMC();
 	LLVMInitializeX86AsmParser();
 	LLVMInitializeX86AsmPrinter();
+
+	auto* pass_registry = llvm::PassRegistry::getPassRegistry();
+
+	llvm::initializeCore(*pass_registry);
+	llvm::initializeCodeGen(*pass_registry);
+	llvm::initializeLoopStrengthReducePass(*pass_registry);
+
+	llvm::initializeGlobalISel(*pass_registry);
 }
 
 void Codegen::Impl::generate_specializations_impl(
@@ -2186,19 +2194,23 @@ bool Codegen::Impl::emit(const char* filename)
 
 	pass_builder.crossRegisterProxies(lam, fam, cam, mam);
 
-	auto mod_pass_manager =
-		pass_builder.buildPerModuleDefaultPipeline(opt_level, false);
-	mod_pass_manager.addPass(llvm::PrintModulePass(llvm::errs()));
+	auto mod_pass_manager_first =
+		pass_builder.buildThinLTOPreLinkDefaultPipeline(opt_level);
+	mod_pass_manager_first.run(*m_mod, mam);
 
-	mod_pass_manager.run(*m_mod, mam);
+	auto mod_pass_manager_second =
+		pass_builder.buildPerModuleDefaultPipeline(opt_level);
+	mod_pass_manager_second.addPass(llvm::PrintModulePass(llvm::errs()));
+	mod_pass_manager_second.run(*m_mod, mam);
 
 	std::error_code EC;
 	llvm::raw_fd_ostream dest(filename, EC, llvm::sys::fs::OF_None);
 
-	llvm::legacy::PassManager old_pm;
+	llvm::legacy::PassManager legacy_pm;
 
-	m_target_machine->addPassesToEmitFile(old_pm, dest, nullptr, llvm::TargetMachine::CGFT_ObjectFile);
-	old_pm.run(*m_mod);
+	m_target_machine->addPassesToEmitFile(
+		legacy_pm, dest, nullptr, llvm::TargetMachine::CGFT_ObjectFile);
+	legacy_pm.run(*m_mod);
 
 	return true;
 }
