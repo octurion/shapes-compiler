@@ -346,12 +346,12 @@ pool_bound_list
 
 pool_bound
 	: formal_pool_parameter T_COLON bound_type {
-		$$ = new Cst::FormalPoolBound(consume_ptr($1), consume_ptr($3), make_loc(@$));
+		$$ = new Cst::FormalPoolBound(consume_ptr($1), consume_ptr($3), make_loc(@1));
 	}
 
 bound_type
 	: T_LSQUARE identifier bound_pool_parameters T_RSQUARE {
-		$$ = new Cst::BoundType(consume_ptr($2), consume_ptr($3));
+		$$ = new Cst::BoundType(consume_ptr($2), consume_ptr($3), make_loc(@$));
 	}
 	/* Just make up one for error recovery */
 	| T_LSQUARE error T_RSQUARE {
