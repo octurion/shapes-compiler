@@ -182,10 +182,8 @@ static void init_loc(YYLTYPE* loc)
 
 static void update_loc(YYLTYPE* loc, const char* text, yy_size_t len, int state)
 {
-	if (state != MULTILINE_COMMENT) {
-		loc->first_line = loc->last_line;
-		loc->first_column = loc->last_column + 1;
-	}
+	loc->first_line = loc->last_line;
+	loc->first_column = loc->last_column + 1;
 
 	for (yy_size_t i = 0; i < len; i++) {
 		if (text[i] == '\n') {
@@ -194,8 +192,6 @@ static void update_loc(YYLTYPE* loc, const char* text, yy_size_t len, int state)
 			continue;
 		}
 
-		loc->last_column += (text[i] == '\t')
-			? TAB_WIDTH - (loc->last_column % TAB_WIDTH)
-			: 1;
+		loc->last_column++;
 	}
 }

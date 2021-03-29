@@ -250,7 +250,7 @@ static void collect_layouts(
 		for (const Field& e: for_class->fields())
 		{
 			if (fields_added.find(&e) == fields_added.end()) {
-				errors.add<LayoutMissingField>(e.name(), layout.name().ident(), e.loc());
+				errors.add<LayoutMissingField>(layout.name().ident(), e.name(), e.loc());
 				fields_missing = true;
 			}
 		}
@@ -462,7 +462,7 @@ public:
 			m_errors.add<MissingDefinition>(
 				type.class_name().ident(),
 				ErrorKind::CLASS,
-				type.loc());
+				type.class_name().loc());
 			return mpark::monostate();
 		}
 
@@ -561,6 +561,7 @@ static void collect_pool_field_method_types(
 				continue;
 			}
 			bound->set_type(get_type(maybe_bound_type));
+			defined_pool_types[bound] = cst_bound.pool().loc();
 		}
 
 		for (const auto& cst_field: cst_class.fields()) {
