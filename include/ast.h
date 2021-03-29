@@ -397,8 +397,6 @@ class CastExpr
 	std::unique_ptr<Expr> m_expr;
 	PrimitiveType m_type;
 
-	Location m_loc;
-
 public:
 	CastExpr(Expr expr, PrimitiveType type);
 

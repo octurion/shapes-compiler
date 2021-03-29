@@ -127,9 +127,10 @@ class BoundType
 
 public:
 	BoundType() = default;
-	BoundType(Identifier class_name, std::vector<Pool> params)
+	BoundType(Identifier class_name, std::vector<Pool> params, const Location& loc)
 		: m_class_name(std::move(class_name))
 		, m_params(std::move(params))
+		, m_loc(loc)
 	{}
 
 	const Identifier& class_name() const { return m_class_name; }
