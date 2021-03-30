@@ -152,7 +152,7 @@ public:
 			return m_value;
 		}
 
-		auto* insn = m_builder->CreateLoad(m_value);
+		auto* insn = m_builder->CreateLoad(m_value, m_value->getName());
 		if (m_tbaa_metadata != nullptr) {
 			insn->setMetadata(llvm::LLVMContext::MD_tbaa, m_tbaa_metadata);
 		}
@@ -1007,21 +1007,21 @@ void Codegen::Impl::generate_llvm_function_decls()
 
 			llvm::IRBuilder<> builder(bb_entry);
 
-			size_ptr = builder.CreateStructGEP(as_pool->pool_type, pool_ptr, 0);
+			size_ptr = builder.CreateStructGEP(as_pool->pool_type, pool_ptr, 0, "size_ptr");
 			const auto* pool_layout = data_layout.getStructLayout(as_pool->pool_type);
 			auto* size_tbaa_node = tbaa_builder.createTBAAStructTagNode(
 				as_pool->pool_tbaa_type,
 				m_tbaa_intptr,
 				pool_layout->getElementOffset(0));
-			size = builder.CreateLoad(size_ptr);
+			size = builder.CreateLoad(size_ptr, "size");
 			size->setMetadata(llvm::LLVMContext::MD_tbaa, size_tbaa_node);
 
-			capacity_ptr = builder.CreateStructGEP(as_pool->pool_type, pool_ptr, 1);
+			capacity_ptr = builder.CreateStructGEP(as_pool->pool_type, pool_ptr, 1, "capacity_ptr");
 			auto* capacity_tbaa_node = tbaa_builder.createTBAAStructTagNode(
 				as_pool->pool_tbaa_type,
 				m_tbaa_intptr,
 				pool_layout->getElementOffset(1));
-			capacity = builder.CreateLoad(capacity_ptr);
+			capacity = builder.CreateLoad(capacity_ptr, "capacity");
 			capacity->setMetadata(llvm::LLVMContext::MD_tbaa, capacity_tbaa_node);
 
 			auto* filled = builder.CreateICmpEQ(size, capacity);
@@ -1030,13 +1030,13 @@ void Codegen::Impl::generate_llvm_function_decls()
 
 			builder.SetInsertPoint(bb_call_realloc);
 
-			auto* new_cap = builder.CreateShl(capacity, 1);
+			auto* new_cap = builder.CreateShl(capacity, 1, "capacity_2x");
 			auto* new_cap_nonzero = builder.CreateICmpNE(
 				new_cap, llvm::ConstantInt::get(m_intptr, 0));
 			new_cap = builder.CreateSelect(
 				new_cap_nonzero,
 				new_cap,
-				llvm::ConstantInt::get(m_intptr, 1));
+				llvm::ConstantInt::get(m_intptr, 1), "new_capacity");
 			auto* store_cap_insn = builder.CreateStore(new_cap, capacity_ptr);
 			store_cap_insn->setMetadata(llvm::LLVMContext::MD_tbaa, capacity_tbaa_node);
 
@@ -1058,9 +1058,10 @@ void Codegen::Impl::generate_llvm_function_decls()
 					builder.CreatePointerCast(old_ptr, m_i8->getPointerTo());
 
 				const auto& data_layout = m_mod->getDataLayout();
+				const auto* cluster_layout = data_layout.getStructLayout(cluster_type);
 				auto* cluster_size = llvm::ConstantInt::get(
 					data_layout.getIntPtrType(m_ctx),
-					data_layout.getTypeAllocSize(m_intptr));
+					cluster_layout->getSizeInBytes());
 
 				auto* new_size = builder.CreateMul(new_cap, cluster_size);
 				auto* realloc = builder.CreateCall(
@@ -1075,7 +1076,7 @@ void Codegen::Impl::generate_llvm_function_decls()
 			builder.SetInsertPoint(bb_alloc);
 			auto* new_idx = size;
 			auto* store_size_insn = builder.CreateStore(
-				builder.CreateAdd(size, llvm::ConstantInt::get(m_intptr, 1)),
+				builder.CreateNUWAdd(size, llvm::ConstantInt::get(m_intptr, 1)),
 				builder.CreateStructGEP(as_pool->pool_type, pool_ptr, 0));
 			store_size_insn->setMetadata(llvm::LLVMContext::MD_tbaa, size_tbaa_node);
 
@@ -1357,7 +1358,8 @@ void Codegen::Impl::visit(const Ast::Stmt& stmt, MethodCodegenState& state)
 
 void Codegen::Impl::visit(const Ast::If& e, MethodCodegenState& state)
 {
-	auto cond_value = visit(e.cond(), state).to_rvalue();
+	auto* cond_value = visit(e.cond(), state).to_rvalue();
+	cond_value->setName("cond");
 
 	auto* then_bb = llvm::BasicBlock::Create(m_ctx, "if_then", state.llvm_func);
 	auto* else_bb = llvm::BasicBlock::Create(m_ctx, "if_else", state.llvm_func);
@@ -1398,6 +1400,7 @@ void Codegen::Impl::visit(const Ast::While& e, MethodCodegenState& state)
 
 	auto cond = visit(e.cond(), state);
 	auto* cond_value = cond.to_rvalue();
+	cond_value->setName("cond");
 
 	state.builder->CreateCondBr(cond_value, body_bb, exit_bb);
 
@@ -1422,6 +1425,9 @@ void Codegen::Impl::visit(const Ast::ForeachRange& e, MethodCodegenState& state)
 	auto* range_begin = visit(e.range_begin(), state).to_rvalue();
 	auto* range_end = visit(e.range_end(), state).to_rvalue();
 
+	range_begin->setName("range_begin");
+	range_end->setName("range_end");
+
 	auto* var = state.local_vars[&e.var()];
 	assert_msg(var != nullptr, "No LLVM variable for loop");
 
@@ -1432,8 +1438,8 @@ void Codegen::Impl::visit(const Ast::ForeachRange& e, MethodCodegenState& state)
 	auto* update_bb = llvm::BasicBlock::Create(m_ctx, "foreach_range_update", state.llvm_func);
 
 	auto* initial_cond = is_signed
-		? state.builder->CreateICmpSLT(range_begin, range_end)
-		: state.builder->CreateICmpULT(range_begin, range_end);
+		? state.builder->CreateICmpSLT(range_begin, range_end, "foreach_initial_cond")
+		: state.builder->CreateICmpULT(range_begin, range_end, "foreach_initial_cond");
 	state.builder->CreateCondBr(initial_cond, init_bb, exit_bb);
 
 	state.builder->SetInsertPoint(init_bb);
@@ -1443,8 +1449,8 @@ void Codegen::Impl::visit(const Ast::ForeachRange& e, MethodCodegenState& state)
 	state.builder->SetInsertPoint(cond_bb);
 	auto* var_value = state.builder->CreateLoad(var);
 	auto* cond = is_signed
-		? state.builder->CreateICmpSLT(var_value, range_end)
-		: state.builder->CreateICmpULT(var_value, range_end);
+		? state.builder->CreateICmpSLT(var_value, range_end, "foreach_cond")
+		: state.builder->CreateICmpULT(var_value, range_end, "foreach_cond");
 	state.builder->CreateCondBr(cond, body_bb, exit_bb);
 
 	LoopStackEntry entry;
@@ -1462,8 +1468,8 @@ void Codegen::Impl::visit(const Ast::ForeachRange& e, MethodCodegenState& state)
 	state.builder->SetInsertPoint(update_bb);
 	auto* const_one = llvm::ConstantInt::get(var_value->getType(), 1);
 	auto* new_var_value = is_signed
-		? state.builder->CreateNSWAdd(var_value, const_one)
-		: state.builder->CreateNUWAdd(var_value, const_one);
+		? state.builder->CreateNSWAdd(var_value, const_one, "new_var_value")
+		: state.builder->CreateNUWAdd(var_value, const_one, "new_var_value");
 	state.builder->CreateStore(new_var_value, var);
 	state.builder->CreateBr(cond_bb);
 
@@ -1492,10 +1498,10 @@ void Codegen::Impl::visit(const Ast::ForeachPool& e, MethodCodegenState& state)
 
 	state.builder->SetInsertPoint(cond_bb);
 
-	auto* var_value = state.builder->CreateLoad(var);
-	auto* size_ptr = state.builder->CreateStructGEP(pool, 0);
-	auto* size = state.builder->CreateLoad(size_ptr);
-	auto* cond = state.builder->CreateICmpULT(var_value, size);
+	auto* var_value = state.builder->CreateLoad(var, var->getName());
+	auto* size_ptr = state.builder->CreateStructGEP(pool, 0, "size_ptr");
+	auto* size = state.builder->CreateLoad(size_ptr, "size");
+	auto* cond = state.builder->CreateICmpULT(var_value, size, "initial_cond");
 
 	state.builder->CreateCondBr(cond, body_bb, exit_bb);
 
@@ -1512,7 +1518,7 @@ void Codegen::Impl::visit(const Ast::ForeachPool& e, MethodCodegenState& state)
 
 	state.builder->SetInsertPoint(update_bb);
 	auto* const_one = llvm::ConstantInt::get(var_value->getType(), 1);
-	auto* new_var_value = state.builder->CreateNUWAdd(var_value, const_one);
+	auto* new_var_value = state.builder->CreateNUWAdd(var_value, const_one, "new_idx");
 	state.builder->CreateStore(new_var_value, var);
 	state.builder->CreateBr(cond_bb);
 
