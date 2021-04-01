@@ -18,8 +18,8 @@ class Door<p1, p2>
                 let dy: f32;
                 let dist: f32;
 
-                dx = (d.x - c.x);
-                dy = (d.y - c.y);
+                dx = d.x - c.x;
+                dy = d.y - c.y;
 
                 dist = dx * dx + dy * dy;
                 if dist > 1f32 || d.allegiance != c.allegiance {

@@ -3,8 +3,6 @@
 
 #include <llvm/ADT/None.h>
 
-#include <llvm/Analysis/TypeBasedAliasAnalysis.h>
-
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/ExecutionEngine/GenericValue.h>
 #include <llvm/ExecutionEngine/Interpreter.h>
@@ -13,15 +11,12 @@
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/IRBuilder.h>
-#include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/MDBuilder.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/IRPrintingPasses.h>
 #include <llvm/IR/Type.h>
 #include <llvm/IR/Verifier.h>
-
-#include <llvm/Passes/PassBuilder.h>
 
 #include <llvm/Support/FileSystem.h>
 #include <llvm/Support/TargetRegistry.h>
@@ -956,12 +951,14 @@ void Codegen::Impl::generate_llvm_function_decls()
 			{
 				auto* bb = llvm::BasicBlock::Create(m_ctx, "entry", as_pool->pool_free);
 				llvm::IRBuilder<> builder(bb);
+				llvm::MDBuilder tbaa_builder(m_ctx);
 
 				assert_msg(
 					!as_pool->pool_free->arg_empty(),
 					"Pool destructor has no arguments?");
 
 				auto* pool_ptr = as_pool->pool_free->arg_begin();
+				const auto* pool_layout = data_layout.getStructLayout(as_pool->pool_type);
 
 				for (size_t i = 0; i < as_pool->cluster_types.size(); i++) {
 					auto* cluster_type = as_pool->cluster_types[i];
@@ -970,7 +967,14 @@ void Codegen::Impl::generate_llvm_function_decls()
 						builder.CreateStructGEP(
 							as_pool->pool_type, pool_ptr, i + 2);
 					auto* cluster_ptr = builder.CreateLoad(
-						cluster_ptr_type, cluster_ptr_field);
+						cluster_ptr_type, cluster_ptr_field, "cluster_ptr");
+					auto* cluster_tbaa_node = tbaa_builder.createTBAAStructTagNode(
+						as_pool->pool_tbaa_type,
+						as_pool->cluster_tbaa_ptr_types[i],
+						pool_layout->getElementOffset(i + 2));
+					cluster_ptr->setMetadata(
+						llvm::LLVMContext::MD_tbaa, cluster_tbaa_node);
+
 					auto* cluster_ptr_cast = builder.CreatePointerCast(
 						cluster_ptr, m_i8->getPointerTo());
 					builder.CreateCall(m_free_type, m_free, {cluster_ptr_cast});
@@ -1480,10 +1484,24 @@ void Codegen::Impl::visit(const Ast::ForeachRange& e, MethodCodegenState& state)
 
 void Codegen::Impl::visit(const Ast::ForeachPool& e, MethodCodegenState& state)
 {
-	auto* pool = state.local_pools[&e.pool()];
-	if (pool == nullptr) {
+	const auto& pool_type = e.pool().type();
+	if (mpark::holds_alternative<Ast::NoneType>(pool_type)) {
 		return;
 	}
+	const auto* as_layout = mpark::get_if<Ast::LayoutType>(&pool_type);
+	const auto* as_bound = mpark::get_if<Ast::BoundType>(&pool_type);
+
+	auto pool_spec = as_layout
+		? state.spec.specialize_type(*as_layout)
+		: state.spec.specialize_type(*as_bound);
+	const auto& type_info = m_specialization_info[pool_spec].type_info;
+	const auto* pool_info = mpark::get_if<PoolSpecializationInfo>(&type_info);
+	if (pool_info == nullptr) {
+		return;
+	}
+
+	auto* pool = state.local_pools[&e.pool()];
+	assert_msg(pool != nullptr, "Missing pool variable?");
 
 	auto* var = state.local_vars[&e.var()];
 	assert_msg(var != nullptr, "No LLVM variable for loop");
@@ -1498,9 +1516,20 @@ void Codegen::Impl::visit(const Ast::ForeachPool& e, MethodCodegenState& state)
 
 	state.builder->SetInsertPoint(cond_bb);
 
+	llvm::MDBuilder tbaa_builder(m_ctx);
+
+	const auto& data_layout = m_mod->getDataLayout();
+	const auto* pool_layout = data_layout.getStructLayout(pool_info->pool_type);
+	auto* size_tbaa_node = tbaa_builder.createTBAAStructTagNode(
+		pool_info->pool_tbaa_type,
+		m_tbaa_intptr,
+		pool_layout->getElementOffset(0));
+
 	auto* var_value = state.builder->CreateLoad(var, var->getName());
 	auto* size_ptr = state.builder->CreateStructGEP(pool, 0, "size_ptr");
 	auto* size = state.builder->CreateLoad(size_ptr, "size");
+	size->setMetadata(llvm::LLVMContext::MD_tbaa, size_tbaa_node);
+
 	auto* cond = state.builder->CreateICmpULT(var_value, size, "initial_cond");
 
 	state.builder->CreateCondBr(cond, body_bb, exit_bb);
@@ -2101,7 +2130,7 @@ bool Codegen::Impl::ir(const Ast::Program& ast)
 		llvm::TargetOptions(),
 		llvm::None,
 		llvm::None,
-		llvm::CodeGenOpt::Aggressive);
+		llvm::CodeGenOpt::None);
 
 	m_void = llvm::Type::getVoidTy(m_ctx);
 	m_null = m_void->getPointerTo();
@@ -2176,48 +2205,17 @@ bool Codegen::Impl::ir(const Ast::Program& ast)
 	generate_llvm_function_decls();
 	generate_llvm_functions();
 
-	llvm::verifyModule(*m_mod, &llvm::errs());
 	return true;
 }
 
 bool Codegen::Impl::emit(const char* filename)
 {
-	auto opt_level = llvm::PassBuilder::OptimizationLevel::O3;
+	llvm::verifyModule(*m_mod, &llvm::errs());
 
-	llvm::PassBuilder pass_builder(m_target_machine);
+	std::error_code ec;
+	llvm::raw_fd_ostream os(filename, ec);
 
-	llvm::FunctionAnalysisManager fam;
-	llvm::LoopAnalysisManager lam;
-	llvm::CGSCCAnalysisManager cam;
-	llvm::ModuleAnalysisManager mam;
-
-	fam.registerPass([&] { return pass_builder.buildDefaultAAPipeline(); });
-
-	pass_builder.registerFunctionAnalyses(fam);
-	pass_builder.registerLoopAnalyses(lam);
-	pass_builder.registerCGSCCAnalyses(cam);
-	pass_builder.registerModuleAnalyses(mam);
-
-	pass_builder.crossRegisterProxies(lam, fam, cam, mam);
-
-	auto mod_pass_manager_first =
-		pass_builder.buildThinLTOPreLinkDefaultPipeline(opt_level);
-	mod_pass_manager_first.run(*m_mod, mam);
-
-	auto mod_pass_manager_second =
-		pass_builder.buildPerModuleDefaultPipeline(opt_level);
-	mod_pass_manager_second.addPass(llvm::PrintModulePass(llvm::errs()));
-	mod_pass_manager_second.run(*m_mod, mam);
-
-	std::error_code EC;
-	llvm::raw_fd_ostream dest(filename, EC, llvm::sys::fs::OF_None);
-
-	llvm::legacy::PassManager legacy_pm;
-
-	m_target_machine->addPassesToEmitFile(
-		legacy_pm, dest, nullptr, llvm::TargetMachine::CGFT_ObjectFile);
-	legacy_pm.run(*m_mod);
-
+	os << *m_mod;
 	return true;
 }
 
