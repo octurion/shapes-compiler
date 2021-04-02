@@ -8,12 +8,13 @@ class Door<p1, p2>
     allegiance: i8;
     open: bool;
 
-    fn run(): i32 {
-        let opened: i32;
-        opened = 0;
-
+    fn run() {
         foreach d: p1 {
             foreach c: p2 {
+                if d.allegiance != c.allegiance {
+                    continue;
+                }
+
                 let dx: f32;
                 let dy: f32;
                 let dist: f32;
@@ -22,17 +23,14 @@ class Door<p1, p2>
                 dy = d.y - c.y;
 
                 dist = dx * dx + dy * dy;
-                if dist > 1f32 || d.allegiance != c.allegiance {
+                if dist > 1f32 {
                     continue;
                 }
 
                 d.open = true;
-                opened += 1;
                 break;
             }
         }
-
-        return opened;
     }
 
     fn doors_open(): i32 {

@@ -1160,7 +1160,7 @@ public:
 			return;
 		}
 
-		m_blocks.add<Break>();
+		m_blocks.add<Continue>();
 	}
 
 	void operator()(const Cst::Return& e) {
