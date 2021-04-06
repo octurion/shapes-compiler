@@ -23,6 +23,7 @@ class Door<p1, p2>
                 dy = d.y - c.y;
 
                 dist = dx * dx + dy * dy;
+
                 if dist > 1f32 {
                     continue;
                 }

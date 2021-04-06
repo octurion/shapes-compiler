@@ -3,6 +3,8 @@
 
 #include <llvm/ADT/None.h>
 
+#include <llvm/Analysis/TypeBasedAliasAnalysis.h>
+
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/ExecutionEngine/GenericValue.h>
 #include <llvm/ExecutionEngine/Interpreter.h>
@@ -11,12 +13,14 @@
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/MDBuilder.h>
 #include <llvm/IR/Module.h>
-#include <llvm/IR/IRPrintingPasses.h>
 #include <llvm/IR/Type.h>
 #include <llvm/IR/Verifier.h>
+
+#include <llvm/Passes/PassBuilder.h>
 
 #include <llvm/Support/FileSystem.h>
 #include <llvm/Support/TargetRegistry.h>
@@ -147,7 +151,7 @@ public:
 			return m_value;
 		}
 
-		auto* insn = m_builder->CreateLoad(m_value, m_value->getName());
+		auto* insn = m_builder->CreateLoad(m_value);
 		if (m_tbaa_metadata != nullptr) {
 			insn->setMetadata(llvm::LLVMContext::MD_tbaa, m_tbaa_metadata);
 		}
@@ -282,7 +286,7 @@ class Codegen::Impl
 
 public:
 	bool ir(const Ast::Program& ast);
-	bool emit(const char* filename);
+	bool emit(const char* llvm_bitcode_filename, const char* object_filename);
 
 	llvm::Function* find_method(const ClassSpecialization& spec, const Ast::Method& m) const;
 	llvm::Function* constructor(const ClassSpecialization& spec) const;
@@ -1525,7 +1529,7 @@ void Codegen::Impl::visit(const Ast::ForeachPool& e, MethodCodegenState& state)
 		m_tbaa_intptr,
 		pool_layout->getElementOffset(0));
 
-	auto* var_value = state.builder->CreateLoad(var, var->getName());
+	auto* var_value = state.builder->CreateLoad(var);
 	auto* size_ptr = state.builder->CreateStructGEP(pool, 0, "size_ptr");
 	auto* size = state.builder->CreateLoad(size_ptr, "size");
 	size->setMetadata(llvm::LLVMContext::MD_tbaa, size_tbaa_node);
@@ -2116,7 +2120,7 @@ bool Codegen::Impl::ir(const Ast::Program& ast)
 {
 	Codegen::Impl state;
 	std::string error;
-	m_target = llvm::TargetRegistry::lookupTarget("x86_64-unknown-linux-gnu", error);
+	m_target = llvm::TargetRegistry::lookupTarget("x86_64-pc-linux-gnu", error);
 
 	if (m_target == nullptr) {
 		fprintf(stderr, "Error while creating LLVM target machine: %s", error.c_str());
@@ -2124,13 +2128,13 @@ bool Codegen::Impl::ir(const Ast::Program& ast)
 	}
 
 	m_target_machine = m_target->createTargetMachine(
-		"x86_64-unknown-linux-gnu",
+		"x86_64-pc-linux-gnu",
 		"generic",
 		"",
 		llvm::TargetOptions(),
-		llvm::None,
-		llvm::None,
-		llvm::CodeGenOpt::None);
+		llvm::Reloc::PIC_,
+		llvm::CodeModel::Small,
+		llvm::CodeGenOpt::Aggressive);
 
 	m_void = llvm::Type::getVoidTy(m_ctx);
 	m_null = m_void->getPointerTo();
@@ -2146,6 +2150,7 @@ bool Codegen::Impl::ir(const Ast::Program& ast)
 
 	m_mod.reset(new llvm::Module("shapes", m_ctx));
 	m_mod->setDataLayout(m_target_machine->createDataLayout());
+	m_mod->setTargetTriple("x86_64-pc-linux-gnu");
 
 	const auto& data_layout = m_mod->getDataLayout();
 	m_intptr = data_layout.getIntPtrType(m_ctx);
@@ -2205,17 +2210,59 @@ bool Codegen::Impl::ir(const Ast::Program& ast)
 	generate_llvm_function_decls();
 	generate_llvm_functions();
 
+	llvm::verifyModule(*m_mod, &llvm::errs());
+
 	return true;
 }
 
-bool Codegen::Impl::emit(const char* filename)
+bool Codegen::Impl::emit(
+	const char* llvm_bitcode_filename, const char* object_filename)
 {
-	llvm::verifyModule(*m_mod, &llvm::errs());
+	auto opt_level = llvm::PassBuilder::OptimizationLevel::O3;
 
-	std::error_code ec;
-	llvm::raw_fd_ostream os(filename, ec);
+	llvm::PassBuilder pass_builder(m_target_machine);
 
-	os << *m_mod;
+	llvm::FunctionAnalysisManager fam;
+	llvm::LoopAnalysisManager lam;
+	llvm::CGSCCAnalysisManager cam;
+	llvm::ModuleAnalysisManager mam;
+
+	fam.registerPass([&] { return pass_builder.buildDefaultAAPipeline(); });
+
+	pass_builder.registerFunctionAnalyses(fam);
+	pass_builder.registerLoopAnalyses(lam);
+	pass_builder.registerCGSCCAnalyses(cam);
+	pass_builder.registerModuleAnalyses(mam);
+
+	pass_builder.crossRegisterProxies(lam, fam, cam, mam);
+
+	auto func_simplification_pass = llvm::createModuleToFunctionPassAdaptor(
+		pass_builder.buildFunctionSimplificationPipeline(
+			opt_level, llvm::PassBuilder::ThinLTOPhase::None));
+	llvm::ModulePassManager func_simplification_manager;
+	func_simplification_manager.addPass(std::move(func_simplification_pass));
+	func_simplification_manager.run(*m_mod, mam);
+
+	auto mod_simplification_manager =
+		pass_builder.buildModuleSimplificationPipeline(
+			opt_level, llvm::PassBuilder::ThinLTOPhase::None);
+	mod_simplification_manager.run(*m_mod, mam);
+
+	auto mod_opt_manager =
+		pass_builder.buildModuleOptimizationPipeline(opt_level);
+	mod_opt_manager.run(*m_mod, mam);
+
+	std::error_code EC;
+	llvm::raw_fd_ostream object_code(object_filename, EC, llvm::sys::fs::OF_None);
+	llvm::raw_fd_ostream llvm_bitcode(llvm_bitcode_filename, EC, llvm::sys::fs::OF_None);
+
+	llvm_bitcode << *m_mod;
+
+	llvm::legacy::PassManager legacy_pm;
+	m_target_machine->addPassesToEmitFile(
+		legacy_pm, object_code, nullptr, llvm::TargetMachine::CGFT_ObjectFile);
+	legacy_pm.run(*m_mod);
+
 	return true;
 }
 
@@ -2283,9 +2330,9 @@ bool Codegen::ir(const Ast::Program& ast)
 	return m_impl->ir(ast);
 }
 
-bool Codegen::emit(const char* filename)
+bool Codegen::emit(const char* llvm_bitcode_filename, const char* object_filename)
 {
-	return m_impl->emit(filename);
+	return m_impl->emit(llvm_bitcode_filename, object_filename);
 }
 
 std::unique_ptr<llvm::Module> Codegen::Impl::get_module()
