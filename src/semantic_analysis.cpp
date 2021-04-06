@@ -1160,7 +1160,7 @@ public:
 			return;
 		}
 
-		m_blocks.add<Break>();
+		m_blocks.add<Continue>();
 	}
 
 	void operator()(const Cst::Return& e) {
@@ -1425,8 +1425,8 @@ public:
 		case BinOp::LT:
 		case BinOp::LE: {
 			const auto* lhs_primitive = mpark::get_if<PrimitiveType>(&lhs_type);
-			if (lhs_primitive == nullptr || is_floating_point(*lhs_primitive)) {
-				m_errors.add<ExpectedIntegerType>(
+			if (lhs_primitive == nullptr) {
+				m_errors.add<ExpectedPrimitiveType>(
 					location(e.lhs()), to_string(lhs_type));
 				return InvalidExpr();
 			}

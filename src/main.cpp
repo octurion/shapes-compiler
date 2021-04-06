@@ -425,7 +425,7 @@ int main(int argc, char** argv)
 	Ir::init_llvm();
 	Ir::Codegen codegen;
 	codegen.ir(ast);
-	codegen.emit("shapes.o");
+	codegen.emit("shapes.ll", "shapes.o");
 
 	return EXIT_SUCCESS;
 }

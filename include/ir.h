@@ -97,7 +97,7 @@ public:
 	~Codegen();
 
 	bool ir(const Ast::Program& ast);
-	bool emit(const char* filename);
+	bool emit(const char* llvm_bitcode_filename, const char* object_filename);
 
 	llvm::Function* find_method(const ClassSpecialization& spec, const Ast::Method& m) const;
 	llvm::Function* constructor(const ClassSpecialization& spec) const;

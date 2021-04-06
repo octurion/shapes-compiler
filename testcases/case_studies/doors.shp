@@ -1,0 +1,62 @@
+class Door<p1, p2>
+    where p1: [Door<p1, p2>],
+          p2: [Character<p2, p1>]
+{
+    x: f32;
+    y: f32;
+
+    allegiance: i8;
+    open: bool;
+
+    fn run() {
+        foreach d: p1 {
+            foreach c: p2 {
+                if d.allegiance != c.allegiance {
+                    continue;
+                }
+
+                let dx: f32;
+                let dy: f32;
+                let dist: f32;
+
+                dx = d.x - c.x;
+                dy = d.y - c.y;
+
+                dist = dx * dx + dy * dy;
+
+                if dist > 1f32 {
+                    continue;
+                }
+
+                d.open = true;
+                break;
+            }
+        }
+    }
+
+    fn doors_open(): i32 {
+        let x: i32;
+
+        x = 0;
+        foreach d: p1 {
+            if d.open {
+                x += 1;
+            }
+        }
+
+        return x;
+    }
+}
+
+class Character<p1, p2>
+    where p1: [Character<p1, p2>],
+          p2: [Door<p2, p1>]
+{
+    x: f32;
+    y: f32;
+
+    allegiance: i8;
+}
+
+layout LD: Door = rec{x, y, allegiance, open};
+layout LC: Character = rec{x, y, allegiance};

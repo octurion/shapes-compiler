@@ -17,7 +17,6 @@
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/MDBuilder.h>
 #include <llvm/IR/Module.h>
-#include <llvm/IR/IRPrintingPasses.h>
 #include <llvm/IR/Type.h>
 #include <llvm/IR/Verifier.h>
 
@@ -287,7 +286,7 @@ class Codegen::Impl
 
 public:
 	bool ir(const Ast::Program& ast);
-	bool emit(const char* filename);
+	bool emit(const char* llvm_bitcode_filename, const char* object_filename);
 
 	llvm::Function* find_method(const ClassSpecialization& spec, const Ast::Method& m) const;
 	llvm::Function* constructor(const ClassSpecialization& spec) const;
@@ -409,6 +408,14 @@ void init_llvm()
 	LLVMInitializeX86TargetMC();
 	LLVMInitializeX86AsmParser();
 	LLVMInitializeX86AsmPrinter();
+
+	auto* pass_registry = llvm::PassRegistry::getPassRegistry();
+
+	llvm::initializeCore(*pass_registry);
+	llvm::initializeCodeGen(*pass_registry);
+	llvm::initializeLoopStrengthReducePass(*pass_registry);
+
+	llvm::initializeGlobalISel(*pass_registry);
 }
 
 void Codegen::Impl::generate_specializations_impl(
@@ -948,12 +955,14 @@ void Codegen::Impl::generate_llvm_function_decls()
 			{
 				auto* bb = llvm::BasicBlock::Create(m_ctx, "entry", as_pool->pool_free);
 				llvm::IRBuilder<> builder(bb);
+				llvm::MDBuilder tbaa_builder(m_ctx);
 
 				assert_msg(
 					!as_pool->pool_free->arg_empty(),
 					"Pool destructor has no arguments?");
 
 				auto* pool_ptr = as_pool->pool_free->arg_begin();
+				const auto* pool_layout = data_layout.getStructLayout(as_pool->pool_type);
 
 				for (size_t i = 0; i < as_pool->cluster_types.size(); i++) {
 					auto* cluster_type = as_pool->cluster_types[i];
@@ -962,7 +971,14 @@ void Codegen::Impl::generate_llvm_function_decls()
 						builder.CreateStructGEP(
 							as_pool->pool_type, pool_ptr, i + 2);
 					auto* cluster_ptr = builder.CreateLoad(
-						cluster_ptr_type, cluster_ptr_field);
+						cluster_ptr_type, cluster_ptr_field, "cluster_ptr");
+					auto* cluster_tbaa_node = tbaa_builder.createTBAAStructTagNode(
+						as_pool->pool_tbaa_type,
+						as_pool->cluster_tbaa_ptr_types[i],
+						pool_layout->getElementOffset(i + 2));
+					cluster_ptr->setMetadata(
+						llvm::LLVMContext::MD_tbaa, cluster_tbaa_node);
+
 					auto* cluster_ptr_cast = builder.CreatePointerCast(
 						cluster_ptr, m_i8->getPointerTo());
 					builder.CreateCall(m_free_type, m_free, {cluster_ptr_cast});
@@ -999,21 +1015,21 @@ void Codegen::Impl::generate_llvm_function_decls()
 
 			llvm::IRBuilder<> builder(bb_entry);
 
-			size_ptr = builder.CreateStructGEP(as_pool->pool_type, pool_ptr, 0);
+			size_ptr = builder.CreateStructGEP(as_pool->pool_type, pool_ptr, 0, "size_ptr");
 			const auto* pool_layout = data_layout.getStructLayout(as_pool->pool_type);
 			auto* size_tbaa_node = tbaa_builder.createTBAAStructTagNode(
 				as_pool->pool_tbaa_type,
 				m_tbaa_intptr,
 				pool_layout->getElementOffset(0));
-			size = builder.CreateLoad(size_ptr);
+			size = builder.CreateLoad(size_ptr, "size");
 			size->setMetadata(llvm::LLVMContext::MD_tbaa, size_tbaa_node);
 
-			capacity_ptr = builder.CreateStructGEP(as_pool->pool_type, pool_ptr, 1);
+			capacity_ptr = builder.CreateStructGEP(as_pool->pool_type, pool_ptr, 1, "capacity_ptr");
 			auto* capacity_tbaa_node = tbaa_builder.createTBAAStructTagNode(
 				as_pool->pool_tbaa_type,
 				m_tbaa_intptr,
 				pool_layout->getElementOffset(1));
-			capacity = builder.CreateLoad(capacity_ptr);
+			capacity = builder.CreateLoad(capacity_ptr, "capacity");
 			capacity->setMetadata(llvm::LLVMContext::MD_tbaa, capacity_tbaa_node);
 
 			auto* filled = builder.CreateICmpEQ(size, capacity);
@@ -1022,13 +1038,13 @@ void Codegen::Impl::generate_llvm_function_decls()
 
 			builder.SetInsertPoint(bb_call_realloc);
 
-			auto* new_cap = builder.CreateShl(capacity, 1);
+			auto* new_cap = builder.CreateShl(capacity, 1, "capacity_2x");
 			auto* new_cap_nonzero = builder.CreateICmpNE(
 				new_cap, llvm::ConstantInt::get(m_intptr, 0));
 			new_cap = builder.CreateSelect(
 				new_cap_nonzero,
 				new_cap,
-				llvm::ConstantInt::get(m_intptr, 1));
+				llvm::ConstantInt::get(m_intptr, 1), "new_capacity");
 			auto* store_cap_insn = builder.CreateStore(new_cap, capacity_ptr);
 			store_cap_insn->setMetadata(llvm::LLVMContext::MD_tbaa, capacity_tbaa_node);
 
@@ -1050,9 +1066,10 @@ void Codegen::Impl::generate_llvm_function_decls()
 					builder.CreatePointerCast(old_ptr, m_i8->getPointerTo());
 
 				const auto& data_layout = m_mod->getDataLayout();
+				const auto* cluster_layout = data_layout.getStructLayout(cluster_type);
 				auto* cluster_size = llvm::ConstantInt::get(
 					data_layout.getIntPtrType(m_ctx),
-					data_layout.getTypeAllocSize(m_intptr));
+					cluster_layout->getSizeInBytes());
 
 				auto* new_size = builder.CreateMul(new_cap, cluster_size);
 				auto* realloc = builder.CreateCall(
@@ -1067,7 +1084,7 @@ void Codegen::Impl::generate_llvm_function_decls()
 			builder.SetInsertPoint(bb_alloc);
 			auto* new_idx = size;
 			auto* store_size_insn = builder.CreateStore(
-				builder.CreateAdd(size, llvm::ConstantInt::get(m_intptr, 1)),
+				builder.CreateNUWAdd(size, llvm::ConstantInt::get(m_intptr, 1)),
 				builder.CreateStructGEP(as_pool->pool_type, pool_ptr, 0));
 			store_size_insn->setMetadata(llvm::LLVMContext::MD_tbaa, size_tbaa_node);
 
@@ -1349,7 +1366,8 @@ void Codegen::Impl::visit(const Ast::Stmt& stmt, MethodCodegenState& state)
 
 void Codegen::Impl::visit(const Ast::If& e, MethodCodegenState& state)
 {
-	auto cond_value = visit(e.cond(), state).to_rvalue();
+	auto* cond_value = visit(e.cond(), state).to_rvalue();
+	cond_value->setName("cond");
 
 	auto* then_bb = llvm::BasicBlock::Create(m_ctx, "if_then", state.llvm_func);
 	auto* else_bb = llvm::BasicBlock::Create(m_ctx, "if_else", state.llvm_func);
@@ -1390,6 +1408,7 @@ void Codegen::Impl::visit(const Ast::While& e, MethodCodegenState& state)
 
 	auto cond = visit(e.cond(), state);
 	auto* cond_value = cond.to_rvalue();
+	cond_value->setName("cond");
 
 	state.builder->CreateCondBr(cond_value, body_bb, exit_bb);
 
@@ -1414,6 +1433,9 @@ void Codegen::Impl::visit(const Ast::ForeachRange& e, MethodCodegenState& state)
 	auto* range_begin = visit(e.range_begin(), state).to_rvalue();
 	auto* range_end = visit(e.range_end(), state).to_rvalue();
 
+	range_begin->setName("range_begin");
+	range_end->setName("range_end");
+
 	auto* var = state.local_vars[&e.var()];
 	assert_msg(var != nullptr, "No LLVM variable for loop");
 
@@ -1424,8 +1446,8 @@ void Codegen::Impl::visit(const Ast::ForeachRange& e, MethodCodegenState& state)
 	auto* update_bb = llvm::BasicBlock::Create(m_ctx, "foreach_range_update", state.llvm_func);
 
 	auto* initial_cond = is_signed
-		? state.builder->CreateICmpSLT(range_begin, range_end)
-		: state.builder->CreateICmpULT(range_begin, range_end);
+		? state.builder->CreateICmpSLT(range_begin, range_end, "foreach_initial_cond")
+		: state.builder->CreateICmpULT(range_begin, range_end, "foreach_initial_cond");
 	state.builder->CreateCondBr(initial_cond, init_bb, exit_bb);
 
 	state.builder->SetInsertPoint(init_bb);
@@ -1435,8 +1457,8 @@ void Codegen::Impl::visit(const Ast::ForeachRange& e, MethodCodegenState& state)
 	state.builder->SetInsertPoint(cond_bb);
 	auto* var_value = state.builder->CreateLoad(var);
 	auto* cond = is_signed
-		? state.builder->CreateICmpSLT(var_value, range_end)
-		: state.builder->CreateICmpULT(var_value, range_end);
+		? state.builder->CreateICmpSLT(var_value, range_end, "foreach_cond")
+		: state.builder->CreateICmpULT(var_value, range_end, "foreach_cond");
 	state.builder->CreateCondBr(cond, body_bb, exit_bb);
 
 	LoopStackEntry entry;
@@ -1454,8 +1476,8 @@ void Codegen::Impl::visit(const Ast::ForeachRange& e, MethodCodegenState& state)
 	state.builder->SetInsertPoint(update_bb);
 	auto* const_one = llvm::ConstantInt::get(var_value->getType(), 1);
 	auto* new_var_value = is_signed
-		? state.builder->CreateNSWAdd(var_value, const_one)
-		: state.builder->CreateNUWAdd(var_value, const_one);
+		? state.builder->CreateNSWAdd(var_value, const_one, "new_var_value")
+		: state.builder->CreateNUWAdd(var_value, const_one, "new_var_value");
 	state.builder->CreateStore(new_var_value, var);
 	state.builder->CreateBr(cond_bb);
 
@@ -1466,10 +1488,24 @@ void Codegen::Impl::visit(const Ast::ForeachRange& e, MethodCodegenState& state)
 
 void Codegen::Impl::visit(const Ast::ForeachPool& e, MethodCodegenState& state)
 {
-	auto* pool = state.local_pools[&e.pool()];
-	if (pool == nullptr) {
+	const auto& pool_type = e.pool().type();
+	if (mpark::holds_alternative<Ast::NoneType>(pool_type)) {
 		return;
 	}
+	const auto* as_layout = mpark::get_if<Ast::LayoutType>(&pool_type);
+	const auto* as_bound = mpark::get_if<Ast::BoundType>(&pool_type);
+
+	auto pool_spec = as_layout
+		? state.spec.specialize_type(*as_layout)
+		: state.spec.specialize_type(*as_bound);
+	const auto& type_info = m_specialization_info[pool_spec].type_info;
+	const auto* pool_info = mpark::get_if<PoolSpecializationInfo>(&type_info);
+	if (pool_info == nullptr) {
+		return;
+	}
+
+	auto* pool = state.local_pools[&e.pool()];
+	assert_msg(pool != nullptr, "Missing pool variable?");
 
 	auto* var = state.local_vars[&e.var()];
 	assert_msg(var != nullptr, "No LLVM variable for loop");
@@ -1484,10 +1520,21 @@ void Codegen::Impl::visit(const Ast::ForeachPool& e, MethodCodegenState& state)
 
 	state.builder->SetInsertPoint(cond_bb);
 
+	llvm::MDBuilder tbaa_builder(m_ctx);
+
+	const auto& data_layout = m_mod->getDataLayout();
+	const auto* pool_layout = data_layout.getStructLayout(pool_info->pool_type);
+	auto* size_tbaa_node = tbaa_builder.createTBAAStructTagNode(
+		pool_info->pool_tbaa_type,
+		m_tbaa_intptr,
+		pool_layout->getElementOffset(0));
+
 	auto* var_value = state.builder->CreateLoad(var);
-	auto* size_ptr = state.builder->CreateStructGEP(pool, 0);
-	auto* size = state.builder->CreateLoad(size_ptr);
-	auto* cond = state.builder->CreateICmpULT(var_value, size);
+	auto* size_ptr = state.builder->CreateStructGEP(pool, 0, "size_ptr");
+	auto* size = state.builder->CreateLoad(size_ptr, "size");
+	size->setMetadata(llvm::LLVMContext::MD_tbaa, size_tbaa_node);
+
+	auto* cond = state.builder->CreateICmpULT(var_value, size, "initial_cond");
 
 	state.builder->CreateCondBr(cond, body_bb, exit_bb);
 
@@ -1504,7 +1551,7 @@ void Codegen::Impl::visit(const Ast::ForeachPool& e, MethodCodegenState& state)
 
 	state.builder->SetInsertPoint(update_bb);
 	auto* const_one = llvm::ConstantInt::get(var_value->getType(), 1);
-	auto* new_var_value = state.builder->CreateNUWAdd(var_value, const_one);
+	auto* new_var_value = state.builder->CreateNUWAdd(var_value, const_one, "new_idx");
 	state.builder->CreateStore(new_var_value, var);
 	state.builder->CreateBr(cond_bb);
 
@@ -2073,7 +2120,7 @@ bool Codegen::Impl::ir(const Ast::Program& ast)
 {
 	Codegen::Impl state;
 	std::string error;
-	m_target = llvm::TargetRegistry::lookupTarget("x86_64-unknown-linux-gnu", error);
+	m_target = llvm::TargetRegistry::lookupTarget("x86_64-pc-linux-gnu", error);
 
 	if (m_target == nullptr) {
 		fprintf(stderr, "Error while creating LLVM target machine: %s", error.c_str());
@@ -2081,12 +2128,12 @@ bool Codegen::Impl::ir(const Ast::Program& ast)
 	}
 
 	m_target_machine = m_target->createTargetMachine(
-		"x86_64-unknown-linux-gnu",
+		"x86_64-pc-linux-gnu",
 		"generic",
 		"",
 		llvm::TargetOptions(),
-		llvm::None,
-		llvm::None,
+		llvm::Reloc::PIC_,
+		llvm::CodeModel::Small,
 		llvm::CodeGenOpt::Aggressive);
 
 	m_void = llvm::Type::getVoidTy(m_ctx);
@@ -2103,6 +2150,7 @@ bool Codegen::Impl::ir(const Ast::Program& ast)
 
 	m_mod.reset(new llvm::Module("shapes", m_ctx));
 	m_mod->setDataLayout(m_target_machine->createDataLayout());
+	m_mod->setTargetTriple("x86_64-pc-linux-gnu");
 
 	const auto& data_layout = m_mod->getDataLayout();
 	m_intptr = data_layout.getIntPtrType(m_ctx);
@@ -2163,10 +2211,12 @@ bool Codegen::Impl::ir(const Ast::Program& ast)
 	generate_llvm_functions();
 
 	llvm::verifyModule(*m_mod, &llvm::errs());
+
 	return true;
 }
 
-bool Codegen::Impl::emit(const char* filename)
+bool Codegen::Impl::emit(
+	const char* llvm_bitcode_filename, const char* object_filename)
 {
 	auto opt_level = llvm::PassBuilder::OptimizationLevel::O3;
 
@@ -2186,19 +2236,32 @@ bool Codegen::Impl::emit(const char* filename)
 
 	pass_builder.crossRegisterProxies(lam, fam, cam, mam);
 
-	auto mod_pass_manager =
-		pass_builder.buildPerModuleDefaultPipeline(opt_level, false);
-	mod_pass_manager.addPass(llvm::PrintModulePass(llvm::errs()));
+	auto func_simplification_pass = llvm::createModuleToFunctionPassAdaptor(
+		pass_builder.buildFunctionSimplificationPipeline(
+			opt_level, llvm::PassBuilder::ThinLTOPhase::None));
+	llvm::ModulePassManager func_simplification_manager;
+	func_simplification_manager.addPass(std::move(func_simplification_pass));
+	func_simplification_manager.run(*m_mod, mam);
 
-	mod_pass_manager.run(*m_mod, mam);
+	auto mod_simplification_manager =
+		pass_builder.buildModuleSimplificationPipeline(
+			opt_level, llvm::PassBuilder::ThinLTOPhase::None);
+	mod_simplification_manager.run(*m_mod, mam);
+
+	auto mod_opt_manager =
+		pass_builder.buildModuleOptimizationPipeline(opt_level);
+	mod_opt_manager.run(*m_mod, mam);
 
 	std::error_code EC;
-	llvm::raw_fd_ostream dest(filename, EC, llvm::sys::fs::OF_None);
+	llvm::raw_fd_ostream object_code(object_filename, EC, llvm::sys::fs::OF_None);
+	llvm::raw_fd_ostream llvm_bitcode(llvm_bitcode_filename, EC, llvm::sys::fs::OF_None);
 
-	llvm::legacy::PassManager old_pm;
+	llvm_bitcode << *m_mod;
 
-	m_target_machine->addPassesToEmitFile(old_pm, dest, nullptr, llvm::TargetMachine::CGFT_ObjectFile);
-	old_pm.run(*m_mod);
+	llvm::legacy::PassManager legacy_pm;
+	m_target_machine->addPassesToEmitFile(
+		legacy_pm, object_code, nullptr, llvm::TargetMachine::CGFT_ObjectFile);
+	legacy_pm.run(*m_mod);
 
 	return true;
 }
@@ -2267,9 +2330,9 @@ bool Codegen::ir(const Ast::Program& ast)
 	return m_impl->ir(ast);
 }
 
-bool Codegen::emit(const char* filename)
+bool Codegen::emit(const char* llvm_bitcode_filename, const char* object_filename)
 {
-	return m_impl->emit(filename);
+	return m_impl->emit(llvm_bitcode_filename, object_filename);
 }
 
 std::unique_ptr<llvm::Module> Codegen::Impl::get_module()
