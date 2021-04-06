@@ -426,6 +426,7 @@ int main(int argc, char** argv)
 	Ir::Codegen codegen;
 	codegen.ir(ast);
 	codegen.emit("shapes.ll", "shapes.o");
+	codegen.emit_header("shapes.h");
 
 	return EXIT_SUCCESS;
 }
