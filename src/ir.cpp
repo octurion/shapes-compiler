@@ -2430,9 +2430,121 @@ bool Codegen::Impl::emit_header(const char* header_file_name) const
 
 	fprintf(out, "\n");
 
-	// TODO: Emit code for methods!
+	for (const auto& e: m_specialization_info) {
+		const auto& spec = e.first;
 
-	fprintf(out, "\n");
+		if (spec.is_pooled_type()) {
+			auto pool_name = create_ffi_pool_name(spec);
+			fprintf(out, "void %s(struct %s*);\n",
+					create_pool_ctor_name(spec).c_str(),
+					pool_name.c_str());
+			fprintf(out, "void %s(struct %s*);\n",
+					create_pool_dtor_name(spec).c_str(),
+					pool_name.c_str());
+			fprintf(out, "uintptr_t %s(struct %s*);\n",
+					create_ctor_name(spec).c_str(),
+					pool_name.c_str());
+		} else {
+			auto class_name = create_ffi_class_name(spec);
+			fprintf(out, "struct %s* %s(void);\n",
+					class_name.c_str(),
+					create_ctor_name(spec).c_str());
+		}
+
+		fprintf(out, "\n");
+
+		std::vector<std::pair<std::string, std::string>> pool_names;
+		for (const Ast::Pool& pool: spec.clazz().pools()) {
+			if (mpark::holds_alternative<Ast::NoneType>(pool.type())) {
+				continue;
+			}
+			const auto* as_layout = mpark::get_if<Ast::LayoutType>(&pool.type());
+			const auto* as_bound = mpark::get_if<Ast::BoundType>(&pool.type());
+
+			assert_msg(as_layout != nullptr || as_bound != nullptr,
+					   "Forgot a case?");
+
+			auto type = as_layout != nullptr
+				? spec.specialize_type(*as_layout)
+				: spec.specialize_type(*as_bound);
+			if (!type.is_pooled_type()) {
+				continue;
+			}
+
+			pool_names.emplace_back(create_ffi_pool_name(type), pool.name());
+		}
+
+		for (const Ast::Method& m: spec.clazz().methods()) {
+			const auto& return_type = m.return_type();
+			if (mpark::holds_alternative<Ast::VoidType>(return_type)) {
+				fprintf(out, "void");
+			} else if (mpark::holds_alternative<Ast::PrimitiveType>(return_type)) {
+				const auto& as_primitive =
+					mpark::get<Ast::PrimitiveType>(return_type);
+				fprintf(out, "%s", PRIMITIVE_FFI_TYPE_NAMES[(size_t)as_primitive]);
+			} else {
+				const auto* as_object =
+					mpark::get_if<Ast::ObjectType>(&return_type);
+				assert_msg(as_object != nullptr, "Missing case?");
+
+				auto new_spec = spec.specialize_type(*as_object);
+				if (new_spec.is_pooled_type()) {
+					fprintf(out, "uintptr_t");
+				} else {
+					fprintf(out, "struct %s*",
+							create_ffi_class_name(new_spec).c_str());
+				}
+			}
+
+			auto name = create_method_name(spec, m);
+			fprintf(out, " %s(", name.c_str());
+
+			if (spec.is_pooled_type()) {
+				fprintf(out, "uintptr_t self");
+			} else {
+				fprintf(out, "struct %s* self",
+						create_ffi_class_name(spec).c_str());
+			}
+
+			for (const auto& e: m.params()) {
+				const auto* as_primitive =
+					mpark::get_if<Ast::PrimitiveType>(&e.type());
+				if (as_primitive != nullptr) {
+					const auto& as_primitive =
+						mpark::get<Ast::PrimitiveType>(return_type);
+					fprintf(out, ", %s param_%s",
+							PRIMITIVE_FFI_TYPE_NAMES[(size_t)as_primitive],
+							e.name().c_str());
+				} else {
+					const auto* as_object =
+						mpark::get_if<Ast::ObjectType>(&e.type());
+					assert_msg(as_object != nullptr, "Missing case?");
+
+					auto new_spec = spec.specialize_type(*as_object);
+					if (new_spec.is_pooled_type()) {
+						fprintf(out, ", uintptr_t param_%s", e.name().c_str());
+					} else {
+						fprintf(out, ", struct %s* param_%s",
+								create_ffi_class_name(new_spec).c_str(),
+								e.name().c_str());
+					}
+				}
+			}
+
+			for (const auto& e: pool_names) {
+				const auto& type = e.first;
+				const auto& name = e.second;
+
+				fprintf(out, ", struct %s* pool_%s", type.c_str(), name.c_str());
+			}
+
+			fprintf(out, ");\n");
+		}
+
+		if (!spec.clazz().methods().empty()) {
+			fprintf(out, "\n");
+		}
+	}
 
 	fprintf(out, "#ifdef __cplusplus\n");
 	fprintf(out, "}\n");
