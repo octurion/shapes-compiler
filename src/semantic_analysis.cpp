@@ -893,9 +893,13 @@ public:
 
 	void operator()(const Cst::Assignment& e) {
 		auto lhs = mpark::visit(*this, e.lhs());
-		auto lhs_type = expr_type(lhs);
-
 		auto rhs = mpark::visit(*this, e.rhs());
+
+		if (invalid(lhs) || invalid(rhs)) {
+			return;
+		}
+
+		auto lhs_type = expr_type(lhs);
 		auto rhs_type = expr_type(rhs);
 
 		if (!is_lvalue(lhs)) {

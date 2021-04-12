@@ -28,6 +28,91 @@ class Main<p1> where
         }
         return sum;
     }
+
+    fn factorial(n: i32): i32 {
+        if n < 0 {
+            return 0;
+        }
+        if n == 0 || n == 1 {
+            return 1;
+        }
+        return n * factorial(n - 1);
+    }
+
+    fn test_casts(): i32
+    {
+        let correct: i32;
+        correct = 0;
+
+        let x: bool;
+        x = true;
+        if x as i8 == 1i8 {
+            correct += 1;
+        }
+
+        if x as f32 == 1.0f32 {
+            correct += 1;
+        }
+
+        let y: i32;
+        y = 5;
+        if y as bool {
+            correct += 1;
+        }
+        if y as f64 == 5.0f64 {
+            correct += 1;
+        }
+
+        let z: f32;
+        z = 0.0f32;
+        if !(z as bool) {
+            correct += 1;
+        }
+
+        z = 25.25f32;
+        if z as i32 == 25 {
+            correct += 1;
+        }
+
+        if z as u32 == 25u32 {
+            correct += 1;
+        }
+
+        if z as f64 == 25.25f64 {
+            correct += 1;
+        }
+
+        let a: u8;
+        a = -1u8;
+
+        if a as i32 == 255 {
+            correct += 1;
+        }
+        if a as u32 == 255u32 {
+            correct += 1;
+        }
+        if a as f32 == 255f32 {
+            correct += 1;
+        }
+
+        let b: i16;
+        b = -2i16;
+        if b as i32 == -2 {
+            correct += 1;
+        }
+
+        b = -32767i16;
+        if b as u8 == 1u8 {
+            correct += 1;
+        }
+
+        b = 32767i16;
+        if b as u8 == -1u8 && b as u8 == 255u8 {
+            correct += 1;
+        }
+
+        return correct;
+    }
 }
 
 class A<q1, q2> where

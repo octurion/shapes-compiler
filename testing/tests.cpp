@@ -284,6 +284,44 @@ TEST_F(ExecutionTest, MutualGetterSetter) {
 	EXPECT_THAT(dummy_pool.cluster1[0], Eq(200));
 }
 
+TEST_F(ExecutionTest, Factorial) {
+	const auto* clazz = m_ast.find_class("Main");
+	const auto* factorial_method = clazz->find_method("factorial");
+
+	Ir::ClassSpecialization spec(*clazz, {nullptr});
+
+	auto* ctor = m_codegen_interpreter.constructor(spec);
+	auto* factorial = m_codegen_interpreter.find_method(spec, *factorial_method);
+
+	auto this_param = m_codegen_interpreter.run_function(ctor, {});
+
+	llvm::GenericValue param;
+	param.IntVal = llvm::APInt(32, 10);
+
+	auto retval = m_codegen_interpreter.run_function(factorial, {this_param, param});
+
+	EXPECT_THAT(retval.IntVal, Eq(llvm::APInt(32, 3'628'800)));
+}
+
+TEST_F(ExecutionTest, Casts) {
+	const auto* clazz = m_ast.find_class("Main");
+	const auto* test_casts_method = clazz->find_method("test_casts");
+
+	Ir::ClassSpecialization spec(*clazz, {nullptr});
+
+	auto* ctor = m_codegen_interpreter.constructor(spec);
+	auto* test_casts = m_codegen_interpreter.find_method(spec, *test_casts_method);
+
+	auto this_param = m_codegen_interpreter.run_function(ctor, {});
+
+	llvm::GenericValue param;
+	param.IntVal = llvm::APInt(32, 10);
+
+	auto retval = m_codegen_interpreter.run_function(test_casts, {this_param});
+
+	EXPECT_THAT(retval.IntVal, Eq(llvm::APInt(32, 14)));
+}
+
 INSTANTIATE_TEST_SUITE_P(
 	Parser,
 	SyntaxFail,
@@ -298,3 +336,8 @@ INSTANTIATE_TEST_SUITE_P(
 	Parser,
 	SemanticFail,
 	ValuesIn(files_in_path("../testcases/semantic_error")));
+
+INSTANTIATE_TEST_SUITE_P(
+	CaseStudies,
+	SemanticPass,
+	ValuesIn(files_in_path("../testcases/case_studies")));

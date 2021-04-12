@@ -1689,12 +1689,12 @@ LLVMExpr Codegen::Impl::visit(const Ast::CastExpr& e, MethodCodegenState& state)
 	// Anything to boolean: Check if non-zero
 	if (Ast::is_boolean(dest_type)) {
 		if (Ast::is_floating_point(*src_type)) {
-			auto* zero = llvm::ConstantFP::get(llvm_dest_type, 0.0);
+			auto* zero = llvm::ConstantFP::get(llvm_src_type, 0.0);
 			auto* cast_val = state.builder->CreateFCmpUNE(value, zero);
 			return LLVMExpr(state.builder, cast_val, nullptr, false);
 		}
 
-		auto* zero = llvm::ConstantInt::get(llvm_dest_type, 0);
+		auto* zero = llvm::ConstantInt::get(llvm_src_type, 0);
 		auto* cast_val = state.builder->CreateICmpNE(value, zero);
 		return LLVMExpr(state.builder, cast_val, nullptr, false);
 	}
@@ -1724,7 +1724,7 @@ LLVMExpr Codegen::Impl::visit(const Ast::CastExpr& e, MethodCodegenState& state)
 			auto* cast_val = state.builder->CreateSIToFP(value, llvm_dest_type);
 			return LLVMExpr(state.builder, cast_val, nullptr, false);
 		}
-		if (Ast::is_unsigned_integer(*src_type) || Ast::is_boolean(*src_type)) {
+		if (Ast::is_unsigned_integer(*src_type)) {
 			auto* cast_val = state.builder->CreateUIToFP(value, llvm_dest_type);
 			return LLVMExpr(state.builder, cast_val, nullptr, false);
 		}
@@ -1732,15 +1732,12 @@ LLVMExpr Codegen::Impl::visit(const Ast::CastExpr& e, MethodCodegenState& state)
 
 	// Float to anything
 	if (Ast::is_floating_point(*src_type)) {
-		if (Ast::is_floating_point(dest_type)) {
-			auto* cast_val = state.builder->CreateFPCast(value, llvm_dest_type);
-			return LLVMExpr(state.builder, cast_val, nullptr, false);
-		}
+		// Float to float has been already handled
 		if (Ast::is_signed_integer(dest_type)) {
 			auto* cast_val = state.builder->CreateFPToSI(value, llvm_dest_type);
 			return LLVMExpr(state.builder, cast_val, nullptr, false);
 		}
-		if (Ast::is_unsigned_integer(*src_type) || Ast::is_boolean(dest_type)) {
+		if (Ast::is_unsigned_integer(dest_type)) {
 			auto* cast_val = state.builder->CreateFPToUI(value, llvm_dest_type);
 			return LLVMExpr(state.builder, cast_val, nullptr, false);
 		}
@@ -2364,6 +2361,7 @@ bool Codegen::Impl::emit_header(const char* header_file_name) const
 									create_ffi_class_name(new_spec).c_str(),
 									field->name().c_str());
 						}
+						continue;
 					}
 
 					const auto* as_primitive =
@@ -2510,24 +2508,23 @@ bool Codegen::Impl::emit_header(const char* header_file_name) const
 				const auto* as_primitive =
 					mpark::get_if<Ast::PrimitiveType>(&e.type());
 				if (as_primitive != nullptr) {
-					const auto& as_primitive =
-						mpark::get<Ast::PrimitiveType>(return_type);
 					fprintf(out, ", %s param_%s",
-							PRIMITIVE_FFI_TYPE_NAMES[(size_t)as_primitive],
+							PRIMITIVE_FFI_TYPE_NAMES[(size_t)*as_primitive],
 							e.name().c_str());
-				} else {
-					const auto* as_object =
-						mpark::get_if<Ast::ObjectType>(&e.type());
-					assert_msg(as_object != nullptr, "Missing case?");
+					continue;
+				}
 
-					auto new_spec = spec.specialize_type(*as_object);
-					if (new_spec.is_pooled_type()) {
-						fprintf(out, ", uintptr_t param_%s", e.name().c_str());
-					} else {
-						fprintf(out, ", struct %s* param_%s",
-								create_ffi_class_name(new_spec).c_str(),
-								e.name().c_str());
-					}
+				const auto* as_object =
+					mpark::get_if<Ast::ObjectType>(&e.type());
+				assert_msg(as_object != nullptr, "Missing case?");
+
+				auto new_spec = spec.specialize_type(*as_object);
+				if (new_spec.is_pooled_type()) {
+					fprintf(out, ", uintptr_t param_%s", e.name().c_str());
+				} else {
+					fprintf(out, ", struct %s* param_%s",
+							create_ffi_class_name(new_spec).c_str(),
+							e.name().c_str());
 				}
 			}
 
