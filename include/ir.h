@@ -98,6 +98,7 @@ public:
 
 	bool ir(const Ast::Program& ast);
 	bool emit(const char* llvm_bitcode_filename, const char* object_filename);
+	bool emit_header(const char* header_file_name) const;
 
 	llvm::Function* find_method(const ClassSpecialization& spec, const Ast::Method& m) const;
 	llvm::Function* constructor(const ClassSpecialization& spec) const;
