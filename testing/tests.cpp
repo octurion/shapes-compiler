@@ -214,6 +214,31 @@ TEST_F(ExecutionTest, ForeachLoop) {
 	EXPECT_THAT(retval.IntVal, Eq(llvm::APInt(32, 245)));
 }
 
+TEST_F(ExecutionTest, ForeachLoopUnsigned) {
+	const auto* clazz = m_ast.find_class("Main");
+	const auto* method = clazz->find_method("foreach_loop_unsigned");
+
+	Ir::ClassSpecialization spec(*clazz, {nullptr});
+
+	auto* ctor = m_codegen_interpreter.constructor(spec);
+	auto this_param = m_codegen_interpreter.run_function(ctor, {});
+
+	auto* func = m_codegen_interpreter.find_method(spec, *method);
+
+	uint64_t begin = 20;
+	uint64_t end = 30;
+
+	llvm::GenericValue param_begin;
+	param_begin.IntVal = llvm::APInt(32, begin);
+
+	llvm::GenericValue param_end;
+	param_end.IntVal = llvm::APInt(32, end);
+
+	auto retval = m_codegen_interpreter.run_function(
+		func, {this_param, param_begin, param_end});
+	EXPECT_THAT(retval.IntVal, Eq(llvm::APInt(32, 245)));
+}
+
 TEST_F(ExecutionTest, GetterSetter) {
 	const auto* clazz = m_ast.find_class("Main");
 	const auto* getter = clazz->find_method("getter");
@@ -284,6 +309,26 @@ TEST_F(ExecutionTest, MutualGetterSetter) {
 	EXPECT_THAT(dummy_pool.cluster1[0], Eq(200));
 }
 
+TEST_F(ExecutionTest, RaphsonNewton) {
+	const auto* clazz = m_ast.find_class("Main");
+	const auto* method = clazz->find_method("raphson_newton_sqrt");
+
+	Ir::ClassSpecialization spec(*clazz, {nullptr});
+
+	auto* ctor = m_codegen_interpreter.constructor(spec);
+	auto* llvm_method = m_codegen_interpreter.find_method(spec, *method);
+
+	auto this_param = m_codegen_interpreter.run_function(ctor, {});
+
+	llvm::GenericValue param;
+	param.FloatVal = 2.0f;
+
+	auto retval = m_codegen_interpreter.run_function(llvm_method, {this_param, param});
+
+	constexpr float EXPECTED = 1.41421356237f;
+	EXPECT_THAT(retval.FloatVal, NanSensitiveFloatNear(EXPECTED, 1e-8));
+}
+
 TEST_F(ExecutionTest, Factorial) {
 	const auto* clazz = m_ast.find_class("Main");
 	const auto* factorial_method = clazz->find_method("factorial");
@@ -320,6 +365,44 @@ TEST_F(ExecutionTest, Casts) {
 	auto retval = m_codegen_interpreter.run_function(test_casts, {this_param});
 
 	EXPECT_THAT(retval.IntVal, Eq(llvm::APInt(32, 14)));
+}
+
+TEST_F(ExecutionTest, Exprs) {
+	const auto* clazz = m_ast.find_class("Main");
+	const auto* test_exprs_method = clazz->find_method("test_exprs");
+
+	Ir::ClassSpecialization spec(*clazz, {nullptr});
+
+	auto* ctor = m_codegen_interpreter.constructor(spec);
+	auto* test_exprs = m_codegen_interpreter.find_method(spec, *test_exprs_method);
+
+	auto this_param = m_codegen_interpreter.run_function(ctor, {});
+
+	llvm::GenericValue param;
+	param.IntVal = llvm::APInt(32, 10);
+
+	auto retval = m_codegen_interpreter.run_function(test_exprs, {this_param});
+
+	EXPECT_THAT(retval.IntVal, Eq(llvm::APInt(32, 14)));
+}
+
+TEST_F(ExecutionTest, OpAssignment) {
+	const auto* clazz = m_ast.find_class("Main");
+	const auto* test_op_assign_method = clazz->find_method("test_op_assign");
+
+	Ir::ClassSpecialization spec(*clazz, {nullptr});
+
+	auto* ctor = m_codegen_interpreter.constructor(spec);
+	auto* test_op_assign = m_codegen_interpreter.find_method(spec, *test_op_assign_method);
+
+	auto this_param = m_codegen_interpreter.run_function(ctor, {});
+
+	llvm::GenericValue param;
+	param.IntVal = llvm::APInt(32, 10);
+
+	auto retval = m_codegen_interpreter.run_function(test_op_assign, {this_param});
+
+	EXPECT_THAT(retval.IntVal, Eq(llvm::APInt(32, 11)));
 }
 
 INSTANTIATE_TEST_SUITE_P(

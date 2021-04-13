@@ -29,18 +29,55 @@ class Main<p1> where
         return sum;
     }
 
+    fn foreach_loop_unsigned(begin: u32, end: u32): u32
+    {
+        let sum: u32;
+
+        sum = 0u32;
+        foreach i = begin .. end {
+            sum += i;
+        }
+        return sum;
+    }
+
+    fn abs(x: f32): f32
+    {
+        if x >= 0f32 {
+            return x;
+        }
+        return -x;
+    }
+
+    fn raphson_newton_sqrt(x: f32): f32
+    {
+        let eps: f32;
+        eps = 1e-6f32;
+
+        let r: f32;
+        r = x;
+        while abs(x - r * r) > eps {
+            r = (r + x / r) / 2f32;
+        }
+
+        return r;
+    }
+
     fn factorial(n: i32): i32 {
         if n < 0 {
             return 0;
         }
-        if n == 0 || n == 1 {
-            return 1;
-        }
-        return n * factorial(n - 1);
+        return factorial_impl(n, 1);
     }
 
-    fn test_casts(): i32
-    {
+    fn factorial_impl(n: i32, acc: i32): i32 {
+        if n == 0 || n == 1 {
+            return acc;
+        }
+
+        return factorial_impl(n - 1, n * acc);
+    }
+
+    fn test_casts(): i32 {
         let correct: i32;
         correct = 0;
 
@@ -108,6 +145,143 @@ class Main<p1> where
 
         b = 32767i16;
         if b as u8 == -1u8 && b as u8 == 255u8 {
+            correct += 1;
+        }
+
+        return correct;
+    }
+
+    fn test_exprs(): i32 {
+        let correct: i32;
+        correct = 0;
+
+        let x: i32;
+        x = 5;
+        if +x == 5 {
+            correct += 1;
+        }
+        if !x == -4 {
+            correct += 1;
+        }
+
+        let y: i32;
+        y = 6;
+        if x + y == 11 {
+            correct += 1;
+        }
+
+        x = 16;
+        if x & (x - 1) == 0 {
+            correct += 1;
+        }
+
+        if x & 15 == 0 {
+            correct += 1;
+        }
+
+        if 4 | 8 == 12 {
+            correct += 1;
+        }
+
+        if x ^ x == 0 {
+            correct += 1;
+        }
+        if x ^ x ^ x == x {
+            correct += 1;
+        }
+
+        if x << 1u8 == 32 {
+            correct += 1;
+        }
+        if x << 2i16 == 64 {
+            correct += 1;
+        }
+
+        if x >> 2 == 4 {
+            correct += 1;
+        }
+        if x >> 1u32 == 8 {
+            correct += 1;
+        }
+
+        let f: f32;
+        f = 3f32;
+
+        let g: f32;
+        g = 2f32;
+
+        if f / g == 1.5f32 {
+            correct += 1;
+        }
+
+        if 7 / 3 == 2 {
+            correct += 1;
+        }
+
+        return correct;
+    }
+
+    fn test_op_assign(): i32 {
+        let correct: i32;
+        correct = 0;
+
+        let x: i32;
+        x = 10;
+        x += 5;
+        if x == 15 {
+            correct += 1;
+        }
+
+        x -= 3;
+        if x == 12 {
+            correct += 1;
+        }
+
+        x *= 3;
+        if x == 36 {
+            correct += 1;
+        }
+
+        x /= 10;
+        if x == 3 {
+            correct += 1;
+        }
+
+        x &= 2;
+        if x == 2 {
+            correct += 1;
+        }
+
+        x |= 4;
+        if x == 6 {
+            correct += 1;
+        }
+
+        x ^= 4;
+        if x == 2 {
+            correct += 1;
+        }
+
+        let f: f32;
+        f = 2f32;
+
+        f += 5f32;
+        if f == 7f32 {
+            correct += 1;
+        }
+
+        f -= 1f32;
+        if f == 6f32 {
+            correct += 1;
+        }
+
+        f *= 1.5f32;
+        if f == 9f32 {
+            correct += 1;
+        }
+
+        f /= 2f32;
+        if f == 4.5f32 {
             correct += 1;
         }
 

@@ -1943,13 +1943,41 @@ LLVMExpr Codegen::Impl::visit(const Ast::BinaryExpr& e, MethodCodegenState& stat
 		break;
 	}
 	case Ast::BinOp::SHL: {
-		value = state.builder->CreateShl(lhs_value, rhs_value);
+		auto rhs_type = Ast::expr_type(e.rhs());
+		const auto* as_rhs_primitive = mpark::get_if<Ast::PrimitiveType>(&rhs_type);
+		assert_msg(
+			as_rhs_primitive != nullptr,
+			"Shift amount should be a primitive type");
+
+		assert_msg(
+			Ast::is_integer(*as_rhs_primitive),
+			"Shift amount should be an integer type");
+
+		auto* shift_amount = Ast::is_signed_integer(*as_rhs_primitive)
+			? state.builder->CreateSExtOrTrunc(rhs_value, lhs_value->getType(), "shift_amt")
+			: state.builder->CreateZExtOrTrunc(rhs_value, lhs_value->getType(), "shift_amt");
+
+		value = state.builder->CreateShl(lhs_value, shift_amount);
 		break;
 	}
 	case Ast::BinOp::SHR: {
+		auto rhs_type = Ast::expr_type(e.rhs());
+		const auto* as_rhs_primitive = mpark::get_if<Ast::PrimitiveType>(&rhs_type);
+		assert_msg(
+			as_rhs_primitive != nullptr,
+			"Shift amount should be a primitive type");
+
+		assert_msg(
+			Ast::is_integer(*as_rhs_primitive),
+			"Shift amount should be an integer type");
+
+		auto* shift_amount = Ast::is_signed_integer(*as_rhs_primitive)
+			? state.builder->CreateSExtOrTrunc(rhs_value, lhs_value->getType(), "shift_amt")
+			: state.builder->CreateZExtOrTrunc(rhs_value, lhs_value->getType(), "shift_amt");
+
 		value = is_signed
-			? state.builder->CreateAShr(lhs_value, rhs_value)
-			: state.builder->CreateLShr(lhs_value, rhs_value);
+			? state.builder->CreateAShr(lhs_value, shift_amount)
+			: state.builder->CreateLShr(lhs_value, shift_amount);
 		break;
 	}
 	case Ast::BinOp::LE:
