@@ -1,0 +1,8 @@
+class Main<p1> where
+    p1: [Main<p1>]
+{
+    f1: i32;
+
+    fn getter(): i32 { return f1; }
+    fn getter(): i32 { return f1; }
+}

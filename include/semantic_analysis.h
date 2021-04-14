@@ -79,21 +79,27 @@ class LayoutMissingField
 {
 	std::string m_layout_name;
 	std::string m_field_name;
+
 	Location m_layout_loc;
+	Location m_field_loc;
 
 public:
 	LayoutMissingField(
 			std::string layout_name,
 			std::string field_name,
-			const Location& layout_loc)
+			const Location& layout_loc,
+			const Location& field_loc)
 		: m_layout_name(std::move(layout_name))
 		, m_field_name(std::move(field_name))
 		, m_layout_loc(layout_loc)
+		, m_field_loc(field_loc)
 	{}
 
 	const std::string& layout_name() const { return m_layout_name; }
 	const std::string& field_name() const { return m_field_name; }
+
 	const Location& layout_loc() const { return m_layout_loc; }
+	const Location& field_loc() const { return m_field_loc; }
 };
 
 class LayoutNameClash

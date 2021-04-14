@@ -250,7 +250,8 @@ static void collect_layouts(
 		for (const Field& e: for_class->fields())
 		{
 			if (fields_added.find(&e) == fields_added.end()) {
-				errors.add<LayoutMissingField>(layout.name().ident(), e.name(), e.loc());
+				errors.add<LayoutMissingField>(
+					layout.name().ident(), e.name(), layout.loc(), e.loc());
 				fields_missing = true;
 			}
 		}

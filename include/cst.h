@@ -876,7 +876,7 @@ public:
 
 	const std::vector<Cluster>& clusters() const { return m_clusters; }
 
-	const Location& loc() { return m_loc; }
+	const Location& loc() const { return m_loc; }
 };
 
 class Program

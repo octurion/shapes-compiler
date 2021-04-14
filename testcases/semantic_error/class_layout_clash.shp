@@ -1,0 +1,7 @@
+class Main<p1> where
+    p1: [Main<p1>]
+{
+    f1: i32;
+}
+
+layout Main: Main = rec{f1};
