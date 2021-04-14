@@ -10,6 +10,7 @@
 #include "ir.h"
 
 #include <cerrno>
+#include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
 
