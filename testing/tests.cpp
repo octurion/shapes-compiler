@@ -19,6 +19,13 @@
 #include <cstdio>
 #include <string>
 
+namespace llvm { // Ugly hack to get Googletest to print an APInt
+std::ostream& operator<<(std::ostream& os, const APInt& value)
+{
+	return os << value.toString(10, true);
+}
+} // namespace llvm
+
 using namespace testing;
 
 class SyntaxFail: public TestWithParam<std::string> {};
@@ -154,6 +161,7 @@ public:
 		yyset_in(in, scanner);
 
 		yyparse(scanner, &cst, &syntax_errors);
+		ASSERT_THAT(syntax_errors.has_errors(), IsFalse());
 
 		yylex_destroy(scanner);
 
@@ -162,6 +170,7 @@ public:
 		Ast::SemanticErrorList errors;
 
 		Ast::run_semantic_analysis(cst, m_ast, errors);
+		ASSERT_THAT(errors.has_errors(), IsFalse());
 
 		m_codegen.ir(m_ast);
 
@@ -307,6 +316,22 @@ TEST_F(ExecutionTest, MutualGetterSetter) {
 
 	EXPECT_THAT(getter_retval.IntVal, Eq(setval.IntVal));
 	EXPECT_THAT(dummy_pool.cluster1[0], Eq(200));
+}
+
+TEST_F(ExecutionTest, PoolConstruction) {
+	const auto* clazz = m_ast.find_class("A");
+	const auto* method = clazz->find_method("test_pools");
+
+	Ir::ClassSpecialization spec(*clazz, {nullptr, nullptr});
+
+	auto* ctor = m_codegen_interpreter.constructor(spec);
+	auto* llvm_method = m_codegen_interpreter.find_method(spec, *method);
+
+	auto this_param = m_codegen_interpreter.run_function(ctor, {});
+
+	auto retval = m_codegen_interpreter.run_function(llvm_method, {this_param});
+
+	EXPECT_THAT(retval.IntVal, Eq(llvm::APInt(32, 5)));
 }
 
 TEST_F(ExecutionTest, RaphsonNewton) {

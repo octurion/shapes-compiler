@@ -335,6 +335,49 @@ class A<q1, q2> where
     {
         fv = new_value;
     }
+
+    fn test_pools(): i32
+    {
+        let count: i32;
+        count = 0;
+
+        pool pb: LB<pb, none>;
+
+        let o: A<none, pb>;
+
+        let o1: B<pb, none>;
+        let o2: B<pb, none>;
+
+        o = new A<none, pb>;
+
+        o1 = new B<pb, none>;
+        o2 = new B<pb, none>;
+
+        if o1 != o2 {
+            count += 1;
+        }
+
+        o1.g = o;
+        o2.g = o;
+
+        if o1.g == o2.g {
+            count += 1;
+        }
+        if o1.g != null {
+            count += 1;
+        }
+        if null != o2.g {
+            count += 1;
+        }
+
+        o.setter(20);
+
+        if o.getter() == 20 && o.fv == 20 {
+            count += 1;
+        }
+
+        return count;
+    }
 }
 
 class B<r1, r2> where
@@ -344,4 +387,5 @@ class B<r1, r2> where
     g: A<r2, r1>;
     gv: i32;
 }
+
 layout LB: B = rec{g} + rec{gv};
