@@ -100,8 +100,8 @@ NON_PRINT_ASCII [\x00-\x1F\x7F]
 "==" { return T_EQ; }
 "!=" { return T_NE; }
 
-"<=" { return T_GE; }
-">=" { return T_LE; }
+"<=" { return T_LE; }
+">=" { return T_GE; }
 
 "+=" { return T_PLUS_ASSIGN;  }
 "-=" { return T_MINUS_ASSIGN; }

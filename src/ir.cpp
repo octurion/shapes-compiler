@@ -1328,6 +1328,7 @@ void Codegen::Impl::visit(const Ast::OpAssignment& e, MethodCodegenState& state)
 	auto* rhs_value = visit(e.rhs(), state).to_rvalue();
 
 	auto type = Ast::expr_type(e.lhs());
+	auto rhs_type = Ast::expr_type(e.lhs());
 	const auto* as_primitive = mpark::get_if<Ast::PrimitiveType>(&type);
 	assert_msg(as_primitive != nullptr, "Must be a primitive type");
 
@@ -1376,16 +1377,26 @@ void Codegen::Impl::visit(const Ast::OpAssignment& e, MethodCodegenState& state)
 		break;
 	}
 	case Ast::BinOp::SHL: {
+		const auto* rhs_as_primitive = mpark::get_if<Ast::PrimitiveType>(&type);
+		assert_msg(rhs_as_primitive != nullptr, "Must be a primitive type");
+		bool rhs_is_unsigned = Ast::is_unsigned_integer(*rhs_as_primitive);
+
 		// LLVM requires shift operands to be of the same type
-		auto* shift_amount = state.builder->CreateZExtOrTrunc(
-			rhs_value, lhs_value->getType());
+		auto* shift_amount = rhs_is_unsigned
+			? state.builder->CreateZExtOrTrunc(rhs_value, lhs_value->getType())
+			: state.builder->CreateSExtOrTrunc(rhs_value, lhs_value->getType());
 		value = state.builder->CreateShl(lhs_value, shift_amount);
 		break;
 	}
 	case Ast::BinOp::SHR: {
+		const auto* rhs_as_primitive = mpark::get_if<Ast::PrimitiveType>(&type);
+		assert_msg(rhs_as_primitive != nullptr, "Must be a primitive type");
+		bool rhs_is_unsigned = Ast::is_unsigned_integer(*rhs_as_primitive);
+
 		// LLVM requires shift operands to be of the same type
-		auto* shift_amount = state.builder->CreateZExtOrTrunc(
-			rhs_value, lhs_value->getType());
+		auto* shift_amount = rhs_is_unsigned
+			? state.builder->CreateZExtOrTrunc(rhs_value, lhs_value->getType())
+			: state.builder->CreateSExtOrTrunc(rhs_value, lhs_value->getType());
 		value = Ast::is_signed_integer(*as_primitive)
 			? state.builder->CreateAShr(lhs_value, shift_amount)
 			: state.builder->CreateLShr(lhs_value, shift_amount);
@@ -1689,12 +1700,12 @@ LLVMExpr Codegen::Impl::visit(const Ast::CastExpr& e, MethodCodegenState& state)
 	// Anything to boolean: Check if non-zero
 	if (Ast::is_boolean(dest_type)) {
 		if (Ast::is_floating_point(*src_type)) {
-			auto* zero = llvm::ConstantFP::get(llvm_dest_type, 0.0);
+			auto* zero = llvm::ConstantFP::get(llvm_src_type, 0.0);
 			auto* cast_val = state.builder->CreateFCmpUNE(value, zero);
 			return LLVMExpr(state.builder, cast_val, nullptr, false);
 		}
 
-		auto* zero = llvm::ConstantInt::get(llvm_dest_type, 0);
+		auto* zero = llvm::ConstantInt::get(llvm_src_type, 0);
 		auto* cast_val = state.builder->CreateICmpNE(value, zero);
 		return LLVMExpr(state.builder, cast_val, nullptr, false);
 	}
@@ -1724,7 +1735,7 @@ LLVMExpr Codegen::Impl::visit(const Ast::CastExpr& e, MethodCodegenState& state)
 			auto* cast_val = state.builder->CreateSIToFP(value, llvm_dest_type);
 			return LLVMExpr(state.builder, cast_val, nullptr, false);
 		}
-		if (Ast::is_unsigned_integer(*src_type) || Ast::is_boolean(*src_type)) {
+		if (Ast::is_unsigned_integer(*src_type)) {
 			auto* cast_val = state.builder->CreateUIToFP(value, llvm_dest_type);
 			return LLVMExpr(state.builder, cast_val, nullptr, false);
 		}
@@ -1732,15 +1743,12 @@ LLVMExpr Codegen::Impl::visit(const Ast::CastExpr& e, MethodCodegenState& state)
 
 	// Float to anything
 	if (Ast::is_floating_point(*src_type)) {
-		if (Ast::is_floating_point(dest_type)) {
-			auto* cast_val = state.builder->CreateFPCast(value, llvm_dest_type);
-			return LLVMExpr(state.builder, cast_val, nullptr, false);
-		}
+		// Float to float has been already handled
 		if (Ast::is_signed_integer(dest_type)) {
 			auto* cast_val = state.builder->CreateFPToSI(value, llvm_dest_type);
 			return LLVMExpr(state.builder, cast_val, nullptr, false);
 		}
-		if (Ast::is_unsigned_integer(*src_type) || Ast::is_boolean(dest_type)) {
+		if (Ast::is_unsigned_integer(dest_type)) {
 			auto* cast_val = state.builder->CreateFPToUI(value, llvm_dest_type);
 			return LLVMExpr(state.builder, cast_val, nullptr, false);
 		}
@@ -1946,13 +1954,41 @@ LLVMExpr Codegen::Impl::visit(const Ast::BinaryExpr& e, MethodCodegenState& stat
 		break;
 	}
 	case Ast::BinOp::SHL: {
-		value = state.builder->CreateShl(lhs_value, rhs_value);
+		auto rhs_type = Ast::expr_type(e.rhs());
+		const auto* as_rhs_primitive = mpark::get_if<Ast::PrimitiveType>(&rhs_type);
+		assert_msg(
+			as_rhs_primitive != nullptr,
+			"Shift amount should be a primitive type");
+
+		assert_msg(
+			Ast::is_integer(*as_rhs_primitive),
+			"Shift amount should be an integer type");
+
+		auto* shift_amount = Ast::is_signed_integer(*as_rhs_primitive)
+			? state.builder->CreateSExtOrTrunc(rhs_value, lhs_value->getType(), "shift_amt")
+			: state.builder->CreateZExtOrTrunc(rhs_value, lhs_value->getType(), "shift_amt");
+
+		value = state.builder->CreateShl(lhs_value, shift_amount);
 		break;
 	}
 	case Ast::BinOp::SHR: {
+		auto rhs_type = Ast::expr_type(e.rhs());
+		const auto* as_rhs_primitive = mpark::get_if<Ast::PrimitiveType>(&rhs_type);
+		assert_msg(
+			as_rhs_primitive != nullptr,
+			"Shift amount should be a primitive type");
+
+		assert_msg(
+			Ast::is_integer(*as_rhs_primitive),
+			"Shift amount should be an integer type");
+
+		auto* shift_amount = Ast::is_signed_integer(*as_rhs_primitive)
+			? state.builder->CreateSExtOrTrunc(rhs_value, lhs_value->getType(), "shift_amt")
+			: state.builder->CreateZExtOrTrunc(rhs_value, lhs_value->getType(), "shift_amt");
+
 		value = is_signed
-			? state.builder->CreateAShr(lhs_value, rhs_value)
-			: state.builder->CreateLShr(lhs_value, rhs_value);
+			? state.builder->CreateAShr(lhs_value, shift_amount)
+			: state.builder->CreateLShr(lhs_value, shift_amount);
 		break;
 	}
 	case Ast::BinOp::LE:
@@ -2364,6 +2400,7 @@ bool Codegen::Impl::emit_header(const char* header_file_name) const
 									create_ffi_class_name(new_spec).c_str(),
 									field->name().c_str());
 						}
+						continue;
 					}
 
 					const auto* as_primitive =
@@ -2510,24 +2547,23 @@ bool Codegen::Impl::emit_header(const char* header_file_name) const
 				const auto* as_primitive =
 					mpark::get_if<Ast::PrimitiveType>(&e.type());
 				if (as_primitive != nullptr) {
-					const auto& as_primitive =
-						mpark::get<Ast::PrimitiveType>(return_type);
 					fprintf(out, ", %s param_%s",
-							PRIMITIVE_FFI_TYPE_NAMES[(size_t)as_primitive],
+							PRIMITIVE_FFI_TYPE_NAMES[(size_t)*as_primitive],
 							e.name().c_str());
-				} else {
-					const auto* as_object =
-						mpark::get_if<Ast::ObjectType>(&e.type());
-					assert_msg(as_object != nullptr, "Missing case?");
+					continue;
+				}
 
-					auto new_spec = spec.specialize_type(*as_object);
-					if (new_spec.is_pooled_type()) {
-						fprintf(out, ", uintptr_t param_%s", e.name().c_str());
-					} else {
-						fprintf(out, ", struct %s* param_%s",
-								create_ffi_class_name(new_spec).c_str(),
-								e.name().c_str());
-					}
+				const auto* as_object =
+					mpark::get_if<Ast::ObjectType>(&e.type());
+				assert_msg(as_object != nullptr, "Missing case?");
+
+				auto new_spec = spec.specialize_type(*as_object);
+				if (new_spec.is_pooled_type()) {
+					fprintf(out, ", uintptr_t param_%s", e.name().c_str());
+				} else {
+					fprintf(out, ", struct %s* param_%s",
+							create_ffi_class_name(new_spec).c_str(),
+							e.name().c_str());
 				}
 			}
 

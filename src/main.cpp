@@ -10,6 +10,7 @@
 #include "ir.h"
 
 #include <cerrno>
+#include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
 
@@ -23,61 +24,6 @@ struct Line
 		, end(end)
 	{}
 };
-
-static void print_loc(const Location& loc)
-{
-	fprintf(stderr, "|Line %d| ", loc.first_line);
-}
-
-static void print_error(
-	const std::string& file_contents,
-	const std::vector<Line>& lines,
-	const Location& loc)
-{
-	constexpr int TAB_SIZE = 4;
-
-	if (loc.first_column == 0) {
-		return;
-	}
-
-	int spaces_to_print = 0;
-	int carets_to_print = 0;
-
-	int chars_printed = 0;
-
-	const auto& line_info = lines[loc.first_line - 1];
-
-	const auto* it = &file_contents[line_info.begin];
-	const auto* line_end = &file_contents[line_info.end];
-
-	for (int i = 1; it != line_end; i++, it++) {
-		int chars;
-		if (*it == '\t') {
-			chars = TAB_SIZE - (chars_printed % TAB_SIZE);
-			for (int k = 0; k < chars; k++) {
-				fputc(' ', stderr);
-			}
-		} else {
-			fputc(*it, stderr);
-			chars = 1;
-		}
-
-		if (i < loc.first_column) {
-			spaces_to_print += chars;
-		} else if (loc.first_column <= i && i <= loc.last_column) {
-			carets_to_print += chars;
-		}
-	}
-
-	fputc('\n', stderr);
-	for (int i = 0; i < spaces_to_print; i++) {
-		fputc(' ', stderr);
-	}
-	for (int i = 0; i < carets_to_print; i++) {
-		fputc('^', stderr);
-	}
-	fputc('\n', stderr);
-}
 
 static const char* kind_str(Ast::ErrorKind kind)
 {
@@ -124,229 +70,231 @@ struct SemanticErrorPrinter
 	{
 	}
 
-	void print_line(const Location& loc)
+	void print_error_line(const Location& loc) const
 	{
-		print_error(file_contents, lines, loc);
+		constexpr int TAB_SIZE = 4;
+
+		if (loc.first_column == 0) {
+			return;
+		}
+
+		int spaces_to_print = 0;
+		int carets_to_print = 0;
+
+		int chars_printed = 0;
+
+		const auto& line_info = lines[loc.first_line - 1];
+
+		const auto* it = &file_contents[line_info.begin];
+		const auto* line_end = &file_contents[line_info.end];
+
+		for (int i = 1; it != line_end; i++, it++) {
+			int chars;
+			if (*it == '\t') {
+				chars = TAB_SIZE - (chars_printed % TAB_SIZE);
+				for (int k = 0; k < chars; k++) {
+					fputc(' ', stderr);
+				}
+			} else {
+				fputc(*it, stderr);
+				chars = 1;
+			}
+
+			if (i < loc.first_column) {
+				spaces_to_print += chars;
+			} else if (loc.first_column <= i && i <= loc.last_column) {
+				carets_to_print += chars;
+			}
+		}
+
+		fputc('\n', stderr);
+		for (int i = 0; i < spaces_to_print; i++) {
+			fputc(' ', stderr);
+		}
+		for (int i = 0; i < carets_to_print; i++) {
+			fputc('^', stderr);
+		}
+		fputc('\n', stderr);
 	}
 
-	void operator()(const Ast::DuplicateDefinition& e)
+	void print_error(const Location& loc, const char* fmt, ...) const
+#if defined(__GNUC__) || defined(__clang__)
+		__attribute__((format(printf, 3, 4)))
+#endif
 	{
-		print_loc(e.loc());
-		fprintf(stderr, "%s '%s' is already defined.\n",
+		va_list args;
+		va_start(args, fmt);
+
+		fprintf(stderr, "|Line %d| ", loc.first_line);
+		vfprintf(stderr, fmt, args);
+		print_error_line(loc);
+		fputc('\n', stderr);
+
+		va_end(args);
+	}
+
+	void print_syntax_error(const Location& loc, const char* msg) const
+	{
+		print_error(loc, "%s\n", msg);
+	}
+
+	void operator()(const Ast::DuplicateDefinition& e) const
+	{
+		print_error(e.loc(), "%s '%s' is already defined.\n",
 			kind_str(e.kind()), e.name().c_str());
-		print_line(e.loc());
-
-		print_loc(e.existing_loc());
-		fprintf(stderr, "Existing definition is here:\n");
-		print_line(e.existing_loc());
+		print_error(e.existing_loc(), "Existing definition is here:\n");
 	}
 
-	void operator()(const Ast::MissingDefinition& e)
+	void operator()(const Ast::MissingDefinition& e) const
 	{
-		print_loc(e.loc());
-		fprintf(stderr, "%s '%s' has not been defined.\n",
+		print_error(e.loc(), "%s '%s' has not been defined.\n",
 			kind_str(e.kind()), e.name().c_str());
-		print_line(e.loc());
 	}
 
-	void operator()(const Ast::MissingBound& e)
+	void operator()(const Ast::MissingBound& e) const
 	{
-		print_loc(e.loc());
-		fprintf(stderr, "No bound has been defined for pool '%s'.\n",
+		print_error(e.loc(), "No bound has been defined for pool '%s'.\n",
 			e.pool_name().c_str());
-		print_line(e.loc());
 	}
 
-	void operator()(const Ast::LayoutMissingField& e)
+	void operator()(const Ast::LayoutMissingField& e) const
 	{
-		print_loc(e.layout_loc());
-		fprintf(stderr, "Missing field '%s' in layout '%s'.\n",
+		print_error(e.layout_loc(), "Missing field '%s' in layout '%s'.\n",
 			e.field_name().c_str(), e.layout_name().c_str());
-		print_line(e.layout_loc());
+		print_error(e.field_loc(), "Field is defined here:\n");
 	}
 
-	void operator()(const Ast::LayoutNameClash& e)
+	void operator()(const Ast::LayoutNameClash& e) const
 	{
-		print_loc(e.layout_loc());
-		fprintf(stderr, "Layout '%s' has the same name as another class.\n",
+		print_error(e.layout_loc(), "Layout '%s' has the same name as another class.\n",
 			e.layout_name().c_str());
-		print_line(e.layout_loc());
-
-		print_loc(e.class_loc());
-		fprintf(stderr, "Existing class defined here:\n");
-		print_line(e.class_loc());
+		print_error(e.class_loc(), "Existing class is defined here:\n");
 	}
 
-	void operator()(const Ast::LayoutDuplicateField& e)
+	void operator()(const Ast::LayoutDuplicateField& e) const
 	{
-		print_loc(e.field_loc());
-		fprintf(stderr, "Field '%s' in layout '%s' already exists.\n",
+		print_error(e.field_loc(), "Field '%s' in layout '%s' already exists.\n",
 			e.field_name().c_str(), e.layout_name().c_str());
-		print_line(e.field_loc());
-
-		print_loc(e.existing_field_loc());
-		fprintf(stderr, "Existing field defined here:\n");
-		print_line(e.existing_field_loc());
+		print_error(e.existing_field_loc(), "Existing field is present here:\n");
 	}
 
-	void operator()(const Ast::NoPoolParameters& e)
+	void operator()(const Ast::NoPoolParameters& e) const
 	{
-		print_loc(e.loc());
-		fprintf(stderr, "No pool parameters defined for class '%s'.\n",
+		print_error(e.loc(), "No pool parameters defined for class '%s'.\n",
 			e.name().c_str());
 	}
 
-	void operator()(const Ast::EmptyCluster& e)
+	void operator()(const Ast::EmptyCluster& e) const
 	{
-		print_loc(e.loc());
-		fprintf(stderr, "Cluster is empty.\n");
-		print_line(e.loc());
+		print_error(e.loc(), "Cluster is empty.\n");
 	}
 
-	void operator()(const Ast::NotInsideLoop& e)
+	void operator()(const Ast::NotInsideLoop& e) const
 	{
-		print_loc(e.loc());
-		fprintf(stderr, "Statement is not inside loop.\n");
-		print_line(e.loc());
+		print_error(e.loc(), "Statement is not inside loop.\n");
 	}
 
-	void operator()(const Ast::IntegerOutOfBounds& e)
+	void operator()(const Ast::IntegerOutOfBounds& e) const
 	{
-		print_loc(e.loc());
-		fprintf(stderr, "Integer constant is too large.\n");
-		print_line(e.loc());
+		print_error(e.loc(), "Integer constant is too large.\n");
 	}
 
-	void operator()(const Ast::DoubleOutOfBounds& e)
+	void operator()(const Ast::DoubleOutOfBounds& e) const
 	{
-		print_loc(e.loc());
-		fprintf(stderr, "Floating point constant is too large.\n");
-		print_line(e.loc());
+		print_error(e.loc(), "Floating point constant is too large.\n");
 	}
 
-	void operator()(const Ast::IncorrectFirstPoolParameter& e)
+	void operator()(const Ast::IncorrectFirstPoolParameter& e) const
 	{
-		print_loc(e.loc());
-		fprintf(stderr, "Expected pool parameter '%s', but got '%s'.\n",
+		print_error(e.loc(), "Expected pool parameter '%s', but got '%s'.\n",
 			e.expected().c_str(), e.got().c_str());
-		print_line(e.loc());
 	}
 
-	void operator()(const Ast::IncorrectType& e)
+	void operator()(const Ast::IncorrectType& e) const
 	{
-		print_loc(e.loc());
-		fprintf(stderr, "Expected type '%s', but got '%s'.\n",
+		print_error(e.loc(), "Expected type '%s', but got '%s'.\n",
 			e.expected_type().c_str(), e.got_type().c_str());
-		print_line(e.loc());
 	}
 
-	void operator()(const Ast::IncompatibleBound& e)
+	void operator()(const Ast::IncompatibleBound& e) const
 	{
-		print_loc(e.loc());
-		fprintf(stderr, "Type '%s' is not compatible with bound '%s'.\n",
+		print_error(e.loc(), "Type '%s' is not compatible with bound '%s'.\n",
 			e.type().c_str(), e.bound().c_str());
-		print_line(e.loc());
 	}
 
-	void operator()(const Ast::IncorrectPoolsNumber& e)
+	void operator()(const Ast::IncorrectPoolsNumber& e) const
 	{
-		print_loc(e.loc());
-		fprintf(stderr, "Expected %zu pool parameters, but got %zu.\n",
+		print_error(e.loc(), "Expected %zu pool parameters, but got %zu.\n",
 			e.num_expected(), e.num_got());
-		print_line(e.loc());
 	}
 
-	void operator()(const Ast::ExpectedObjectType& e)
+	void operator()(const Ast::ExpectedObjectType& e) const
 	{
-		print_loc(e.loc());
-		fprintf(stderr, "Expected an object type, but got '%s'.\n",
+		print_error(e.loc(), "Expected an object type, but got '%s'.\n",
 			e.type_got().c_str());
-		print_line(e.loc());
 	}
 
-	void operator()(const Ast::ExpectedPrimitiveType& e)
+	void operator()(const Ast::ExpectedPrimitiveType& e) const
 	{
-		print_loc(e.loc());
-		fprintf(stderr, "Expected a primitive type, but got '%s'.\n",
+		print_error(e.loc(), "Expected a primitive type, but got '%s'.\n",
 			e.type_got().c_str());
-		print_line(e.loc());
 	}
 
-	void operator()(const Ast::ExpectedBooleanType& e)
+	void operator()(const Ast::ExpectedBooleanType& e) const
 	{
-		print_loc(e.loc());
-		fprintf(stderr, "Expected a boolean type, but got '%s'.\n",
+		print_error(e.loc(), "Expected a boolean type, but got '%s'.\n",
 			e.type_got().c_str());
-		print_line(e.loc());
 	}
 
-	void operator()(const Ast::ExpectedIntegerType& e)
+	void operator()(const Ast::ExpectedIntegerType& e) const
 	{
-		print_loc(e.loc());
-		fprintf(stderr, "Expected an integer type, but got '%s'.\n",
+		print_error(e.loc(), "Expected an integer type, but got '%s'.\n",
 			e.type_got().c_str());
-		print_line(e.loc());
 	}
 
-	void operator()(const Ast::ExpectedNumericType& e)
+	void operator()(const Ast::ExpectedNumericType& e) const
 	{
-		print_loc(e.loc());
-		fprintf(stderr, "Expected an integer or floating-point type, but got '%s'.\n",
+		print_error(e.loc(), "Expected an integer or floating-point type, but got '%s'.\n",
 			e.type_got().c_str());
-		print_line(e.loc());
 	}
 
-	void operator()(const Ast::ReturnWithExpression& e)
+	void operator()(const Ast::ReturnWithExpression& e) const
 	{
-		print_loc(e.loc());
-		fprintf(stderr, "Return statement must not have an expression.\n");
-		print_line(e.loc());
+		print_error(e.loc(), "Return statement must not have an expression.\n");
 	}
 
-	void operator()(const Ast::ReturnWithoutExpression& e)
+	void operator()(const Ast::ReturnWithoutExpression& e) const
 	{
-		print_loc(e.loc());
-		fprintf(stderr, "Return statement has no expression.\n");
-		print_line(e.loc());
+		print_error(e.loc(), "Return statement has no expression.\n");
 	}
 
-	void operator()(const Ast::NonAssignableType& e)
+	void operator()(const Ast::NonAssignableType& e) const
 	{
-		print_loc(e.loc());
-		fprintf(stderr, "Cannot assign expression of type '%s' into type '%s'.\n",
+		print_error(e.loc(), "Cannot assign expression of type '%s' into type '%s'.\n",
 			e.assigned_from().c_str(), e.assigned_to().c_str());
-		print_line(e.loc());
 	}
 
-	void operator()(const Ast::NotLvalue& e)
+	void operator()(const Ast::NotLvalue& e) const
 	{
-		print_loc(e.loc());
-		fprintf(stderr, "Expression is not an lvalue.\n");
-		print_line(e.loc());
+		print_error(e.loc(), "Expression is not an lvalue.\n");
 	}
 
-	void operator()(const Ast::IncorrectArgsNumber& e)
+	void operator()(const Ast::IncorrectArgsNumber& e) const
 	{
-		print_loc(e.loc());
-		fprintf(stderr, "Expected %zu method arguments, but got %zu.\n",
+		print_error(e.loc(), "Expected %zu method arguments, but got %zu.\n",
 			e.num_expected(), e.num_got());
-		print_line(e.loc());
 	}
 
-	void operator()(const Ast::NotAllPathsReturn& e)
+	void operator()(const Ast::NotAllPathsReturn& e) const
 	{
-		print_loc(e.loc());
-		fprintf(stderr, "Not all paths return a value in method '%s'.\n",
+		print_error(e.loc(), "Not all paths return a value in method '%s'.\n",
 			e.name().c_str());
-		print_line(e.loc());
 	}
 
-	void operator()(const Ast::VarMaybeUninitialized& e)
+	void operator()(const Ast::VarMaybeUninitialized& e) const
 	{
-		print_loc(e.loc());
-		fprintf(stderr, "Variable '%s' may be used uninitialized here.\n",
+		print_error(e.loc(), "Variable '%s' may be used uninitialized here.\n",
 			e.name().c_str());
-		print_line(e.loc());
 	}
 };
 
@@ -364,7 +312,7 @@ int main(int argc, char** argv)
 	}
 	fseek(in, 0, SEEK_END);
 	long fsize = ftell(in);
-	fseek(in, 0, SEEK_SET);  /* same as rewind(f); */
+	fseek(in, 0, SEEK_SET);
 
 	std::string file_contents(fsize, '\0');
 	fread(&file_contents[0], 1, fsize, in);
@@ -394,14 +342,14 @@ int main(int argc, char** argv)
 	yy_delete_buffer(lex_buffer, scanner);
 	yylex_destroy(scanner);
 
+	SemanticErrorPrinter printer(file_contents, lines);
+
 	if (syntax_errors.has_errors()) {
 		for (auto it = syntax_errors.begin(); it != syntax_errors.end(); it++) {
 			const auto& e = *it;
 			const auto& loc = e.loc();
 
-			fprintf(stderr, "|Line %d| %s\n", loc.first_line, e.msg().c_str());
-			print_error(file_contents, lines, loc);
-			fprintf(stderr, "\n");
+			printer.print_syntax_error(loc, e.msg().c_str());
 		}
 
 		return EXIT_FAILURE;
@@ -416,7 +364,6 @@ int main(int argc, char** argv)
 		SemanticErrorPrinter printer(file_contents, lines);
 		for (const auto& e: errors.errors()) {
 			mpark::visit(printer, e);
-			fprintf(stderr, "\n");
 		}
 
 		return EXIT_FAILURE;

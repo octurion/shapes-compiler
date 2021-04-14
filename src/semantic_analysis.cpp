@@ -250,7 +250,8 @@ static void collect_layouts(
 		for (const Field& e: for_class->fields())
 		{
 			if (fields_added.find(&e) == fields_added.end()) {
-				errors.add<LayoutMissingField>(layout.name().ident(), e.name(), e.loc());
+				errors.add<LayoutMissingField>(
+					layout.name().ident(), e.name(), layout.loc(), e.loc());
 				fields_missing = true;
 			}
 		}
@@ -893,9 +894,13 @@ public:
 
 	void operator()(const Cst::Assignment& e) {
 		auto lhs = mpark::visit(*this, e.lhs());
-		auto lhs_type = expr_type(lhs);
-
 		auto rhs = mpark::visit(*this, e.rhs());
+
+		if (invalid(lhs) || invalid(rhs)) {
+			return;
+		}
+
+		auto lhs_type = expr_type(lhs);
 		auto rhs_type = expr_type(rhs);
 
 		if (!is_lvalue(lhs)) {

@@ -1,0 +1,4 @@
+class Main
+{
+    f1: i32;
+}

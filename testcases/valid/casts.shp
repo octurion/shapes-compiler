@@ -1,0 +1,29 @@
+class Main<p1> where
+    p1: [Main<p1>]
+{
+    fi8: i8;
+    fu8: u8;
+
+    fi16: i16;
+    fu16: u16;
+
+    fi32: i32;
+    fu32: u32;
+
+    fi64: i64;
+    fu64: u64;
+
+    fn test() {
+        let x: i8;
+        let y: u64;
+        let f: f32;
+
+        f = 3.0f32;
+
+        y = 0u64;
+        x = y as f32 as i8;
+
+        fi32 = y as i32;
+        fi64 = f as i64;
+    }
+}

@@ -28,6 +28,265 @@ class Main<p1> where
         }
         return sum;
     }
+
+    fn foreach_loop_unsigned(begin: u32, end: u32): u32
+    {
+        let sum: u32;
+
+        sum = 0u32;
+        foreach i = begin .. end {
+            sum += i;
+        }
+        return sum;
+    }
+
+    fn abs(x: f32): f32
+    {
+        if x >= 0f32 {
+            return x;
+        }
+        return -x;
+    }
+
+    fn raphson_newton_sqrt(x: f32): f32
+    {
+        let eps: f32;
+        eps = 1e-6f32;
+
+        let r: f32;
+        r = x;
+        while abs(x - r * r) > eps {
+            r = (r + x / r) / 2f32;
+        }
+
+        return r;
+    }
+
+    fn factorial(n: i32): i32 {
+        if n < 0 {
+            return 0;
+        }
+        return factorial_impl(n, 1);
+    }
+
+    fn factorial_impl(n: i32, acc: i32): i32 {
+        if n == 0 || n == 1 {
+            return acc;
+        }
+
+        return factorial_impl(n - 1, n * acc);
+    }
+
+    fn test_casts(): i32 {
+        let correct: i32;
+        correct = 0;
+
+        let x: bool;
+        x = true;
+        if x as i8 == 1i8 {
+            correct += 1;
+        }
+
+        if x as f32 == 1.0f32 {
+            correct += 1;
+        }
+
+        let y: i32;
+        y = 5;
+        if y as bool {
+            correct += 1;
+        }
+        if y as f64 == 5.0f64 {
+            correct += 1;
+        }
+
+        let z: f32;
+        z = 0.0f32;
+        if !(z as bool) {
+            correct += 1;
+        }
+
+        z = 25.25f32;
+        if z as i32 == 25 {
+            correct += 1;
+        }
+
+        if z as u32 == 25u32 {
+            correct += 1;
+        }
+
+        if z as f64 == 25.25f64 {
+            correct += 1;
+        }
+
+        let a: u8;
+        a = -1u8;
+
+        if a as i32 == 255 {
+            correct += 1;
+        }
+        if a as u32 == 255u32 {
+            correct += 1;
+        }
+        if a as f32 == 255f32 {
+            correct += 1;
+        }
+
+        let b: i16;
+        b = -2i16;
+        if b as i32 == -2 {
+            correct += 1;
+        }
+
+        b = -32767i16;
+        if b as u8 == 1u8 {
+            correct += 1;
+        }
+
+        b = 32767i16;
+        if b as u8 == -1u8 && b as u8 == 255u8 {
+            correct += 1;
+        }
+
+        return correct;
+    }
+
+    fn test_exprs(): i32 {
+        let correct: i32;
+        correct = 0;
+
+        let x: i32;
+        x = 5;
+        if +x == 5 {
+            correct += 1;
+        }
+        if !x == -4 {
+            correct += 1;
+        }
+
+        let y: i32;
+        y = 6;
+        if x + y == 11 {
+            correct += 1;
+        }
+
+        x = 16;
+        if x & (x - 1) == 0 {
+            correct += 1;
+        }
+
+        if x & 15 == 0 {
+            correct += 1;
+        }
+
+        if 4 | 8 == 12 {
+            correct += 1;
+        }
+
+        if x ^ x == 0 {
+            correct += 1;
+        }
+        if x ^ x ^ x == x {
+            correct += 1;
+        }
+
+        if x << 1u8 == 32 {
+            correct += 1;
+        }
+        if x << 2i16 == 64 {
+            correct += 1;
+        }
+
+        if x >> 2 == 4 {
+            correct += 1;
+        }
+        if x >> 1u32 == 8 {
+            correct += 1;
+        }
+
+        let f: f32;
+        f = 3f32;
+
+        let g: f32;
+        g = 2f32;
+
+        if f / g == 1.5f32 {
+            correct += 1;
+        }
+
+        if 7 / 3 == 2 {
+            correct += 1;
+        }
+
+        return correct;
+    }
+
+    fn test_op_assign(): i32 {
+        let correct: i32;
+        correct = 0;
+
+        let x: i32;
+        x = 10;
+        x += 5;
+        if x == 15 {
+            correct += 1;
+        }
+
+        x -= 3;
+        if x == 12 {
+            correct += 1;
+        }
+
+        x *= 3;
+        if x == 36 {
+            correct += 1;
+        }
+
+        x /= 10;
+        if x == 3 {
+            correct += 1;
+        }
+
+        x &= 2;
+        if x == 2 {
+            correct += 1;
+        }
+
+        x |= 4;
+        if x == 6 {
+            correct += 1;
+        }
+
+        x ^= 4;
+        if x == 2 {
+            correct += 1;
+        }
+
+        let f: f32;
+        f = 2f32;
+
+        f += 5f32;
+        if f == 7f32 {
+            correct += 1;
+        }
+
+        f -= 1f32;
+        if f == 6f32 {
+            correct += 1;
+        }
+
+        f *= 1.5f32;
+        if f == 9f32 {
+            correct += 1;
+        }
+
+        f /= 2f32;
+        if f == 4.5f32 {
+            correct += 1;
+        }
+
+        return correct;
+    }
 }
 
 class A<q1, q2> where
@@ -76,6 +335,49 @@ class A<q1, q2> where
     {
         fv = new_value;
     }
+
+    fn test_pools(): i32
+    {
+        let count: i32;
+        count = 0;
+
+        pool pb: LB<pb, none>;
+
+        let o: A<none, pb>;
+
+        let o1: B<pb, none>;
+        let o2: B<pb, none>;
+
+        o = new A<none, pb>;
+
+        o1 = new B<pb, none>;
+        o2 = new B<pb, none>;
+
+        if o1 != o2 {
+            count += 1;
+        }
+
+        o1.g = o;
+        o2.g = o;
+
+        if o1.g == o2.g {
+            count += 1;
+        }
+        if o1.g != null {
+            count += 1;
+        }
+        if null != o2.g {
+            count += 1;
+        }
+
+        o.setter(20);
+
+        if o.getter() == 20 && o.fv == 20 {
+            count += 1;
+        }
+
+        return count;
+    }
 }
 
 class B<r1, r2> where
@@ -85,4 +387,5 @@ class B<r1, r2> where
     g: A<r2, r1>;
     gv: i32;
 }
+
 layout LB: B = rec{g} + rec{gv};

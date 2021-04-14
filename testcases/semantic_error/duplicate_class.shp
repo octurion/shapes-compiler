@@ -1,0 +1,11 @@
+class Main<p1> where
+    p1: [Main<p1>]
+{
+    f1: i32;
+}
+
+class Main<p2> where
+    p2: [Main<p2>]
+{
+    f2: i32;
+}

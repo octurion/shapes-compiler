@@ -19,6 +19,13 @@
 #include <cstdio>
 #include <string>
 
+namespace llvm { // Ugly hack to get Googletest to print an APInt
+std::ostream& operator<<(std::ostream& os, const APInt& value)
+{
+	return os << value.toString(10, true);
+}
+} // namespace llvm
+
 using namespace testing;
 
 class SyntaxFail: public TestWithParam<std::string> {};
@@ -154,6 +161,7 @@ public:
 		yyset_in(in, scanner);
 
 		yyparse(scanner, &cst, &syntax_errors);
+		ASSERT_THAT(syntax_errors.has_errors(), IsFalse());
 
 		yylex_destroy(scanner);
 
@@ -162,6 +170,7 @@ public:
 		Ast::SemanticErrorList errors;
 
 		Ast::run_semantic_analysis(cst, m_ast, errors);
+		ASSERT_THAT(errors.has_errors(), IsFalse());
 
 		m_codegen.ir(m_ast);
 
@@ -192,6 +201,31 @@ TEST_F(ExecutionTest, SimpleReturn) {
 TEST_F(ExecutionTest, ForeachLoop) {
 	const auto* clazz = m_ast.find_class("Main");
 	const auto* method = clazz->find_method("foreach_loop");
+
+	Ir::ClassSpecialization spec(*clazz, {nullptr});
+
+	auto* ctor = m_codegen_interpreter.constructor(spec);
+	auto this_param = m_codegen_interpreter.run_function(ctor, {});
+
+	auto* func = m_codegen_interpreter.find_method(spec, *method);
+
+	uint64_t begin = 20;
+	uint64_t end = 30;
+
+	llvm::GenericValue param_begin;
+	param_begin.IntVal = llvm::APInt(32, begin);
+
+	llvm::GenericValue param_end;
+	param_end.IntVal = llvm::APInt(32, end);
+
+	auto retval = m_codegen_interpreter.run_function(
+		func, {this_param, param_begin, param_end});
+	EXPECT_THAT(retval.IntVal, Eq(llvm::APInt(32, 245)));
+}
+
+TEST_F(ExecutionTest, ForeachLoopUnsigned) {
+	const auto* clazz = m_ast.find_class("Main");
+	const auto* method = clazz->find_method("foreach_loop_unsigned");
 
 	Ir::ClassSpecialization spec(*clazz, {nullptr});
 
@@ -284,6 +318,118 @@ TEST_F(ExecutionTest, MutualGetterSetter) {
 	EXPECT_THAT(dummy_pool.cluster1[0], Eq(200));
 }
 
+TEST_F(ExecutionTest, PoolConstruction) {
+	const auto* clazz = m_ast.find_class("A");
+	const auto* method = clazz->find_method("test_pools");
+
+	Ir::ClassSpecialization spec(*clazz, {nullptr, nullptr});
+
+	auto* ctor = m_codegen_interpreter.constructor(spec);
+	auto* llvm_method = m_codegen_interpreter.find_method(spec, *method);
+
+	auto this_param = m_codegen_interpreter.run_function(ctor, {});
+
+	auto retval = m_codegen_interpreter.run_function(llvm_method, {this_param});
+
+	EXPECT_THAT(retval.IntVal, Eq(llvm::APInt(32, 5)));
+}
+
+TEST_F(ExecutionTest, RaphsonNewton) {
+	const auto* clazz = m_ast.find_class("Main");
+	const auto* method = clazz->find_method("raphson_newton_sqrt");
+
+	Ir::ClassSpecialization spec(*clazz, {nullptr});
+
+	auto* ctor = m_codegen_interpreter.constructor(spec);
+	auto* llvm_method = m_codegen_interpreter.find_method(spec, *method);
+
+	auto this_param = m_codegen_interpreter.run_function(ctor, {});
+
+	llvm::GenericValue param;
+	param.FloatVal = 2.0f;
+
+	auto retval = m_codegen_interpreter.run_function(llvm_method, {this_param, param});
+
+	constexpr float EXPECTED = 1.41421356237f;
+	EXPECT_THAT(retval.FloatVal, NanSensitiveFloatNear(EXPECTED, 1e-8));
+}
+
+TEST_F(ExecutionTest, Factorial) {
+	const auto* clazz = m_ast.find_class("Main");
+	const auto* factorial_method = clazz->find_method("factorial");
+
+	Ir::ClassSpecialization spec(*clazz, {nullptr});
+
+	auto* ctor = m_codegen_interpreter.constructor(spec);
+	auto* factorial = m_codegen_interpreter.find_method(spec, *factorial_method);
+
+	auto this_param = m_codegen_interpreter.run_function(ctor, {});
+
+	llvm::GenericValue param;
+	param.IntVal = llvm::APInt(32, 10);
+
+	auto retval = m_codegen_interpreter.run_function(factorial, {this_param, param});
+
+	EXPECT_THAT(retval.IntVal, Eq(llvm::APInt(32, 3'628'800)));
+}
+
+TEST_F(ExecutionTest, Casts) {
+	const auto* clazz = m_ast.find_class("Main");
+	const auto* test_casts_method = clazz->find_method("test_casts");
+
+	Ir::ClassSpecialization spec(*clazz, {nullptr});
+
+	auto* ctor = m_codegen_interpreter.constructor(spec);
+	auto* test_casts = m_codegen_interpreter.find_method(spec, *test_casts_method);
+
+	auto this_param = m_codegen_interpreter.run_function(ctor, {});
+
+	llvm::GenericValue param;
+	param.IntVal = llvm::APInt(32, 10);
+
+	auto retval = m_codegen_interpreter.run_function(test_casts, {this_param});
+
+	EXPECT_THAT(retval.IntVal, Eq(llvm::APInt(32, 14)));
+}
+
+TEST_F(ExecutionTest, Exprs) {
+	const auto* clazz = m_ast.find_class("Main");
+	const auto* test_exprs_method = clazz->find_method("test_exprs");
+
+	Ir::ClassSpecialization spec(*clazz, {nullptr});
+
+	auto* ctor = m_codegen_interpreter.constructor(spec);
+	auto* test_exprs = m_codegen_interpreter.find_method(spec, *test_exprs_method);
+
+	auto this_param = m_codegen_interpreter.run_function(ctor, {});
+
+	llvm::GenericValue param;
+	param.IntVal = llvm::APInt(32, 10);
+
+	auto retval = m_codegen_interpreter.run_function(test_exprs, {this_param});
+
+	EXPECT_THAT(retval.IntVal, Eq(llvm::APInt(32, 14)));
+}
+
+TEST_F(ExecutionTest, OpAssignment) {
+	const auto* clazz = m_ast.find_class("Main");
+	const auto* test_op_assign_method = clazz->find_method("test_op_assign");
+
+	Ir::ClassSpecialization spec(*clazz, {nullptr});
+
+	auto* ctor = m_codegen_interpreter.constructor(spec);
+	auto* test_op_assign = m_codegen_interpreter.find_method(spec, *test_op_assign_method);
+
+	auto this_param = m_codegen_interpreter.run_function(ctor, {});
+
+	llvm::GenericValue param;
+	param.IntVal = llvm::APInt(32, 10);
+
+	auto retval = m_codegen_interpreter.run_function(test_op_assign, {this_param});
+
+	EXPECT_THAT(retval.IntVal, Eq(llvm::APInt(32, 11)));
+}
+
 INSTANTIATE_TEST_SUITE_P(
 	Parser,
 	SyntaxFail,
@@ -298,3 +444,8 @@ INSTANTIATE_TEST_SUITE_P(
 	Parser,
 	SemanticFail,
 	ValuesIn(files_in_path("../testcases/semantic_error")));
+
+INSTANTIATE_TEST_SUITE_P(
+	CaseStudies,
+	SemanticPass,
+	ValuesIn(files_in_path("../testcases/case_studies")));
