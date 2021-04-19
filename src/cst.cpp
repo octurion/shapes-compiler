@@ -125,6 +125,14 @@ BinaryExpr::BinaryExpr(Expr lhs, BinOp op, Expr rhs, const Location& loc)
 const Expr& BinaryExpr::lhs() const { return *m_lhs; }
 const Expr& BinaryExpr::rhs() const { return *m_rhs; }
 
+PoolIndexExpr::PoolIndexExpr(Identifier pool, Expr index, const Location& loc)
+	: m_pool(std::move(pool))
+	, m_index(new Expr(std::move(index)))
+	, m_loc(loc)
+{
+}
+const Expr& PoolIndexExpr::index() const { return *m_index; }
+
 UnaryExpr::UnaryExpr(UnOp op, Expr expr, const Location& loc)
 	: m_op(op)
 	, m_expr(new Expr(std::move(expr)))

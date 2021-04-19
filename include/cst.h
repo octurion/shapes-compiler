@@ -228,14 +228,15 @@ class CastExpr;
 class UnaryExpr;
 class BinaryExpr;
 class VariableExpr;
+class PoolIndexExpr;
 class MethodCall;
 class MemberMethodCall;
 class FieldAccess;
 class NewExpr;
 
 using Expr = mpark::variant<IntegerConst, DoubleConst, BooleanConst, NullExpr,
-	  ThisExpr, CastExpr, UnaryExpr, BinaryExpr, VariableExpr, MethodCall,
-	  MemberMethodCall, FieldAccess, NewExpr>;
+	  ThisExpr, CastExpr, UnaryExpr, BinaryExpr, VariableExpr, PoolIndexExpr,
+	  MethodCall, MemberMethodCall, FieldAccess, NewExpr>;
 const Location& location(const Expr& expr);
 
 enum class BinOp
@@ -374,6 +375,22 @@ public:
 
 	const Identifier& name() const { return m_name; }
 	const Location& loc() const { return m_loc; }
+};
+
+class PoolIndexExpr
+{
+	Identifier m_pool;
+	std::unique_ptr<Expr> m_index;
+
+	Location m_loc;
+
+public:
+	PoolIndexExpr(Identifier pool, Expr expr, const Location& loc);
+
+	const Identifier& pool() const { return m_pool; }
+	const Location& loc() const { return m_loc; }
+
+	const Expr& index() const;
 };
 
 class UnaryExpr

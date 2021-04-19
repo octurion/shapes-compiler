@@ -1467,6 +1467,31 @@ public:
 		return InvalidExpr();
 	}
 
+	Expr operator()(const Cst::PoolIndexExpr& e)
+	{
+		const auto* pool = m_scopes.find_pool(e.pool().ident());
+		if (pool == nullptr) {
+			m_errors.add<MissingDefinition>(
+				e.pool().ident(), ErrorKind::POOL, e.pool().loc());
+			return InvalidExpr();
+		}
+
+		auto index = mpark::visit(*this, e.index());
+		if (invalid(index)) {
+			return InvalidExpr();
+		}
+
+		auto type = expr_type(index);
+		const auto* as_primitive = mpark::get_if<PrimitiveType>(&type);
+		if (as_primitive == nullptr || *as_primitive == PrimitiveType::BOOL) {
+			m_errors.add<ExpectedIntegerType>(
+				location(e.index()), to_string(type));
+			return InvalidExpr();
+		}
+
+		return PoolIndexExpr(*pool, std::move(index), e.loc());
+	}
+
 	Expr operator()(const Cst::MethodCall& e)
 	{
 		const auto* method = m_class.find_method(e.name().ident());
@@ -1706,6 +1731,11 @@ public:
 		}
 
 		m_errors.get().add<VarMaybeUninitialized>(e.var().name(), e.loc());
+	}
+
+	void operator()(const PoolIndexExpr& e)
+	{
+		mpark::visit(*this, e.index());
 	}
 
 	void operator()(const Assignment& e) {

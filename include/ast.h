@@ -146,12 +146,12 @@ class Pool
 	Location m_loc;
 
 public:
-	explicit Pool(std::string name, const Location& loc)
+	Pool(std::string name, const Location& loc)
 		: m_name(std::move(name))
 		, m_loc(loc)
 	{}
 
-	explicit Pool(std::string name, PoolType type, const Location& loc)
+	Pool(std::string name, PoolType type, const Location& loc)
 		: m_name(std::move(name))
 		, m_type(new PoolType(std::move(type)))
 		, m_loc(loc)
@@ -288,7 +288,7 @@ class Variable
 	Location m_loc;
 
 public:
-	explicit Variable(std::string name, Type type, const Location& loc)
+	Variable(std::string name, Type type, const Location& loc)
 		: m_name(std::move(name))
 		, m_type(std::move(type))
 		, m_loc(loc)
@@ -309,14 +309,15 @@ class CastExpr;
 class UnaryExpr;
 class BinaryExpr;
 class VariableExpr;
+class PoolIndexExpr;
 class MethodCall;
 class FieldAccess;
 class NewExpr;
 
 using Expr = mpark::variant<
 	InvalidExpr, IntegerConst, DoubleConst, BooleanConst, NullExpr, ThisExpr,
-	CastExpr, UnaryExpr, BinaryExpr, VariableExpr, MethodCall, FieldAccess,
-	NewExpr>;
+	CastExpr, UnaryExpr, BinaryExpr, VariableExpr, PoolIndexExpr, MethodCall,
+	FieldAccess, NewExpr>;
 Type expr_type(const Expr& expr);
 bool is_lvalue(const Expr& expr);
 
@@ -333,7 +334,7 @@ class IntegerConst
 	PrimitiveType m_type;
 
 public:
-	explicit IntegerConst(uint64_t value, PrimitiveType type)
+	IntegerConst(uint64_t value, PrimitiveType type)
 		: m_value(value)
 		, m_type(type)
 	{}
@@ -349,7 +350,7 @@ class DoubleConst
 	PrimitiveType m_type;
 
 public:
-	explicit DoubleConst(double value, PrimitiveType type)
+	DoubleConst(double value, PrimitiveType type)
 		: m_value(value)
 		, m_type(type)
 	{}
@@ -469,7 +470,7 @@ class VariableExpr
 	Location m_loc;
 
 public:
-	explicit VariableExpr(const Variable& var, const Location& loc)
+	VariableExpr(const Variable& var, const Location& loc)
 		: m_var(var)
 		, m_loc(loc)
 	{}
@@ -477,6 +478,24 @@ public:
 	const Variable& var() const { return m_var; }
 	const Location& loc() const { return m_loc; }
 	const Type& type() const { return m_var.type(); }
+	bool is_lvalue() const { return true; }
+};
+
+class PoolIndexExpr
+{
+	const Pool& m_pool;
+	std::unique_ptr<Expr> m_index;
+	Location m_loc;
+
+public:
+	PoolIndexExpr(const Pool& pool, Expr index, const Location& loc);
+
+	const Pool& pool() const { return m_pool; }
+	const Expr& index() const;
+	Type type() const;
+
+	const Location& loc() const { return m_loc; }
+
 	bool is_lvalue() const { return true; }
 };
 
@@ -506,7 +525,7 @@ class FieldAccess
 	Type m_type;
 
 public:
-	explicit FieldAccess(Expr expr, const Field& field, Type type);
+	FieldAccess(Expr expr, const Field& field, Type type);
 
 	const Expr& expr() const;
 	const Field& field() const { return m_field; }
@@ -769,7 +788,7 @@ class Method
 	Location m_loc;
 
 public:
-	explicit Method(std::string name, const Location& loc)
+	Method(std::string name, const Location& loc)
 		: m_name(std::move(name))
 		, m_loc(loc)
 	{}
@@ -839,7 +858,7 @@ public:
 	Class(Class&&) = default;
 	Class& operator=(Class&&) = default;
 
-	explicit Class(std::string name, const Location& loc)
+	Class(std::string name, const Location& loc)
 		: m_name(std::move(name))
 		, m_loc(loc)
 	{}

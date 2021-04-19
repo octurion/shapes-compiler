@@ -277,6 +277,7 @@ class Codegen::Impl
 	LLVMExpr visit(const Ast::UnaryExpr& e, MethodCodegenState& state);
 	LLVMExpr visit(const Ast::BinaryExpr& e, MethodCodegenState& state);
 	LLVMExpr visit(const Ast::VariableExpr& e, MethodCodegenState& state);
+	LLVMExpr visit(const Ast::PoolIndexExpr& e, MethodCodegenState& state);
 	LLVMExpr visit(const Ast::MethodCall& e, MethodCodegenState& state);
 	LLVMExpr visit(const Ast::FieldAccess& e, MethodCodegenState& state);
 	LLVMExpr visit(const Ast::NewExpr& e, MethodCodegenState& state);
@@ -2034,6 +2035,59 @@ LLVMExpr Codegen::Impl::visit(const Ast::VariableExpr& e, MethodCodegenState& st
 	auto* value = state.local_vars[&e.var()];
 	assert_msg(value != nullptr, "Local variable does not exist? O_o");
 	return LLVMExpr(state.builder, value, nullptr, true);
+}
+
+LLVMExpr Codegen::Impl::visit(const Ast::PoolIndexExpr& e, MethodCodegenState& state)
+{
+	auto* index = visit(e.index(), state).to_rvalue();
+
+	auto type = e.type();
+	auto obj_type = mpark::get<Ast::ObjectType>(type);
+	auto pool_spec = state.spec.specialize_type(obj_type);
+
+	if (!pool_spec.is_pooled_type()) {
+		return LLVMExpr(state.builder, zero(type, pool_spec), nullptr, false);
+	}
+
+	const auto& type_info = m_specialization_info[pool_spec].type_info;
+	const auto& as_pool = mpark::get<PoolSpecializationInfo>(type_info);
+
+	auto* pool = state.local_pools[&e.pool()];
+	assert_msg(pool != nullptr, "Local pool variable does not exist? O_o");
+
+	llvm::MDBuilder tbaa_builder(m_ctx);
+
+	const auto& data_layout = m_mod->getDataLayout();
+	const auto* pool_layout = data_layout.getStructLayout(as_pool.pool_type);
+
+	auto* size_tbaa_node = tbaa_builder.createTBAAStructTagNode(
+		as_pool.pool_tbaa_type,
+		m_tbaa_intptr,
+		pool_layout->getElementOffset(0));
+
+	auto* size_ptr = state.builder->CreateStructGEP(pool, 0, "size_ptr");
+	auto* size = state.builder->CreateLoad(size_ptr, "size");
+	size->setMetadata(llvm::LLVMContext::MD_tbaa, size_tbaa_node);
+
+	auto index_type = Ast::expr_type(e.index());
+	const auto& as_primitive = mpark::get<Ast::PrimitiveType>(index_type);
+
+	llvm::Value* cond;
+	llvm::Value* actual_index;
+	if (Ast::is_signed_integer(as_primitive)) {
+		actual_index = state.builder->CreateSExtOrTrunc(index, m_intptr);
+		auto* lhs_cond = state.builder->CreateICmpSGE(
+			actual_index, llvm::ConstantInt::get(m_intptr, 0), "lhs_cond");
+		auto* rhs_cond = state.builder->CreateICmpULT(actual_index, size, "rhs_cond");
+		cond = state.builder->CreateAnd(lhs_cond, rhs_cond, "cond");
+	} else {
+		actual_index = state.builder->CreateZExtOrTrunc(index, m_intptr);
+		cond = state.builder->CreateICmpULT(actual_index, size, "cond");
+	}
+	auto* value = state.builder->CreateSelect(
+		cond, actual_index, zero(type, pool_spec), "index");
+
+	return LLVMExpr(state.builder, value, nullptr, false);
 }
 
 LLVMExpr Codegen::Impl::visit(const Ast::MethodCall& e, MethodCodegenState& state)
