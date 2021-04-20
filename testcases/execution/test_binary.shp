@@ -387,6 +387,10 @@ class B<r1, r2> where
     g: A<r2, r1>;
     gv: i32;
 
+    fn setter(v: i32) {
+        gv = v;
+    }
+
     fn foreach_pool_range_loop(begin: u32, end: u32): i32
     {
         let sum: i32;
@@ -397,7 +401,6 @@ class B<r1, r2> where
         }
         return sum;
     }
-
 }
 
 layout LB: B = rec{g} + rec{gv};
