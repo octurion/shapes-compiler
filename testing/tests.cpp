@@ -281,6 +281,8 @@ TEST_F(ExecutionTest, MutualGetterSetter) {
 
 	const auto* make_twin = clazz->find_method("make_twin");
 	const auto* getter = clazz->find_method("twin_getter");
+	const auto* resetter = clazz->find_method("resetter");
+	const auto* is_null = clazz->find_method("is_null");
 
 	const auto* layout = m_ast.find_layout("LB");
 
@@ -305,17 +307,33 @@ TEST_F(ExecutionTest, MutualGetterSetter) {
 
 	auto* getter_func = m_codegen_interpreter.find_method(spec, *getter);
 	auto* make_twin_func = m_codegen_interpreter.find_method(spec, *make_twin);
+	auto* resetter_func = m_codegen_interpreter.find_method(spec, *resetter);
+	auto* is_null_func = m_codegen_interpreter.find_method(spec, *is_null);
+
+	auto null_check1 = m_codegen_interpreter.run_function(
+		is_null_func, {this_param, pool_ptr});
+	EXPECT_THAT(null_check1.IntVal, Eq(llvm::APInt(1, true)));
 
 	llvm::GenericValue setval;
 	setval.IntVal = llvm::APInt(32, 200);
 
 	m_codegen_interpreter.run_function(make_twin_func, {this_param, setval, pool_ptr});
 
+	auto null_check2 = m_codegen_interpreter.run_function(
+		is_null_func, {this_param, pool_ptr});
+	EXPECT_THAT(null_check2.IntVal, Eq(llvm::APInt(1, false)));
+
 	auto getter_retval = m_codegen_interpreter.run_function(
 		getter_func, {this_param, pool_ptr});
 
 	EXPECT_THAT(getter_retval.IntVal, Eq(setval.IntVal));
 	EXPECT_THAT(dummy_pool.cluster1[0], Eq(200));
+
+	m_codegen_interpreter.run_function(resetter_func, {this_param, pool_ptr});
+
+	auto null_check3 = m_codegen_interpreter.run_function(
+		is_null_func, {this_param, pool_ptr});
+	EXPECT_THAT(null_check3.IntVal, Eq(llvm::APInt(1, true)));
 }
 
 TEST_F(ExecutionTest, PoolConstruction) {
