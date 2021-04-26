@@ -326,6 +326,10 @@ class A<q1, q2> where
         f.gv = new_value;
     }
 
+    fn resetter() {
+        f = null;
+    }
+
     fn getter(): i32
     {
         return fv;

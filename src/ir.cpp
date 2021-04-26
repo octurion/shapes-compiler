@@ -1311,7 +1311,7 @@ void Codegen::Impl::visit(const Ast::Assignment& e, MethodCodegenState& state)
 	llvm::Value* rhs_value;
 
 	if (mpark::holds_alternative<Ast::NullExpr>(e.rhs())) {
-		rhs_value = llvm::Constant::getNullValue(lhs.value()->getType());
+		rhs_value = zero(Ast::expr_type(e.lhs()), state.spec);
 	} else {
 		auto rhs = visit(e.rhs(), state);
 		rhs_value = rhs.to_rvalue();
