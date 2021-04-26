@@ -396,6 +396,15 @@ UnaryExpr::UnaryExpr(UnOp op, Expr expr)
 const Expr& UnaryExpr::expr() const { return *m_expr; }
 Type UnaryExpr::type() const { return expr_type(*m_expr); }
 
+PoolIndexExpr::PoolIndexExpr(const Pool& pool, Expr index, const Location& loc)
+	: m_pool(pool)
+	, m_index(new Expr(std::move(index)))
+	, m_loc(loc)
+{
+}
+const Expr& PoolIndexExpr::index() const { return *m_index; }
+Type PoolIndexExpr::type() const { return from_pool_type(m_pool.type()); }
+
 MethodCall::MethodCall(const Method& method, Expr this_expr, std::vector<Expr> args, Type type)
 	: m_method(method)
 	, m_this_expr(new Expr(std::move(this_expr)))
@@ -772,6 +781,22 @@ public:
 		emit_indentation();
 		fprintf(stderr, "Variable expression (variable: %s)\n",
 			expr.var().name().c_str());
+	}
+
+	void operator()(const PoolIndexExpr& expr)
+	{
+		emit_indentation();
+		fprintf(stderr, "Pool indexing\n");
+
+		emit_indentation();
+		fprintf(stderr, "Pool: %s\n", expr.pool().name().c_str());
+
+		emit_indentation();
+		fprintf(stderr, "Index:\n");
+
+		indent();
+		mpark::visit(*this, expr.index());
+		dedent();
 	}
 
 	void operator()(const MethodCall& expr)

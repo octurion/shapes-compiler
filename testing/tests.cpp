@@ -334,6 +334,54 @@ TEST_F(ExecutionTest, PoolConstruction) {
 	EXPECT_THAT(retval.IntVal, Eq(llvm::APInt(32, 5)));
 }
 
+TEST_F(ExecutionTest, PoolIndexing) {
+	const auto* clazz = m_ast.find_class("B");
+	const auto* layout = m_ast.find_layout("LB");
+	const auto* method = clazz->find_method("foreach_pool_range_loop");
+	const auto* setter = clazz->find_method("setter");
+
+	struct DummyPool {
+		uintptr_t size;
+		uintptr_t capacity;
+		void* cluster0;
+		void* cluster1;
+	};
+
+	DummyPool pool;
+	llvm::GenericValue pool_ptr(&pool);
+
+	Ir::ClassSpecialization spec(*clazz, {layout, nullptr});
+
+	auto* pool_ctor = m_codegen_interpreter.pool_constructor(spec);
+	m_codegen_interpreter.run_function(pool_ctor, {pool_ptr});
+
+	auto* ctor = m_codegen_interpreter.constructor(spec);
+	auto* llvm_method = m_codegen_interpreter.find_method(spec, *method);
+	auto* llvm_setter = m_codegen_interpreter.find_method(spec, *setter);
+
+	auto obj1 = m_codegen_interpreter.run_function(ctor, {pool_ptr});
+	auto obj2 = m_codegen_interpreter.run_function(ctor, {pool_ptr});
+
+	llvm::GenericValue v1;
+	v1.IntVal = llvm::APInt(32, 5);
+	llvm::GenericValue v2;
+	v2.IntVal = llvm::APInt(32, 10);
+
+	m_codegen_interpreter.run_function(llvm_setter, {obj1, v1, pool_ptr});
+	m_codegen_interpreter.run_function(llvm_setter, {obj2, v2, pool_ptr});
+
+	llvm::GenericValue begin;
+	begin.IntVal = llvm::APInt(32, 0);
+	llvm::GenericValue end;
+	end.IntVal = llvm::APInt(32, 2);
+
+	auto retval = m_codegen_interpreter.run_function(
+		llvm_method, {obj1, begin, end, pool_ptr});
+
+	EXPECT_THAT(retval.IntVal, Eq(llvm::APInt(32, 15)));
+	EXPECT_FALSE(false);
+}
+
 TEST_F(ExecutionTest, RaphsonNewton) {
 	const auto* clazz = m_ast.find_class("Main");
 	const auto* method = clazz->find_method("raphson_newton_sqrt");

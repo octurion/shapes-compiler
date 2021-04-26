@@ -442,6 +442,12 @@ type
 
 expr
 	: T_LPAREN expr T_RPAREN { $$ = $2; }
+	| T_LPAREN error T_RPAREN {
+		$$ = new Cst::Expr(
+			mpark::in_place_type_t<Cst::IntegerConst>(),
+			"0",
+			make_loc(@2));
+	}
 
 	/* Unary expressions; must be inline for Bison to do its precedence magic */
 	| T_PLUS expr {
@@ -553,7 +559,19 @@ expr
 		);
 	}
 	| identifier {
-		$$ = new Cst::Expr(Cst::VariableExpr(consume_ptr($1), make_loc(@$))); }
+		$$ = new Cst::Expr(Cst::VariableExpr(consume_ptr($1), make_loc(@$)));
+	}
+	| identifier T_LSQUARE expr T_RSQUARE {
+		$$ = new Cst::Expr(Cst::PoolIndexExpr(
+			consume_ptr($1), consume_ptr($3), make_loc(@$)));
+	}
+	| identifier T_LSQUARE error T_RSQUARE {
+		$$ = new Cst::Expr(
+			mpark::in_place_type_t<Cst::PoolIndexExpr>(),
+			consume_ptr($1),
+			Cst::IntegerConst("0", make_loc(@3)),
+			make_loc(@$));
+	}
 	| T_NEW object_type {
 		$$ = new Cst::Expr(Cst::NewExpr(consume_ptr($2), make_loc(@$)));
 	}

@@ -536,7 +536,9 @@ public:
 	template<typename Error, typename... Args>
 	void add(Args&&... args)
 	{
-		m_errors.emplace_back(Error(std::forward<Args>(args)...));
+		m_errors.emplace_back(
+			mpark::in_place_type_t<Error>(),
+			std::forward<Args>(args)...);
 	}
 };
 

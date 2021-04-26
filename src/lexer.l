@@ -4,9 +4,6 @@
 #define YY_USER_INIT init_loc(yylloc);
 #define YY_USER_ACTION update_loc(yylloc, yytext, yyleng, YY_START);
 
-// Fix the tab width to 4 for now (when calculating line numbers)
-static const unsigned TAB_WIDTH = 4;
-
 static void init_loc(YYLTYPE* loc);
 static void update_loc(YYLTYPE* loc, const char* text, yy_size_t len, int state);
 %}
