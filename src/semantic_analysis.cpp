@@ -565,6 +565,15 @@ static void collect_pool_field_method_types(
 			defined_pool_types[bound] = cst_bound.pool().loc();
 		}
 
+		for (const Pool& bound: clazz->pools()) {
+			if (defined_pool_types.find(&bound) == defined_pool_types.end()) {
+				errors.add<MissingDefinition>(
+					bound.name(),
+					ErrorKind::POOL_BOUND,
+					bound.loc());
+			}
+		}
+
 		for (const auto& cst_field: cst_class.fields()) {
 			auto* field = clazz->find_field(cst_field.name().ident());
 			assert_msg(field != nullptr, "Field should always exist");

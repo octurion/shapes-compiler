@@ -1648,6 +1648,7 @@ void Codegen::Impl::visit(const Ast::Return& e, MethodCodegenState& state)
 		state.builder->CreateRetVoid();
 	} else if (mpark::holds_alternative<Ast::NullExpr>(*e.expr())) {
 		auto* as_obj_type = mpark::get_if<Ast::ObjectType>(&state.method->return_type());
+		assert_msg(as_obj_type != nullptr, "Return type is not an object type? O_o");
 		state.builder->CreateRet(zero(*as_obj_type, state.spec));
 	} else {
 		auto* value = visit(*e.expr(), state).to_rvalue();
@@ -2046,7 +2047,7 @@ LLVMExpr Codegen::Impl::visit(const Ast::PoolIndexExpr& e, MethodCodegenState& s
 	auto pool_spec = state.spec.specialize_type(obj_type);
 
 	if (!pool_spec.is_pooled_type()) {
-		return LLVMExpr(state.builder, zero(type, pool_spec), nullptr, false);
+		return LLVMExpr(state.builder, zero(type, state.spec), nullptr, false);
 	}
 
 	const auto& type_info = m_specialization_info[pool_spec].type_info;
@@ -2084,8 +2085,9 @@ LLVMExpr Codegen::Impl::visit(const Ast::PoolIndexExpr& e, MethodCodegenState& s
 		actual_index = state.builder->CreateZExtOrTrunc(index, m_intptr);
 		cond = state.builder->CreateICmpULT(actual_index, size, "cond");
 	}
+
 	auto* value = state.builder->CreateSelect(
-		cond, actual_index, zero(type, pool_spec), "index");
+		cond, actual_index, zero(type, state.spec), "index");
 
 	return LLVMExpr(state.builder, value, nullptr, false);
 }
