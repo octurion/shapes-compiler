@@ -12,8 +12,8 @@ jobs:
       matrix:
         os: [ ubuntu-20.04, ubuntu-22.04 ]
         compiler: [
-          { name: gcc, cpp: g++, c: gcc, apt: g++ },
-          { name: clang, cpp: clang++, c: clang, apt: clang }
+          { name: gcc, cpp: g++, c: gcc },
+          { name: clang, cpp: clang++, c: clang }
         ]
         llvm: [ 10, 11, 12, 13 ]
     name: ${{ matrix.os }}, ${{ matrix.compiler.name }}, LLVM ${{ matrix.llvm }}
@@ -24,11 +24,9 @@ jobs:
       with:
         submodules: recursive
     - name: Install dependencies
-      run: |
-        sudo apt update
-        sudo apt-get -y install cmake ${{ matrix.compiler.apt }} flex bison llvm-${{ matrix.llvm }}-dev ninja-build
+      run: sudo apt-get -y install cmake flex bison llvm-${{ matrix.llvm }} llvm-${{ matrix.llvm }}-dev ninja-build
     - name: Build
       run: |
-        cmake -S . -B build/ -Werror=dev -DCMAKE_BUILD_TYPE=Debug -GNinja
+        cmake -S . -B build/ -Werror=dev -DCMAKE_C_COMPILER=${{ matrix.os.compiler.c }} -DCMAKE_CXX_COMPILER=${{ matrix.os.compiler.cpp }} -DCMAKE_BUILD_TYPE=Debug -GNinja
         cmake --build build/
         build/shapes_tests
