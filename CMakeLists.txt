@@ -18,7 +18,7 @@ find_package(FLEX REQUIRED 2.6.0)
 find_package(BISON REQUIRED 3.0.4)
 find_package(LLVM REQUIRED 10.0)
 llvm_map_components_to_libnames(LLVM_LIBS support core irreader passes target interpreter
-    x86asmparser x86codegen x86desc x86info x86utils)
+    x86asmparser x86codegen x86desc x86info)
 
 set(FLEX_BISON_GENFILES_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen)
 
