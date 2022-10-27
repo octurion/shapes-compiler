@@ -34,6 +34,28 @@ class Door<p1, p2>
         }
     }
 
+    fn run_split() {
+        foreach d: p1 {
+            foreach c: p2 {
+                let dx: f32;
+                let dy: f32;
+                let dist: f32;
+
+                dx = d.x - c.x;
+                dy = d.y - c.y;
+
+                dist = dx * dx + dy * dy;
+
+                if dist > 1f32 {
+                    continue;
+                }
+
+                d.open = true;
+                break;
+            }
+        }
+    }
+
     fn doors_open(): i32 {
         let x: i32;
 
@@ -60,3 +82,6 @@ class Character<p1, p2>
 
 layout LD: Door = rec{x, y, allegiance, open};
 layout LC: Character = rec{x, y, allegiance};
+
+layout LD2: Door = rec{x, y, open} + rec{allegiance};
+layout LC2: Character = rec{x, y} + rec{allegiance};
