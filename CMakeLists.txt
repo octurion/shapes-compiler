@@ -43,17 +43,18 @@ add_library(shapes_parser
     src/ir.cpp)
 
 add_subdirectory(lib/googletest)
+add_subdirectory(lib/variant)
 
 target_compile_options(shapes_parser PRIVATE ${DEFAULT_FLAGS} ${COVERAGE_FLAGS})
 target_compile_definitions(shapes_parser PRIVATE ${LLVM_DEFINITIONS})
 
 target_include_directories(shapes_parser SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS})
 target_include_directories(shapes_parser PUBLIC include)
-target_link_libraries(shapes_parser PRIVATE ${COVERAGE_FLAGS} ${LLVM_LIBS})
+target_link_libraries(shapes_parser PRIVATE ${COVERAGE_FLAGS} ${LLVM_LIBS} mpark_variant)
 
 add_library(shapes_bison ${FLEX_lexer_OUTPUTS} ${BISON_parser_OUTPUTS})
 target_include_directories(shapes_bison SYSTEM PUBLIC ${FLEX_BISON_GENFILES_DIR})
-target_link_libraries(shapes_bison PUBLIC ${COVERAGE_FLAGS} shapes_parser)
+target_link_libraries(shapes_bison PUBLIC ${COVERAGE_FLAGS} shapes_parser mpark_variant)
 
 add_executable(shapes src/main.cpp)
 

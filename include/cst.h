@@ -2,7 +2,7 @@
 
 #include "common.h"
 
-#include "variant.h"
+#include <mpark/variant.hpp>
 
 #include <iosfwd>
 #include <memory>

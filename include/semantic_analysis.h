@@ -5,7 +5,7 @@
 #include "ast.h"
 #include "cst.h"
 
-#include "variant.h"
+#include <mpark/variant.hpp>
 
 #include <utility>
 
