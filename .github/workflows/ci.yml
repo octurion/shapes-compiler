@@ -10,12 +10,12 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ ubuntu-20.04, ubuntu-22.04 ]
+        os: [ ubuntu-20.04 ]
         compiler: [
           { name: gcc, cpp: g++, c: gcc },
-          { name: clang, cpp: clang++, c: clang }
+          #{ name: clang, cpp: clang++, c: clang }
         ]
-        llvm: [ 11, 12 ]
+        llvm: [ 11 ]
         # include:
         #   - { os: ubuntu-20.04, llvm: 10 }
         #   - { os: ubuntu-22.04, llvm: 13 }
