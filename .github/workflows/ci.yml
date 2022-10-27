@@ -15,7 +15,7 @@ jobs:
           { name: gcc, cpp: g++, c: gcc },
           #{ name: clang, cpp: clang++, c: clang }
         ]
-        llvm: [ 11 ]
+        llvm: [ 10 ]
         # include:
         #   - { os: ubuntu-20.04, llvm: 10 }
         #   - { os: ubuntu-22.04, llvm: 13 }
