@@ -149,7 +149,7 @@ public:
 		// TODO: Make a global test environment for this?
 		Ir::init_llvm();
 
-		const auto* path = "../testcases/execution/test_binary.shp";
+		const auto* path = "testcases/execution/test_binary.shp";
 
 		FILE* in = fopen(path, "r");
 
@@ -499,19 +499,19 @@ TEST_F(ExecutionTest, OpAssignment) {
 INSTANTIATE_TEST_SUITE_P(
 	Parser,
 	SyntaxFail,
-	ValuesIn(files_in_path("../testcases/parse_error")));
+	ValuesIn(files_in_path("testcases/parse_error")));
 
 INSTANTIATE_TEST_SUITE_P(
 	Parser,
 	SemanticPass,
-	ValuesIn(files_in_path("../testcases/valid")));
+	ValuesIn(files_in_path("testcases/valid")));
 
 INSTANTIATE_TEST_SUITE_P(
 	Parser,
 	SemanticFail,
-	ValuesIn(files_in_path("../testcases/semantic_error")));
+	ValuesIn(files_in_path("testcases/semantic_error")));
 
 INSTANTIATE_TEST_SUITE_P(
 	CaseStudies,
 	SemanticPass,
-	ValuesIn(files_in_path("../testcases/case_studies")));
+	ValuesIn(files_in_path("testcases/case_studies")));

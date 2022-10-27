@@ -13,13 +13,12 @@ option(COVERAGE_REPORT "Enable coverage report" OFF)
 
 set(DEFAULT_FLAGS -Wall -Wextra -Wpedantic -fdiagnostics-color=always
     CACHE STRING "Default command line arguments to pass in all cases")
-set(LLVM_PATHS "/usr/lib/llvm-8/" CACHE PATH "Path to LLVM installation")
 
 find_package(FLEX REQUIRED 2.6.0)
 find_package(BISON REQUIRED 3.0.4)
-find_package(LLVM REQUIRED 8.0 CONFIG PATHS ${LLVM_PATHS} NO_DEFAULT_PATH)
+find_package(LLVM REQUIRED 10.0)
 llvm_map_components_to_libnames(LLVM_LIBS support core irreader passes target interpreter
-    x86asmparser x86asmprinter x86codegen x86desc x86info x86utils)
+    x86asmparser x86codegen x86desc x86info x86utils)
 
 set(FLEX_BISON_GENFILES_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen)
 

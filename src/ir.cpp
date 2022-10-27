@@ -1,6 +1,8 @@
 #include "ast.h"
 #include "ir.h"
 
+#include <llvm/InitializePasses.h>
+
 #include <llvm/ADT/None.h>
 
 #include <llvm/Analysis/TypeBasedAliasAnalysis.h>
@@ -2392,7 +2394,7 @@ bool Codegen::Impl::emit(
 
 	llvm::legacy::PassManager legacy_pm;
 	m_target_machine->addPassesToEmitFile(
-		legacy_pm, object_code, nullptr, llvm::TargetMachine::CGFT_ObjectFile);
+		legacy_pm, object_code, nullptr, llvm::CGFT_ObjectFile);
 	legacy_pm.run(*m_mod);
 
 	return true;
