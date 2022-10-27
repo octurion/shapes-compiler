@@ -11,9 +11,12 @@ jobs:
     strategy:
       matrix:
         os: [ ubuntu-20.04, ubuntu-22.04 ]
-        compiler: [ {cpp: g++, c: gcc}, {cpp: clang++, c: clang} ]
+        compiler: [
+          {name: gcc, cpp: g++, c: gcc, apt:g++ },
+          {name: clang, cpp: clang++, c: clang, apt:clang}
+        ]
         llvm: [ 10, 11, 12, 13 ]
-    name: ${{ matrix.os }}, ${{ matrix.compiler.c }}, LLVM ${{ matrix.llvm }}
+    name: ${{ matrix.os }}, ${{ matrix.compiler.name }}, LLVM ${{ matrix.llvm }}
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v2
@@ -21,7 +24,7 @@ jobs:
       with:
         submodules: recursive
     - name: Install dependencies
-      run: sudo apt-get -y install cmake ${{ matrix.compiler.c }} ${{ matrix.compiler.cpp }} flex bison llvm-${{ matrix.llvm }}-dev ninja-build
+      run: sudo apt-get -y install cmake ${{ matrix.compiler.apt }} flex bison llvm-${{ matrix.llvm }}-dev ninja-build
     - name: Build
       run: |
         cmake -S . -B build/ -Werror=dev -DCMAKE_BUILD_TYPE=Debug -GNinja
