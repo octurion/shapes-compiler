@@ -15,7 +15,11 @@ jobs:
           { name: gcc, cpp: g++, c: gcc },
           { name: clang, cpp: clang++, c: clang }
         ]
-        llvm: [ 10, 11, 12 ]
+        llvm: [ 11, 12 ]
+        # include:
+        #   - { os: ubuntu-20.04, llvm: 10 }
+        #   - { os: ubuntu-22.04, llvm: 13 }
+
     name: ${{ matrix.os }}, ${{ matrix.compiler.name }}, LLVM ${{ matrix.llvm }}
     runs-on: ${{ matrix.os }}
     steps:
