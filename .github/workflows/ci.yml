@@ -16,14 +16,11 @@ jobs:
           { name: clang, cpp: clang++, c: clang }
         ]
         llvm: [ 10 ]
-        # include:
-        #   - { os: ubuntu-20.04, llvm: 10 }
-        #   - { os: ubuntu-22.04, llvm: 13 }
 
     name: ${{ matrix.os }}, ${{ matrix.compiler.name }}, LLVM ${{ matrix.llvm }}
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
       name: Checkout repository
       with:
         submodules: recursive
@@ -33,4 +30,5 @@ jobs:
       run: |
         cmake -S . -B build/ -Werror=dev -DCMAKE_C_COMPILER=${{ matrix.compiler.c }} -DCMAKE_CXX_COMPILER=${{ matrix.compiler.cpp }} -DCMAKE_BUILD_TYPE=Debug -GNinja
         cmake --build build/
-        build/shapes_tests
+    - name: Run tests
+      run: build/shapes_tests
