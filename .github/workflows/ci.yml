@@ -13,7 +13,7 @@ jobs:
         os: [ ubuntu-20.04 ]
         compiler: [
           { name: gcc, cpp: g++, c: gcc },
-          #{ name: clang, cpp: clang++, c: clang }
+          { name: clang, cpp: clang++, c: clang }
         ]
         llvm: [ 10 ]
         # include:
