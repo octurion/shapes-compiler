@@ -2,12 +2,13 @@
 
 #include "common.h"
 
-#include "variant.h"
+#include <mpark/variant.hpp>
 
 #include <cstdint>
 #include <deque>
 #include <iosfwd>
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>

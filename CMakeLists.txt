@@ -18,7 +18,7 @@ find_package(FLEX REQUIRED 2.6.0)
 find_package(BISON REQUIRED 3.0.4)
 find_package(LLVM REQUIRED 10.0)
 llvm_map_components_to_libnames(LLVM_LIBS support core irreader passes target interpreter
-    x86asmparser x86codegen x86desc x86info x86utils)
+    x86asmparser x86codegen x86desc x86info)
 
 set(FLEX_BISON_GENFILES_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen)
 
@@ -43,24 +43,25 @@ add_library(shapes_parser
     src/ir.cpp)
 
 add_subdirectory(lib/googletest)
+add_subdirectory(lib/variant)
 
 target_compile_options(shapes_parser PRIVATE ${DEFAULT_FLAGS} ${COVERAGE_FLAGS})
 target_compile_definitions(shapes_parser PRIVATE ${LLVM_DEFINITIONS})
 
 target_include_directories(shapes_parser SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS})
 target_include_directories(shapes_parser PUBLIC include)
-target_link_libraries(shapes_parser PRIVATE ${COVERAGE_FLAGS} ${LLVM_LIBS})
+target_link_libraries(shapes_parser PRIVATE ${COVERAGE_FLAGS} ${LLVM_LIBS} mpark_variant)
 
 add_library(shapes_bison ${FLEX_lexer_OUTPUTS} ${BISON_parser_OUTPUTS})
 target_include_directories(shapes_bison SYSTEM PUBLIC ${FLEX_BISON_GENFILES_DIR})
-target_link_libraries(shapes_bison PUBLIC ${COVERAGE_FLAGS} shapes_parser)
+target_link_libraries(shapes_bison PUBLIC ${COVERAGE_FLAGS} shapes_parser mpark_variant)
 
 add_executable(shapes src/main.cpp)
 
 add_executable(shapes_tests testing/tests.cpp)
 target_compile_options(shapes_tests PRIVATE ${DEFAULT_FLAGS} ${COVERAGE_FLAGS})
 target_include_directories(shapes_tests SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS})
-target_link_libraries(shapes_tests PRIVATE ${COVERAGE_FLAGS} shapes_parser shapes_bison gtest gmock gtest_main ${LLVM_LIBS})
+target_link_libraries(shapes_tests PRIVATE ${COVERAGE_FLAGS} shapes_parser shapes_bison GTest::gtest GTest::gmock GTest::gtest_main ${LLVM_LIBS})
 
 target_compile_options(shapes PRIVATE ${DEFAULT_FLAGS})
 target_link_libraries(shapes PRIVATE ${COVERAGE_FLAGS} shapes_parser shapes_bison)

@@ -2784,9 +2784,9 @@ void CodegenInterpreter::Impl::init(Codegen& codegen)
 
 	assert_msg(m_engine != nullptr, "Engine was not created? O_o");
 
-	m_engine->addGlobalMapping("malloc", (uint64_t) &malloc);
-	m_engine->addGlobalMapping("realloc", (uint64_t) &realloc);
-	m_engine->addGlobalMapping("free", (uint64_t) &free);
+	m_engine->addGlobalMapping("malloc", (uintptr_t) &malloc);
+	m_engine->addGlobalMapping("realloc", (uintptr_t) &realloc);
+	m_engine->addGlobalMapping("free", (uintptr_t) &free);
 
 	m_engine->finalizeObject();
 }
@@ -2795,7 +2795,7 @@ llvm::GenericValue
 CodegenInterpreter::Impl::run_function(
 	llvm::Function* func, std::vector<llvm::GenericValue> values)
 {
-	return m_engine->runFunction(func, values);
+	return m_engine->runFunction(func, std::move(values));
 }
 
 llvm::Function*
@@ -2831,7 +2831,7 @@ llvm::GenericValue
 CodegenInterpreter::run_function(
 	llvm::Function* func, std::vector<llvm::GenericValue> values)
 {
-	return m_impl->run_function(func, values);
+	return m_impl->run_function(func, std::move(values));
 }
 
 llvm::Function*
