@@ -61,7 +61,7 @@ add_executable(shapes src/main.cpp)
 add_executable(shapes_tests testing/tests.cpp)
 target_compile_options(shapes_tests PRIVATE ${DEFAULT_FLAGS} ${COVERAGE_FLAGS})
 target_include_directories(shapes_tests SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS})
-target_link_libraries(shapes_tests PRIVATE ${COVERAGE_FLAGS} shapes_parser shapes_bison gtest gmock gtest_main ${LLVM_LIBS})
+target_link_libraries(shapes_tests PRIVATE ${COVERAGE_FLAGS} shapes_parser shapes_bison GTest::gtest GTest::gmock GTest::gtest_main ${LLVM_LIBS})
 
 target_compile_options(shapes PRIVATE ${DEFAULT_FLAGS})
 target_link_libraries(shapes PRIVATE ${COVERAGE_FLAGS} shapes_parser shapes_bison)
