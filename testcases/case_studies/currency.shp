@@ -1,0 +1,186 @@
+class Rate<p>
+    where p: [Rate<p>]
+{
+    date: u32;
+
+    USD: f64;
+    JPY: f64;
+    BGN: f64;
+    CYP: f64;
+    CZK: f64;
+    DKK: f64;
+    EEK: f64;
+    GBP: f64;
+    HUF: f64;
+    LTL: f64;
+    LVL: f64;
+    MTL: f64;
+    PLN: f64;
+    ROL: f64;
+    RON: f64;
+    SEK: f64;
+    SIT: f64;
+    SKK: f64;
+    CHF: f64;
+    ISK: f64;
+    NOK: f64;
+    HRK: f64;
+    RUB: f64;
+    TRL: f64;
+    TRY: f64;
+    AUD: f64;
+    BRL: f64;
+    CAD: f64;
+    CNY: f64;
+    HKD: f64;
+    IDR: f64;
+    ILS: f64;
+    INR: f64;
+    KRW: f64;
+    MXN: f64;
+    MYR: f64;
+    NZD: f64;
+    PHP: f64;
+    SGD: f64;
+    THB: f64;
+    ZAR: f64;
+
+    fn set(
+        date: u32,
+        USD: f64,
+        JPY: f64,
+        BGN: f64,
+        CYP: f64,
+        CZK: f64,
+        DKK: f64,
+        EEK: f64,
+        GBP: f64,
+        HUF: f64,
+        LTL: f64,
+        LVL: f64,
+        MTL: f64,
+        PLN: f64,
+        ROL: f64,
+        RON: f64,
+        SEK: f64,
+        SIT: f64,
+        SKK: f64,
+        CHF: f64,
+        ISK: f64,
+        NOK: f64,
+        HRK: f64,
+        RUB: f64,
+        TRL: f64,
+        TRY: f64,
+        AUD: f64,
+        BRL: f64,
+        CAD: f64,
+        CNY: f64,
+        HKD: f64,
+        IDR: f64,
+        ILS: f64,
+        INR: f64,
+        KRW: f64,
+        MXN: f64,
+        MYR: f64,
+        NZD: f64,
+        PHP: f64,
+        SGD: f64,
+        THB: f64,
+        ZAR: f64)
+    {
+        this.date = date;
+
+        this.USD = USD;
+        this.JPY = JPY;
+        this.BGN = BGN;
+        this.CYP = CYP;
+        this.CZK = CZK;
+        this.DKK = DKK;
+        this.EEK = EEK;
+        this.GBP = GBP;
+        this.HUF = HUF;
+        this.LTL = LTL;
+        this.LVL = LVL;
+        this.MTL = MTL;
+        this.PLN = PLN;
+        this.ROL = ROL;
+        this.RON = RON;
+        this.SEK = SEK;
+        this.SIT = SIT;
+        this.SKK = SKK;
+        this.CHF = CHF;
+        this.ISK = ISK;
+        this.NOK = NOK;
+        this.HRK = HRK;
+        this.RUB = RUB;
+        this.TRL = TRL;
+        this.TRY = TRY;
+        this.AUD = AUD;
+        this.BRL = BRL;
+        this.CAD = CAD;
+        this.CNY = CNY;
+        this.HKD = HKD;
+        this.IDR = IDR;
+        this.ILS = ILS;
+        this.INR = INR;
+        this.KRW = KRW;
+        this.MXN = MXN;
+        this.MYR = MYR;
+        this.NZD = NZD;
+        this.PHP = PHP;
+        this.SGD = SGD;
+        this.THB = THB;
+        this.ZAR = ZAR;
+    }
+
+    fn query(gbp: bool, date: u32, begin: u64, end: u64): f64
+    {
+        while begin < end {
+            let mid: u64;
+            mid = begin + (end - begin) / 2u64;
+
+            let hint: Rate<p>;
+            hint = p[begin];
+            hint.date;
+
+            hint = p[end];
+            hint.date;
+
+            let item: Rate<p>;
+            item = p[mid];
+
+            if item.date < date {
+                begin = mid + 1u64;
+            } else {
+                end = mid;
+            }
+        }
+
+        let item: Rate<p>;
+        item = p[begin];
+        if gbp {
+            return item.GBP;
+        } else {
+            return item.USD;
+        }
+    }
+}
+
+layout Aos: Rate = rec{date, USD, JPY, BGN, CYP, CZK, DKK, EEK, GBP,
+    HUF, LTL, LVL, MTL, PLN, ROL, RON, SEK, SIT, SKK, CHF, ISK, NOK, HRK, RUB,
+    TRL, TRY, AUD, BRL, CAD, CNY, HKD, IDR, ILS, INR, KRW, MXN, MYR, NZD, PHP,
+    SGD, THB, ZAR};
+
+layout Mixed: Rate = rec{date, USD, GBP}
+    + rec{JPY, BGN, CYP, CZK, DKK, EEK, HUF, LTL, LVL, MTL, PLN, ROL, RON, SEK,
+    SIT, SKK, CHF, ISK, NOK, HRK, RUB, TRL, TRY, AUD, BRL, CAD, CNY, HKD, IDR,
+    ILS, INR, KRW, MXN, MYR, NZD, PHP, SGD, THB, ZAR};
+
+layout Soa: Rate = rec{date} + rec{USD} + rec{JPY} + rec{BGN} + rec{CYP}
+    + rec{CZK} + rec{DKK} + rec{EEK} + rec{GBP} + rec{HUF} + rec{LTL} + rec{LVL}
+    + rec{MTL} + rec{PLN} + rec{ROL} + rec{RON} + rec{SEK} + rec{SIT} + rec{SKK}
+    + rec{CHF} + rec{ISK} + rec{NOK} + rec{HRK} + rec{RUB} + rec{TRL} + rec{TRY}
+    + rec{AUD} + rec{BRL} + rec{CAD} + rec{CNY} + rec{HKD} + rec{IDR} + rec{ILS}
+    + rec{INR} + rec{KRW} + rec{MXN} + rec{MYR} + rec{NZD} + rec{PHP} + rec{SGD}
+    + rec{THB} + rec{ZAR};

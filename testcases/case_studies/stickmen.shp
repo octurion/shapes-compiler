@@ -1,0 +1,139 @@
+class Joint<jp, wp>
+    where jp: [Joint<jp, wp>], wp: [Weight<wp>]
+{
+    parent: Joint<jp, wp>;
+    next: Joint<jp, wp>;
+
+    posx: f32;
+    posy: f32;
+    posz: f32;
+
+    orientw: f32;
+    orientx: f32;
+    orienty: f32;
+    orientz: f32;
+
+    weights_begin: u64;
+    weights_end: u64;
+
+    fn animate_my_weights()
+    {
+        let x: f32;
+        let y: f32;
+        let z: f32;
+        let w: f32;
+
+        x = orientx;
+        y = orienty;
+        z = orientz;
+        w = orientw;
+
+        let x2: f32;
+        let y2: f32;
+        let z2: f32;
+        let xx2: f32;
+        let yy2: f32;
+        let zz2: f32;
+
+        x2 = x + x;
+        y2 = y + y;
+        z2 = z + z;
+        xx2 = x * x2;
+        yy2 = y * y2;
+        zz2 = z * z2;
+
+        let xy2: f32;
+        let wz2: f32;
+        let xz2: f32;
+        let wy2: f32;
+        let yz2: f32;
+        let wx2: f32;
+
+        xy2 = x * y2;
+        wz2 = w * z2;
+        xz2 = x * z2;
+        wy2 = w * y2;
+        yz2 = y * z2;
+        wx2 = w * x2;
+
+        let a11: f32;
+        let a12: f32;
+        let a13: f32;
+
+        let a21: f32;
+        let a22: f32;
+        let a23: f32;
+
+        let a31: f32;
+        let a32: f32;
+        let a33: f32;
+
+        a11 = 1f32 - yy2 - zz2;
+        a12 = xy2 + wz2;
+        a13 = xz2 + wy2;
+
+        a21 = xy2 - wz2;
+        a22 = 1f32 - xx2 - zz2;
+        a23 = yz2 + wx2;
+
+        a31 = xz2 - wy2;
+        a32 = yz2 - wx2;
+        a33 = 1f32 - xx2 - yy2;
+
+        let posx: f32;
+        let posy: f32;
+        let posz: f32;
+
+        posx = this.posx;
+        posy = this.posy;
+        posz = this.posz;
+
+        foreach i = weights_begin .. weights_end {
+            let weight: Weight<wp>;
+            weight = wp[i];
+
+            let ix: f32;
+            let iy: f32;
+            let iz: f32;
+
+            ix = weight.initial_posx;
+            iy = weight.initial_posy;
+            iz = weight.initial_posz;
+
+            let npx: f32;
+            let npy: f32;
+            let npz: f32;
+
+            npx = a11 * ix + a12 * iy + a13 * iz + posx;
+            npy = a21 * ix + a22 * iy + a23 * iz + posy;
+            npz = a31 * ix + a32 * iy + a33 * iz + posz;
+
+            weight.posx = npx;
+            weight.posy = npy;
+            weight.posz = npz;
+        }
+    }
+}
+
+layout JointMixed: Joint = rec{parent, next}
+    + rec{posx, posy, posz}
+    + rec{orientw, orientx, orienty, orientz}
+    + rec{weights_begin, weights_end};
+
+class Weight<pwp>
+    where pwp: [Weight<pwp>]
+{
+    initial_posx: f32;
+    initial_posy: f32;
+    initial_posz: f32;
+
+    posx: f32;
+    posy: f32;
+    posz: f32;
+
+    bias: f32;
+}
+
+layout WeightAos: Weight = rec{initial_posx, initial_posy, initial_posz, posx, posy, posz, bias};
+layout WeightSoa: Weight = rec{initial_posx} + rec{initial_posy} + rec{initial_posz}
+    + rec{posx} + rec{posy} + rec{posz} + rec{bias};
