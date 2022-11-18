@@ -9,10 +9,15 @@
 
 #include "ir.h"
 
+#include "args.h"
+
+#include <getopt.h>
+
 #include <cerrno>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 
 struct Line
 {
@@ -298,16 +303,58 @@ struct SemanticErrorPrinter
 	}
 };
 
+static void print_usage(FILE* out, const char* program_name)
+{
+	fprintf(out,
+			"Usage: %s [-o object-file] [-H header-file] [-l llvm-bitcode-file] source-file\n",
+			program_name);
+}
+
 int main(int argc, char** argv)
 {
-	if (argc < 2) {
-		fprintf(stderr, "You must specify an input file\n");
+	CmdArgs args;
+
+	int opt;
+	bool help = false;
+	while ((opt = getopt(argc, argv, "hH:o:l:")) != -1) {
+		switch (opt) {
+		case 'h':
+			help = true;
+			break;
+		case 'H':
+			args.header_file = optarg;
+			break;
+		case 'o':
+			args.obj_file = optarg;
+			break;
+		case 'l':
+			args.llvm_file = optarg;
+			break;
+		default:
+			print_usage(stderr, argv[0]);
+			return EXIT_FAILURE;
+		}
+	}
+
+	if (help) {
+		print_usage(stdout, argv[0]);
+		return EXIT_SUCCESS;
+	}
+
+	if (optind >= argc) {
+		print_usage(stderr, argv[0]);
+		return EXIT_FAILURE;
+	}
+	args.source_file = argv[optind];
+	if (args.source_file.empty()) {
+		fprintf(stderr, "No source file provided\n");
 		return EXIT_FAILURE;
 	}
 
-	FILE* in = fopen(argv[1], "r");
+	const auto* infile = args.source_file.c_str();
+	FILE* in = fopen(infile, "r");
 	if (in == NULL) {
-		perror(argv[1]);
+		perror(infile);
 		return EXIT_FAILURE;
 	}
 	fseek(in, 0, SEEK_END);
@@ -372,8 +419,8 @@ int main(int argc, char** argv)
 	Ir::init_llvm();
 	Ir::Codegen codegen;
 	codegen.ir(ast);
-	codegen.emit("shapes.ll", "shapes.o");
-	codegen.emit_header("shapes.h");
+	codegen.emit(args.llvm_file.c_str(), args.obj_file.c_str());
+	codegen.emit_header(args.header_file.c_str());
 
 	return EXIT_SUCCESS;
 }
